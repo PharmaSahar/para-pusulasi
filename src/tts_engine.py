@@ -5,6 +5,7 @@ Metinden Sese Dönüştürme Motoru
 import asyncio
 import logging
 import os
+import time
 from pathlib import Path
 
 from .config import config
@@ -87,7 +88,11 @@ class TTSEngine:
         clean_text = self._clean_script(text)
 
         if self.use_azure:
-            self._generate_azure_tts(clean_text, output_path)
+            try:
+                self._generate_azure_tts(clean_text, output_path)
+            except Exception as e:
+                logger.warning(f"Azure TTS başarısız, Edge TTS'e düşülüyor: {e}")
+                self._generate_edge_tts(clean_text, output_path)
         elif self.use_elevenlabs:
             self._generate_elevenlabs(clean_text, output_path)
         else:
@@ -110,6 +115,7 @@ class TTSEngine:
     def _generate_azure_tts(self, text: str, output_path: str):
         """Azure Cognitive Services Neural TTS - tam SSML + duygu desteği."""
         import requests
+        from requests.exceptions import RequestException, ChunkedEncodingError
         # Kanal-özel ses seç (her kanal için erkek/kadın ayarlı)
         channel_id = getattr(self, "_channel_id", "")
         voice = (
@@ -123,10 +129,37 @@ class TTSEngine:
             "Content-Type": "application/ssml+xml",
             "X-Microsoft-OutputFormat": "audio-24khz-96kbitrate-mono-mp3",
         }
-        resp = requests.post(endpoint, headers=headers, data=ssml.encode("utf-8"), timeout=60)
-        resp.raise_for_status()
-        with open(output_path, "wb") as f:
-            f.write(resp.content)
+        tmp_path = output_path + ".part"
+        last_err = None
+        for attempt in range(1, 4):
+            try:
+                with requests.post(
+                    endpoint,
+                    headers=headers,
+                    data=ssml.encode("utf-8"),
+                    timeout=(15, 90),
+                    stream=True,
+                ) as resp:
+                    resp.raise_for_status()
+                    with open(tmp_path, "wb") as f:
+                        for chunk in resp.iter_content(chunk_size=65536):
+                            if chunk:
+                                f.write(chunk)
+                os.replace(tmp_path, output_path)
+                break
+            except (ChunkedEncodingError, RequestException) as e:
+                last_err = e
+                try:
+                    Path(tmp_path).unlink(missing_ok=True)
+                except Exception:
+                    pass
+                if attempt < 3:
+                    wait_s = 8 * attempt
+                    logger.warning(f"Azure TTS ağ hatası (deneme {attempt}/3): {e}. {wait_s}s sonra tekrar...")
+                    time.sleep(wait_s)
+                else:
+                    raise last_err
+
         self._save_estimated_timing(text, output_path)
         logger.info(f"Azure TTS tamamlandı [{voice}]: {output_path}")
 

@@ -12,6 +12,7 @@ from pathlib import Path
 
 import anthropic
 
+from .channel_dna import build_channel_dna_metadata
 from .config import config
 from .prompt_registry import build_prompt_metadata
 
@@ -128,6 +129,7 @@ class VideoContent:
     pexels_search: str = ""   # Konuya özgün Pexels arama terimi
     chart_data: dict = field(default_factory=dict)  # Finansal grafik verisi
     prompt_metadata: dict = field(default_factory=dict)
+    channel_dna_metadata: dict = field(default_factory=dict)
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
     def to_dict(self) -> dict:
@@ -144,6 +146,7 @@ class VideoContent:
             "pexels_search": self.pexels_search,
             "chart_data": self.chart_data,
             "prompt_metadata": self.prompt_metadata,
+            "channel_dna_metadata": self.channel_dna_metadata,
             "created_at": self.created_at,
         }
 
@@ -356,6 +359,23 @@ class ContentGenerator:
             self._persona = None
             self._channel_name = "Para Pusulasi"
 
+        self._channel_dna_overrides = self._extract_channel_dna_overrides(channel_cfg)
+
+    @staticmethod
+    def _extract_channel_dna_overrides(channel_cfg) -> dict:
+        if not channel_cfg:
+            return {}
+        candidate_fields = {
+            "tone": getattr(channel_cfg, "tone", None),
+            "audience": getattr(channel_cfg, "audience", None),
+            "voice_archetype": getattr(channel_cfg, "voice_archetype", None),
+            "evidence_style": getattr(channel_cfg, "evidence_style", None),
+            "forbidden_patterns": getattr(channel_cfg, "forbidden_patterns", None),
+            "signature_structure": getattr(channel_cfg, "signature_structure", None),
+            "channel_dna_version": getattr(channel_cfg, "channel_dna_version", None),
+        }
+        return {key: value for key, value in candidate_fields.items() if value is not None}
+
     def generate_topic_ideas(self, count: int = 10) -> list[str]:
         used = _load_used_titles()
 
@@ -412,6 +432,12 @@ class ContentGenerator:
             # Registry is metadata-only and must never block generation.
             prompt_metadata = {}
 
+        try:
+            channel_dna_metadata = build_channel_dna_metadata(**self._channel_dna_overrides)
+        except Exception:
+            # Channel DNA is metadata-only and must never block generation.
+            channel_dna_metadata = {}
+
         response = self.client.messages.create(
             model=self.model,
             max_tokens=8192,
@@ -449,6 +475,7 @@ class ContentGenerator:
             pexels_search=data.get("pexels_search", ""),
             chart_data=raw_chart or {},
             prompt_metadata=prompt_metadata,
+            channel_dna_metadata=channel_dna_metadata,
         )
         logger.info("Icerik hazir: " + content.title)
         return content

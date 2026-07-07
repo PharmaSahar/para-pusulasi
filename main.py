@@ -73,8 +73,8 @@ def main(once, use_schedule, generate_only, topic, stats, check, privacy):
 
     elif use_schedule:
         console.print("[green]📅 Zamanlayıcı başlatılıyor...[/green]")
-        from src.scheduler import start_scheduler
-        start_scheduler()
+        import scheduler as scheduler_module
+        scheduler_module.main()
 
     else:
         console.print("[yellow]Kullanım için --help seçeneğini deneyin.[/yellow]")

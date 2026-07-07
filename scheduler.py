@@ -46,11 +46,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger("Scheduler")
 
-# VPS CPX22: 2 vCPU ama MoviePy çok RAM yer → 1 paralel render (OOM engeli)
-MAX_PARALLEL_RENDERS = 1
+# Env üzerinden kontrol: default 1
+try:
+    MAX_PARALLEL_RENDERS = max(1, int(os.getenv("MAX_PARALLEL_RENDERS", "1")))
+except ValueError:
+    MAX_PARALLEL_RENDERS = 1
 
 TZ = pytz.timezone("Europe/Istanbul")
 QUEUE_FILE = "output/queue/channel_queue.json"
+QUEUE_LOCK = threading.RLock()
 
 # Thread havuzu
 render_executor = ThreadPoolExecutor(max_workers=MAX_PARALLEL_RENDERS, thread_name_prefix="render")
@@ -60,17 +64,37 @@ render_locks = {}  # Her kanal için kilit — aynı anda iki render başlaması
 # ─── Yardımcı Fonksiyonlar ────────────────────────────────────────────────────
 
 def load_queue() -> dict:
-    Path(QUEUE_FILE).parent.mkdir(parents=True, exist_ok=True)
-    if not Path(QUEUE_FILE).exists():
-        return {}
-    try:
-        return json.loads(Path(QUEUE_FILE).read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    with QUEUE_LOCK:
+        Path(QUEUE_FILE).parent.mkdir(parents=True, exist_ok=True)
+        if not Path(QUEUE_FILE).exists():
+            return {}
+        try:
+            return json.loads(Path(QUEUE_FILE).read_text(encoding="utf-8"))
+        except Exception:
+            return {}
 
 
 def save_queue(data: dict):
-    Path(QUEUE_FILE).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    with QUEUE_LOCK:
+        path = Path(QUEUE_FILE)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        tmp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp_path, path)
+
+
+def update_queue(mutator):
+    with QUEUE_LOCK:
+        path = Path(QUEUE_FILE)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            queue = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        except Exception:
+            queue = {}
+        mutator(queue)
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        tmp_path.write_text(json.dumps(queue, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp_path, path)
 
 
 def get_ready_channels() -> list:
@@ -130,7 +154,7 @@ def render_and_schedule(channel_id: str):
     try:
         from src.scheduler_utils import (
             check_disk_space, cleanup_old_renders, force_cleanup,
-            notify_upload, notify_error, save_used_topic, is_topic_used,
+            notify_upload, notify_error, save_used_topic,
         )
     except ImportError:
         def check_disk_space(**kw): return True
@@ -140,7 +164,6 @@ def render_and_schedule(channel_id: str):
         def notify_upload(*a, **kw): pass
         def notify_error(*a, **kw): pass
         def save_used_topic(*a): pass
-        def is_topic_used(*a): return False
 
     if channel_id not in render_locks:
         render_locks[channel_id] = threading.Lock()
@@ -198,18 +221,18 @@ def render_and_schedule(channel_id: str):
             # Topic deduplication kaydı
             save_used_topic(channel_id, result.get("title", ""))
 
-            # Kuyruk güncelle
-            queue = load_queue()
-            if channel_id not in queue:
-                queue[channel_id] = []
-            queue[channel_id].append({
-                "video_id": result["video_id"],
-                "title": result["title"],
-                "youtube_url": result.get("youtube_url", ""),
-                "publish_at": publish_at,
-                "rendered_at": datetime.now(TZ).isoformat(),
-            })
-            save_queue(queue)
+            # Kuyruk güncelle (thread-safe + atomic)
+            def _append_entry(queue):
+                if channel_id not in queue:
+                    queue[channel_id] = []
+                queue[channel_id].append({
+                    "video_id": result["video_id"],
+                    "title": result["title"],
+                    "youtube_url": result.get("youtube_url", ""),
+                    "publish_at": publish_at,
+                    "rendered_at": datetime.now(TZ).isoformat(),
+                })
+            update_queue(_append_entry)
             logger.info(f"[{cfg.name}] ✅ Zamanlandı: '{result['title'][:50]}' → {publish_at}")
 
             # Telegram bildirimi
@@ -220,12 +243,8 @@ def render_and_schedule(channel_id: str):
                 result.get("short_url", ""),
             )
 
-            # Cross-promotion: diğer kanallar saatler arayla beğensin
-            try:
-                from src.cross_promotion import queue_likes_for_video
-                queue_likes_for_video(result["video_id"], channel_id)
-            except Exception as _cp_e:
-                logger.warning(f"[{cfg.name}] Beğeni sıralama hatası: {_cp_e}")
+            # Güvenli mod: cross-channel like/subscribe devre dışı
+            logger.info(f"[{cfg.name}] Cross-channel like/subscribe devre dışı (safe mode).")
 
             # Büyüme milestone kontrolü
             try:
@@ -259,13 +278,22 @@ def on_upload_time(channel_id: str):
     cfg = get_channel(channel_id)
     logger.info(f"[{cfg.name}] Upload zamanı — YouTube otomatik yayınlıyor.")
 
-    # Kuyruktaki videoyu bul ve Telegram'a bildirim gönder
+    # Kuyruktaki yayınlanan videoyu atomik olarak düşür ve bildir
     try:
         from src.scheduler_utils import send_telegram
-        queue = load_queue()
-        entries = queue.get(channel_id, [])
-        if entries:
-            entry = entries[0]
+        published = {}
+
+        def _pop_published(queue):
+            entries = queue.get(channel_id, [])
+            if entries:
+                published.update(entries.pop(0))
+                if not entries:
+                    queue.pop(channel_id, None)
+
+        update_queue(_pop_published)
+
+        if published:
+            entry = published
             title = entry.get("title", "")
             url = entry.get("youtube_url", "")
             send_telegram(
@@ -371,12 +399,7 @@ def show_status():
 
 def _startup_subscribe_check():
     """Başlangıçta yeni kanalları tespit et, diğer kanallar abone olsun."""
-    try:
-        time.sleep(10)  # Scheduler tam yüklendikten sonra başlat
-        from src.cross_promotion import check_and_subscribe_new_channels
-        check_and_subscribe_new_channels()
-    except Exception as e:
-        logger.warning(f"Abone kontrol hatası: {e}")
+    logger.info("Cross-channel auto-subscribe devre dışı (safe mode).")
 
 
 # ─── Ana Giriş ────────────────────────────────────────────────────────────────
@@ -436,11 +459,7 @@ def maintenance_job():
 
 def process_likes_job():
     """Her 30 dk’da bir: zamanı gelen beğenileri işle."""
-    try:
-        from src.cross_promotion import process_pending_likes
-        process_pending_likes()
-    except Exception as e:
-        logger.warning(f"Beğeni işleme hatası: {e}")
+    logger.info("Cross-channel auto-like devre dışı (safe mode).")
 
 def update_progress_file(last_task: str = "", next_step: str = ""):
     """PROGRESS.md'yi otomatik güncelle — her büyük görev sonunda çağır."""
@@ -489,6 +508,9 @@ def update_progress_file(last_task: str = "", next_step: str = ""):
         logger.info("PROGRESS.md güncellendi")
     except Exception as e:
         logger.warning(f"PROGRESS.md güncellenemedi: {e}")
+
+
+def fill_empty_queues_job():
     """
     Her saatte bir: kanalların tüm yakın slotlarını doldur.
     Günde 2 upload olan kanallar 2 video kuyruğa alır.
@@ -509,9 +531,8 @@ def update_progress_file(last_task: str = "", next_step: str = ""):
                 cfg = get_channel(cid)
                 existing = queue.get(cid, [])
                 occupied = [e.get("publish_at","") for e in existing]
-                needed_slots = len(cfg.upload_times)  # kaç slot/gün varsa o kadar video
+                needed_slots = len(cfg.upload_times)
 
-                # Eksik slot sayısı kadar render başlat
                 to_render = needed_slots - len(existing)
                 for _ in range(to_render):
                     new_time = get_next_upload_time(cfg, skip_occupied=occupied)
@@ -560,9 +581,6 @@ def main():
     # Günlük bakım (gece 03:00)
     schedule.every().day.at("03:00").do(maintenance_job)
 
-    # Her 30 dk bekleyen beğenileri işle
-    schedule.every(30).minutes.do(process_likes_job)
-
     # Her saatte boş kuyruğu olan kanalları doldur (restart güvencesi)
     schedule.every(1).hour.do(fill_empty_queues_job)
 
@@ -572,10 +590,7 @@ def main():
     # Telegram startup bildirimi
     notify_startup(len(ready))
 
-    # Yeni kanallar için abone kontrolü (arka planda)
-    threading.Thread(
-        target=_startup_subscribe_check, daemon=True, name="subscribe-check"
-    ).start()
+    # Cross-channel subscribe/like güvenli modda kapalı
 
     console.print("[green]Çalışıyor. Durdurmak: Ctrl+C[/green]")
     console.print("[dim]Her upload sonrası sonraki video otomatik render edilir.[/dim]\n")

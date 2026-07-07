@@ -49,15 +49,52 @@ def run_full_pipeline(
     audio_path = tts.generate_audio(content.script)
     result["audio_path"] = audio_path
 
-    # ─── ADIM 2.5: Stok Video Klipleri ──────────────────────────────────────────
+    # ─── ADIM 2.5: Stok Video Klipleri + Grafik ──────────────────────────────
     logger.info("Pexels video klipleri indiriliyor...")
     fetcher = ImageFetcher(channel_cfg=cfg)
     from datetime import datetime as _dt
     media_dir = f"{cfg.output_dir}/clips/{_dt.now().strftime('%Y%m%d_%H%M%S')}"
-    pexels_query = getattr(cfg, "pexels_query", None)
-    image_paths = fetcher.fetch_video_clips(
-        content.title, count=4, output_dir=media_dir, query_override=pexels_query
-    )
+
+    # İçerikten gelen özgün Pexels sorgusu varsa kullan, yoksa kanal default'u
+    pexels_query = getattr(content, "pexels_search", None) or getattr(cfg, "pexels_query", None)
+
+    # Storyblocks (premium) varsa önce dene, yoksa Pexels kullan
+    image_paths = []
+    try:
+        from .premium_services import has_storyblocks, fetch_storyblocks_clips
+        if has_storyblocks():
+            image_paths = fetch_storyblocks_clips(
+                pexels_query or content.title, count=4, output_dir=media_dir
+            )
+            if image_paths:
+                logger.info(f"Storyblocks: {len(image_paths)} premium klip")
+    except Exception as e:
+        logger.warning(f"Storyblocks atlandı: {e}")
+
+    if not image_paths:
+        image_paths = fetcher.fetch_video_clips(
+            content.title, count=4, output_dir=media_dir, query_override=pexels_query
+        )
+
+    # Finansal grafik üret — video ortasına (değişken pozisyon) ekle
+    chart_path = None
+    try:
+        from .chart_generator import generate_chart, generate_placeholder_chart
+        chart_data = getattr(content, "chart_data", None)
+        chart_out = f"{media_dir}/chart.png"
+        if chart_data and isinstance(chart_data, dict) and chart_data.get("type"):
+            chart_path = generate_chart(chart_data, chart_out)
+        else:
+            chart_path = generate_placeholder_chart(content.title, chart_out)
+        if chart_path and image_paths:
+            # Grafiği kliplerin ortasına veya 1/3'üne yerleştir (ilk kare değil)
+            insert_pos = max(1, len(image_paths) // 2)
+            image_paths.insert(insert_pos, chart_path)
+            logger.info(f"Grafik pozisyon {insert_pos}'e eklendi: {chart_path}")
+        elif chart_path:
+            image_paths = [chart_path]
+    except Exception as e:
+        logger.warning(f"Grafik oluşturulamadı: {e}")
 
     # ─── ADIM 3: Video Montaji ────────────────────────────────────────────────
     logger.info("=" * 60)
@@ -69,14 +106,23 @@ def run_full_pipeline(
         image_paths=image_paths or None,
         script=content.script,
     )
-    first_img = image_paths[0] if image_paths else None
     # Thumbnail için konuya özel ayrı fotoğraf çek (video klipten farklı)
     try:
-        thumb_bg = fetcher.fetch_thumbnail_photo(content.title)
+        thumb_bg = None
+        # Öncelik: DALL-E 3 (varsa) → Pexels foto → Pexels video frame
+        from .premium_services import has_dalle, generate_dalle_thumbnail
+        if has_dalle():
+            dalle_prompt = getattr(content, "thumbnail_prompt", content.title)
+            dalle_path = f"{cfg.videos_dir}/thumb_dalle_{__import__('uuid').uuid4().hex[:8]}.jpg"
+            thumb_bg = generate_dalle_thumbnail(dalle_prompt, dalle_path)
+            if thumb_bg:
+                logger.info("DALL-E 3 thumbnail kullanılıyor")
         if not thumb_bg:
-            thumb_bg = first_img
+            thumb_bg = fetcher.fetch_thumbnail_photo(content.title)
+        if not thumb_bg:
+            thumb_bg = image_paths[0] if image_paths else None
     except Exception:
-        thumb_bg = first_img
+        thumb_bg = image_paths[0] if image_paths else None
     thumbnail_path = creator.create_thumbnail(content.title, image_path=thumb_bg)
     result["video_path"] = video_path
     result["thumbnail_path"] = thumbnail_path

@@ -372,6 +372,64 @@ git reset --hard f0d6c0e</pre>
   <tr><td>Son 3 kanal render'lanmıyordu</td><td>initial_fill 5s delay + fill_empty_queues_job</td><td>✅ Çözümlü</td></tr>
 </table>
 
+<!-- 16: VERSİYON BİLGİSİ -->
+<h2 id="versions">16. Versiyon Bilgisi</h2>
+<div class="box"><strong>Sorun çıktığında ilk kontrol: sürüm uyumsuzluğu mu?</strong></div>
+<table>
+  <tr><th>Bileşen</th><th>Kontrol Komutu</th><th>Beklenen</th></tr>
+  <tr><td>Python</td><td><code>python3 --version</code></td><td>3.13.x</td></tr>
+  <tr><td>macOS</td><td><code>sw_vers -productVersion</code></td><td>—</td></tr>
+  <tr><td>VS Code</td><td>Help → About</td><td>—</td></tr>
+  <tr><td>MoviePy</td><td><code>pip show moviepy | grep Version</code></td><td>2.x</td></tr>
+  <tr><td>VPS OS</td><td><code>lsb_release -a</code> (VPS'te)</td><td>Ubuntu 22.04</td></tr>
+  <tr><td>Git branch</td><td><code>git branch --show-current</code></td><td>master</td></tr>
+</table>
+
+<!-- 17: DISASTER RECOVERY -->
+<h2 id="disaster">17. Disaster Recovery (Felaket Kurtarma)</h2>
+<div class="alert"><strong>VPS tamamen silinse / bozulsa bu adımları uygula. Yaklaşık 30–45 dakika.</strong></div>
+
+<h3>Mutlaka yedeklenmesi gereken dosyalar:</h3>
+<table>
+  <tr><th>Dosya</th><th>Konum</th><th>Kritiklik</th></tr>
+  <tr><td><code>.env</code></td><td>Mac proje dizini</td><td>🔴 Tüm API anahtarları</td></tr>
+  <tr><td><code>channels/*/youtube_token.pickle</code></td><td>Mac + VPS</td><td>🔴 9 kanal OAuth tokeni</td></tr>
+  <tr><td><code>channels/channel_registry.json</code></td><td>Mac + VPS</td><td>🔴 Kanal listesi</td></tr>
+  <tr><td><code>~/.ssh/hetzner_vps</code></td><td>Mac</td><td>🔴 SSH private key</td></tr>
+  <tr><td><code>PROGRESS.md</code></td><td>Mac</td><td>🟡 Durum kaydı</td></tr>
+  <tr><td>Kaynak kod (<code>src/</code>)</td><td>Mac + Git</td><td>🟢 Git'ten kurtarılabilir</td></tr>
+</table>
+
+<h3>Haftada bir yedek alma (Mac'ten):</h3>
+<pre>cd "/Users/klara/Downloads/adsız klasör"
+zip -r ~/Desktop/parapusulasi_backup_$(date +%Y%m%d).zip \
+    .env channels/channel_registry.json channels/*/youtube_token.pickle PROGRESS.md
+echo "Yedek: ~/Desktop/parapusulasi_backup_$(date +%Y%m%d).zip"</pre>
+
+<h3>Yeni VPS'e geri yükleme sırası:</h3>
+<pre>1.  Hetzner'da yeni sunucu oluştur (Ubuntu 22.04, CPX32)
+2.  SSH key ekle (Hetzner panelinde)
+3.  Kodu VPS'e kopyala:
+      rsync -avz -e "ssh" "/Users/klara/Downloads/adsız klasör/" root@YENİ_IP:/opt/parapusulasi/ \
+        --exclude venv --exclude "output/" --exclude "*.mp4" --exclude "*.mp3"
+4.  VPS'te sanal ortam kur:
+      cd /opt/parapusulasi && python3 -m venv venv
+      source venv/bin/activate && pip install -r requirements.txt
+5.  .env ve tokenları kopyala:
+      scp .env channels/ root@YENİ_IP:/opt/parapusulasi/
+6.  4GB swap ekle:
+      fallocate -l 4G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+7.  Systemd servisi kur:
+      systemctl enable parapusulasi && systemctl start parapusulasi
+8.  Watchdog cron ekle:
+      (crontab -l; echo '*/5 * * * * /opt/parapusulasi/watchdog.sh') | crontab -
+9.  Test: systemctl status parapusulasi</pre>
+
+<div class="green">
+<strong>⚠️ SSH Key'i kaybet = tüm kanallara erişim kaybı.</strong>
+<code>~/.ssh/hetzner_vps</code> dosyasını iCloud / 1Password gibi güvenli bir yere yedekle.
+</div>
+
 <!-- MİMARİ -->
 <h2>Sistem Mimarisi</h2>
 <pre>

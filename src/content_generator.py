@@ -124,6 +124,8 @@ class VideoContent:
     niche: str
     hook: str = ""
     next_video_teaser: str = ""
+    pexels_search: str = ""   # Konuya özgün Pexels arama terimi
+    chart_data: dict = field(default_factory=dict)  # Finansal grafik verisi
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
     def to_dict(self) -> dict:
@@ -137,6 +139,8 @@ class VideoContent:
             "niche": self.niche,
             "hook": self.hook,
             "next_video_teaser": self.next_video_teaser,
+            "pexels_search": self.pexels_search,
+            "chart_data": self.chart_data,
             "created_at": self.created_at,
         }
 
@@ -215,77 +219,121 @@ def _load_trending_context() -> str:
 def _build_content_prompt(topic: str, prev_title: str | None, next_topic_hint: str, content_type: str = "semi_evergreen") -> str:
     year = datetime.now().year
 
-    prev_ref = ""
-    if prev_title:
-        prev_ref = f'Onceki video referansi (30-45 sn arasi): "Gecen haftaki \'{prev_title}\' videomuzda X konusunu islemistik, bu videoyla o konuyu tamamliyoruz."'
+    # SONSUZ ÇEŞİTLİLİK: Sabit şablon değil, parametrik sistem
+    # Her parametre bağımsız rastgele → 10×8×6×5×4 = 9,600 benzersiz kombinasyon
 
-    # İçerik türüne göre talimat
+    openings = [
+        "Korkutucu bir istatistikle başla — izleyicinin aklına kazın",
+        "Gerçek bir Türk vatandaşının 30 saniyeyi geçmeyen şaşırtıcı hikayesi",
+        "Tartışmalı bir soru sor, cevabını videoyu izlemeden veremezler",
+        "Yaygın bir inanışın tamamen yanlış olduğunu iddia et",
+        "En az 3 kişinin bilmediği bir 'insider sırrı' var gibi başla",
+        "Piyasada herkesin yaptığı ama yanlış olan şeyi açıkla",
+        "İzleyiciyi bir seçim yapmaya zorla: 'Şu ikisinden hangisi daha mantıklı?'",
+        "Son 24 saatte yaşanan bir gelişmenin uzun vadeli sonucunu analiz et",
+        "2026'da çoğu insanın yapmadığı ama yapması gereken şeyi söyle",
+        "Bir komplo teorisi gibi başla, sonra verilerle çürüt veya doğrula",
+    ]
+
+    narrative_styles = [
+        "BİLİM + HİKAYE: Araştırma bulgusu + Türkiye'den gerçek örnek",
+        "KARŞILAŞTIRMA: İki farklı stratejiyi yan yana koy, verilerle değerlendir",
+        "ZAMAN YOLCULUĞU: 5 yıl önce yapılsaydı ne olurdu, şimdi ne olacak?",
+        "UZMAN YANILIYOR: Yaygın tavsiyenin neden işe yaramadığını göster",
+        "VAKA ANALİZİ: Gerçek bir yatırımcının kararlarını adım adım incele",
+        "KARŞI GÖRÜŞ: En çok savunulan fikri sorgula, alternatif sun",
+        "SAYILARLA KONUŞ: Her iddiayı somut TL rakamıyla destekle",
+        "SENARYOLAR: 3 farklı karar, 10 yıl sonra üçünün de sonucunu göster",
+    ]
+
+    evidence_types = [
+        "Türkiye İstatistik Kurumu + BDDK verileri ağırlıklı",
+        "Başarı + başarısızlık hikayelerini karşılaştırmalı kullan",
+        "Matematiksel hesaplama: 'Şöyle hesaplarsak...' formatı",
+        "Uluslararası karşılaştırma: 'Almanya'da böyle, Türkiye'de şöyle'",
+        "Tarihsel veri: 'Son 10 yılda şu yaşandı, şimdi...'",
+        "Uzman görüşü: Gerçek isimleri al, alıntı yap",
+    ]
+
+    emotional_angles = [
+        "FIRSATÇILIK: 'Şu an yapamayanlar 5 yıl pişman olacak'",
+        "KORUMA: 'Birikimlerinizi şu tehlike yiyor, bunu durdurun'",
+        "MERAK: 'Zenginlerin bilip paylaşmadığı bilgi' çekimi",
+        "İLHAM: 'Sıradan bir Türk vatandaşı bunu yaparak...'",
+        "ÖFKE: 'Sistem sizi kandırıyor ama bunu yaparsan kurtulursun'",
+    ]
+
+    pacing_styles = [
+        "HIZLI: Kısa cümleler, sık geçişler, enerji yüksek",
+        "ANALİTİK: Her iddianın arkasında kaynak, yavaş ama derin",
+        "SAMİMİ SOHBET: Arkadaşla konuşur gibi, samimi, espri var",
+        "HABERDAR: Gazeteci tonu, olayları aktarır, yorumlar",
+    ]
+
+    # Her çalıştırmada farklı kombinasyon
+    chosen = {
+        "opening": random.choice(openings),
+        "narrative": random.choice(narrative_styles),
+        "evidence": random.choice(evidence_types),
+        "emotion": random.choice(emotional_angles),
+        "pacing": random.choice(pacing_styles),
+    }
+
     type_instruction = {
-        "evergreen": """ICERIK TURU: EVERGREEN (Kalici)
-- Bu video 3-5 yil boyunca aranacak - zamansiz bilgi ver
-- Spesifik tarih veya gecici rakamlardan kac
-- Temel kavramlar, adim adim rehber, pratik egitim
-- Ornek: 'Borsa nasil ogrenilir' - her zaman gecerli""",
-        "semi_evergreen": """ICERIK TURU: SEMI-EVERGREEN (1-2 yil gecerli)
-- 2026 verilerini kullan ama zaman icinde guncellenebilir
-- Hem egitici hem guncel - rakamlar 2026 icin dogru olmali
-- Ornek: '2026 BIST firsatlari' - yıllık guncelleme gerekir""",
-        "trending": """ICERIK TURU: TRENDING (Gundem)
-- Bu hafta/bu ay gundemde olan konuyu ele al
-- Hizli, net, guncel - izleyici haber bekliyor
-- Ornek: 'Dun aciklanan faiz karari ne anlama geliyor'
-- Uzun vadeli degil, ani tepki ve yorum odakli""",
+        "evergreen": "Tarih veya geçici rakam KULLANMA — video 2-3 yıl boyunca değerini korusun.",
+        "semi_evergreen": f"2026 verilerini kullan ama temel bilgiler zamansız olsun.",
+        "trending": f"Bu hafta gündemde olan meseleyi yorumla — hız ve güncellik öncelikli.",
     }.get(content_type, "")
 
-    return f"""Para Pusulasi YouTube kanali icin asagidaki konu hakkinda PROFESYONEL video icerigi uret.
+    return f"""Türk finans YouTube kanalı için TAMAMEN ORİJİNAL, YAPAY HİSSETTİRMEYEN senaryo yaz.
 
 KONU: {topic}
 YIL: {year}
-{type_instruction}
-KANAL PERSONA: {CHANNEL_PERSONA[:500]}
+İÇERİK TÜRÜ: {type_instruction}
 
-PSiKOLOJiK HOOK SiSTEMi (ZORUNLU):
-- 0-5sn: Sok edici istatistik/soru ("Turkiye'de her X kisiden Y'si bunu bilmiyor")
-- 2.dk: Pattern interrupt - konu geçisi, farkli acı
-- 5.dk: Open loop - "Bu videonun 8.dakikasinda cok onemli bir sey soyliyecegim"
-- 8.dk: Open loop'u kapat
-- Kayip korkusu (FOMO): "Bu bilgiyi bilmeyenler para kaybediyor"
-- Sosyal kanit: "Izleyicilerimizden Mehmet bu stratejiyle X kazandi"
+BU VİDEO İÇİN SEÇILEN YARATICI PARAMETRELER:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎬 AÇILIŞ STİLİ: {chosen["opening"]}
+📖 ANLATIM YAKLAŞIMI: {chosen["narrative"]}
+📊 KANIT TÜRÜ: {chosen["evidence"]}
+💡 DUYGUSAL AÇI: {chosen["emotion"]}
+⚡ TEMPO: {chosen["pacing"]}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-iCERiK FORMAT ONCELiKLENDiRME (icerik turune gore sec):
-- Eger {content_type} == evergreen: "Sifirdan Baslayanlar icin Tam Rehber" formatı
-- Eger {content_type} == trending: "Son Dakika/Gundem" + hizli yorumlama
-- Eger topic 'vs' iceriyorsa: Karsilastirma tablosu ekle
-- Eger topic 'hata' iceriyorsa: Numurali liste + her hatanin sonucu
+Bu parametreler bu video için özel tasarlandı. Başka video gibi OLMAMALI.
+Yapıyı kendin oluştur — senaryo akışı bu parametrelerin kombinasyonundan doğsun.
 
-ZORUNLU VIDEO YAPISI:
-1. HOOK (0-30 sn): Sok edici istatistik veya soru - izleyiciyi ANINDA yakala
-2. GIRIS ({prev_ref or "Kanali ve bu videoyu tanit"})
-3. BOLUM 1: Temel kavramlar - herkes anlayabilmeli, gorselle anlat
-4. BOLUM 2: Gercek Turkiye verileri ve hesaplamalar (somut TL rakamlari)
-5. BOLUM 3: Adim adim uygulama rehberi
-6. BOLUM 4: Sik yapilan hatalar ve nasil kacinirilir
-7. SONUC: Ozet + "{next_topic_hint}" konusunu bir sonraki videoda ele alacagimizi duyur
-8. CTA: Abone ol, bildirimi ac, yorumda kendi deneyimini paylasmasini iste
+KESİNLİKLE YASAKLANAN İFADELER:
+✗ "Ekranda gördüğünüz gibi..." (görsel yok, ses-odaklı içerik)
+✗ "Grafikte de görüldüğü üzere..." (grafik yok)
+✗ "Bu videonun X. dakikasında..." (yapay zaman referansı)
+✗ "Geçen haftaki videomuzda işlemiştik..." (her video bağımsız)
+✗ "Bir önceki videodan hatırlayacağınız..." (yapmacık)
+✗ "Merhaba sevgili izleyiciler..." (robotik)
+✗ "Bugünkü konumuz şu..." (sıkıcı standart)
+✗ "Videoyu izlemeye devam ederseniz..." (izleyiciyi kaçırır)
 
-BASLIK KURALLARI:
-- 60 karakterin altinda
-- Somut rakam + guclu eylem sozcugu
-- Merak veya kayip korkusu yaratsin
-- 2026 yilini ekle
+DOĞAL TÜRK FİNANS YOUTUBER'I TONU:
+• Samimi, konuşma dili ama bilgi dolu
+• "Bak sana şunu söyleyeyim..." "Şimdi düşün bir..." gibi geçişler
+• Rakamları net ver: "Yani ayda 7.500 TL — yılda 90.000 TL"
+• Türkiye gerçekliğini yansıt: enflasyon, kira, maaş baskısı
+• İzleyicinin hayatına dokunan anlar yarat
 
-TANIM ORNEKLERI icin asagidaki JSON formatini doldur.
-Sadece JSON dondur, baska hicbir sey yazma:
+Sadece JSON döndür:
 
 {{
-  "title": "Viral baslik (60 kar altı, {year}, ANA ANAHTAR KELIMEYI ICERMELI - borsa/yatirim/faiz/kripto gibi)",
-  "hook": "Videonun ilk 30 saniyesinde soylenen sok edici cumleler (2-3 cumle)",
-  "description": "TUBEBUDDY SEO KURALLARI:\\n1. Ilk paragrafta baslik kelimelerini aynen kullan\\n2. Her paragrafta anahtar kelimeler dogal sekilde gecmeli\\n3. 5 paragraf, toplam 300+ kelime\\n4. Son paragraf CTA (abone ol, bildirim ac)\\n{year} guncelligi olan veriler. ONEMLI: Baslik hangi kelimelerle basliyor, aciklama da o kelimelerle baslasin.",
-  "tags": ["etiket1", "etiket2", "en az 20 guncel etiket"],
-  "script": "TAM SENARYO:\\n\\n## HOOK (0-30 sn)\\n[Sok edici acilis]\\n\\n## GIRIS (30-60 sn)\\n[{prev_ref or 'Kanal tanıtımı'}]\\n\\n## BOLUM 1: TEMEL KAVRAMLAR (2-4 dk)\\n[Basit anlatim, herkes anlayabilmeli]\\n\\n## BOLUM 2: GERCEK RAKAMLAR ve HESAPLAMALAR (4-7 dk)\\n[Somut Turkiye verileri, 5.000-250.000 TL aralik]\\n\\n## BOLUM 3: ADIM ADIM REHBER (7-10 dk)\\n[Pratik uygulama]\\n\\n## BOLUM 4: HATALAR ve UYARILAR (10-11 dk)\\n[En sik yapilan 3 hata]\\n\\n## SONUC ve GELECEK VIDEO (11-12 dk)\\n[Ozet + {next_topic_hint} duyurusu]\\n\\n## CTA\\n[Abone, bildirim, yorum cagrisı]",
-  "next_video_teaser": "Bir sonraki videoda '{next_topic_hint}' konusunu ele alacagiz - bir cumlelik merak uyandirici tanitim",
-  "thumbnail_prompt": "Professional YouTube thumbnail: [konuyla ilgili guclu Ingilizce gorsel aciklamasi], bold text overlay, high contrast colors, professional finance YouTube style, 16:9 aspect ratio",
+  "title": "60 karakter altı, özgün, {year} içeren viral başlık",
+  "hook": "İlk 30 saniye — seçilen açılış stiline göre özgün, şaşırtıcı (görsel referans YASAK)",
+  "description": "SEO açıklaması: 5 paragraf, 300+ kelime, başlık keywordlerini içersin",
+  "tags": ["minimum 20 Türkçe/İngilizce etiket"],
+  "script": "TAM SENARYO (2000+ kelime) — seçilen parametrelere göre ÖZGÜN yapı. Klişe bölüm başlıkları KULLANMA.",
+  "next_video_teaser": "Bir cümle merak bırak: '{next_topic_hint}'",
+  "thumbnail_prompt": "Konuya ÖZGÜN İngilizce görsel: [spesifik, canlı, dramatik sahne] — 'business finance' gibi genel terimler KULLANMA",
+  "pexels_search": "Bu videonun KONUSUNA ÖZGÜ 3-5 kelimelik İngilizce Pexels arama terimi (örn: 'crypto trader phone night city' veya 'retirement couple beach sunset happy')",
+  "chart_data": "Varsa bu videoda gösterilebilecek 1 finansal veri seti (JSON formatında): {{'type': 'bar|line|pie', 'title': 'Grafik başlığı', 'data': {{'labels': [...], 'values': [...]}}}}, yoksa null",
   "category_id": "27"
+}}
 }}"""
 
 
@@ -371,6 +419,14 @@ class ContentGenerator:
             raw = "\n".join(lines[1:end])
 
         data = json.loads(raw)
+        # chart_data string veya dict olabilir — parse et
+        raw_chart = data.get("chart_data")
+        if isinstance(raw_chart, str):
+            try:
+                raw_chart = json.loads(raw_chart)
+            except Exception:
+                raw_chart = {}
+
         content = VideoContent(
             title=data["title"],
             description=data["description"],
@@ -381,6 +437,8 @@ class ContentGenerator:
             niche=self.niche,
             hook=data.get("hook", ""),
             next_video_teaser=data.get("next_video_teaser", ""),
+            pexels_search=data.get("pexels_search", ""),
+            chart_data=raw_chart or {},
         )
         logger.info("Icerik hazir: " + content.title)
         return content

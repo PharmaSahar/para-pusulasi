@@ -37,6 +37,16 @@ def run_full_pipeline(
     result["content_id"] = generate_content_id()
     result["run_id"] = generate_run_id()
 
+    telemetry_metadata = {
+        "experiment_id": os.getenv("EXPERIMENT_ID"),
+        "experiment_group": os.getenv("EXPERIMENT_GROUP"),
+        "prompt_version": getattr(cfg, "prompt_version", None) or os.getenv("PROMPT_VERSION"),
+        "channel_dna_version": getattr(cfg, "channel_dna_version", None) or os.getenv("CHANNEL_DNA_VERSION"),
+        "thumbnail_strategy": getattr(cfg, "thumbnail_strategy", None) or os.getenv("THUMBNAIL_STRATEGY"),
+        "tts_strategy": getattr(cfg, "tts_strategy", None) or os.getenv("TTS_STRATEGY"),
+        "model_version": os.getenv("MODEL_VERSION"),
+    }
+
     def _emit(stage: str, event_type: str, payload: dict | None = None):
         try:
             envelope = build_event_envelope(
@@ -46,6 +56,13 @@ def run_full_pipeline(
                 stage=stage,
                 event_type=event_type,
                 payload=payload or {},
+                experiment_id=telemetry_metadata.get("experiment_id"),
+                experiment_group=telemetry_metadata.get("experiment_group"),
+                prompt_version=telemetry_metadata.get("prompt_version"),
+                channel_dna_version=telemetry_metadata.get("channel_dna_version"),
+                thumbnail_strategy=telemetry_metadata.get("thumbnail_strategy"),
+                tts_strategy=telemetry_metadata.get("tts_strategy"),
+                model_version=telemetry_metadata.get("model_version"),
             )
             emit_event(envelope, logger=logger)
         except Exception:
@@ -79,6 +96,7 @@ def run_full_pipeline(
         complete_payload_fn=lambda: {"title": result.get("title", "")[:120]},
     ):
         generator = ContentGenerator(channel_cfg=cfg)
+        telemetry_metadata["model_version"] = telemetry_metadata.get("model_version") or getattr(generator, "model", None)
         content: VideoContent = generator.generate_and_save(topic)
         result["title"] = content.title
         result["script_path"] = f"{cfg.scripts_dir}/{content.created_at[:10]}_{content.title[:30]}.json"

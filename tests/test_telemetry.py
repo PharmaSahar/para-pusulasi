@@ -45,8 +45,20 @@ def test_event_envelope_schema_required_and_optional_fields():
     }
     assert required.issubset(set(event.keys()))
     assert "experiment_id" in event
+    assert "experiment_group" in event
+    assert "prompt_version" in event
+    assert "channel_dna_version" in event
+    assert "thumbnail_strategy" in event
+    assert "tts_strategy" in event
+    assert "model_version" in event
     assert "asset_id" in event
     assert event["experiment_id"] is None
+    assert event["experiment_group"] is None
+    assert event["prompt_version"] is None
+    assert event["channel_dna_version"] is None
+    assert event["thumbnail_strategy"] is None
+    assert event["tts_strategy"] is None
+    assert event["model_version"] is None
     assert event["asset_id"] is None
 
 
@@ -84,13 +96,17 @@ def test_pipeline_emits_stage_events_and_ids(monkeypatch):
         output_dir = "/tmp"
         scripts_dir = "/tmp"
         videos_dir = "/tmp"
+        prompt_version = "prompt-v1"
+        channel_dna_version = "dna-v2"
+        thumbnail_strategy = "thumb-a"
+        tts_strategy = "tts-edge"
 
         def ensure_directories(self):
             return None
 
     class FakeGenerator:
         def __init__(self, channel_cfg=None):
-            pass
+            self.model = "fake-model"
 
         def generate_and_save(self, topic):
             return FakeContent()
@@ -150,6 +166,13 @@ def test_pipeline_emits_stage_events_and_ids(monkeypatch):
     assert ("tts", "stage_completed") in event_types
     assert ("upload", "stage_started") in event_types
     assert ("upload", "stage_completed") in event_types
+
+    sample = events[0]
+    assert sample["prompt_version"] == "prompt-v1"
+    assert sample["channel_dna_version"] == "dna-v2"
+    assert sample["thumbnail_strategy"] == "thumb-a"
+    assert sample["tts_strategy"] == "tts-edge"
+    assert any(e.get("model_version") == "fake-model" for e in events)
 
 
 def test_pipeline_stage_failed_event_emitted(monkeypatch):

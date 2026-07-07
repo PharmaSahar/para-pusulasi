@@ -1,0 +1,5154 @@
+{
+  "channels": {
+    "para_pusulasi": {
+      "name": "Para Pusulasi",
+      "slogan": "Paranizi Calistirin!",
+      "niche": "kisisel_finans",
+      "language": "tr",
+      "category_id": "27",
+      "upload_times": [
+        "08:00",
+        "20:00"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        15,
+        25,
+        60
+      ],
+      "pexels_query": "personal finance money investment savings Turkey",
+      "persona": "Turkiye'nin en buyuk kisisel finans kanali. Birikim, yatirim, butce yonetimi, BIST, emeklilik.",
+      "topics": [
+        "yatirim",
+        "birikim",
+        "borsa",
+        "emeklilik",
+        "butce",
+        "tasarruf",
+        "faiz",
+        "enflasyon"
+      ],
+      "channel_id": "para_pusulasi",
+      "tagline": "Finans & Yatırım Rehberi",
+      "status": "active",
+      "youtube_channel_id": "UC6tU7UqYylfSA75pj3rEY_Q",
+      "elevenlabs_voice_id": "7VqWGAWwo2HMrylfKrcm",
+      "elevenlabs_enabled": true
+    },
+    "borsa_akademi": {
+      "name": "Borsa Akademi",
+      "slogan": "BIST'te Kazanmanin Yolu!",
+      "niche": "borsa",
+      "language": "tr",
+      "category_id": "27",
+      "upload_times": [
+        "08:30",
+        "20:30"
+      ],
+      "color_primary": [
+        0,
+        200,
+        100
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "stock market trading charts bull market",
+      "persona": "Turkiye borsasi BIST uzerine uzmanlasmis kanal. Hisse analizi, teknik analiz, temel analiz, temettü.",
+      "topics": [
+        "BIST",
+        "hisse",
+        "temettü",
+        "teknik analiz",
+        "portfoy",
+        "borsada kazanmak"
+      ],
+      "channel_id": "borsa_akademi",
+      "tagline": "Hisse & Borsa Rehberi",
+      "status": "active",
+      "youtube_channel_id": "UCwQERXHCUOngXXTnJ9goBSQ",
+      "elevenlabs_voice_id": "ctoYieZ4J7WwcdhujpMq",
+      "elevenlabs_enabled": true
+    },
+    "kripto_rehber": {
+      "name": "Kripto Rehber",
+      "slogan": "Kriptoda Kaybolma!",
+      "niche": "kripto",
+      "language": "tr",
+      "category_id": "27",
+      "upload_times": [
+        "09:00",
+        "21:00"
+      ],
+      "color_primary": [
+        247,
+        147,
+        26
+      ],
+      "color_bg": [
+        20,
+        15,
+        40
+      ],
+      "pexels_query": "cryptocurrency bitcoin blockchain digital currency",
+      "persona": "Turkiye'nin en guvenilir kripto para kanali. Bitcoin, Ethereum, altcoinler, DeFi, NFT, Web3.",
+      "topics": [
+        "bitcoin",
+        "ethereum",
+        "kripto",
+        "DeFi",
+        "altcoin",
+        "Web3",
+        "blockchain"
+      ],
+      "channel_id": "kripto_rehber",
+      "tagline": "Bitcoin & Kripto Para Rehberi",
+      "status": "active",
+      "youtube_channel_id": "UCyFK7LdIPM01fAf3f0W2x9Q",
+      "elevenlabs_voice_id": "D1xRw7f8ZHedI7xJgfvz",
+      "elevenlabs_enabled": false
+    },
+    "kariyer_pusulasi": {
+      "name": "Kariyer Pusulasi",
+      "slogan": "Kariyerinde Bir Adim One Gec!",
+      "niche": "kariyer",
+      "language": "tr",
+      "category_id": "22",
+      "upload_times": [
+        "09:30",
+        "21:30"
+      ],
+      "color_primary": [
+        65,
+        145,
+        255
+      ],
+      "color_bg": [
+        10,
+        20,
+        50
+      ],
+      "pexels_query": "career business professional office success",
+      "persona": "Kariyer gelisimi, is hayati, maas muzakereleri, remote calisma, LinkedIn ve freelance.",
+      "topics": [
+        "kariyer",
+        "maas",
+        "is hayati",
+        "freelance",
+        "remote",
+        "LinkedIn",
+        "girisim"
+      ],
+      "channel_id": "kariyer_pusulasi",
+      "tagline": "Kariyer & Maaş Rehberi",
+      "status": "active",
+      "youtube_channel_id": "UC-LxyfIrfqWDfFCzJLVBwEg",
+      "elevenlabs_voice_id": "PdYVUd1CAGSXsTvZZTNn",
+      "elevenlabs_enabled": false
+    },
+    "girisim_okulu": {
+      "name": "Girisim Okulu",
+      "slogan": "Kendi Isinin Patronu Ol!",
+      "niche": "girisimcilik",
+      "language": "tr",
+      "category_id": "27",
+      "upload_times": [
+        "10:00",
+        "22:00"
+      ],
+      "color_primary": [
+        255,
+        80,
+        80
+      ],
+      "color_bg": [
+        40,
+        10,
+        10
+      ],
+      "pexels_query": "startup entrepreneur business success",
+      "persona": "Girisimcilik, startup kurmak, e-ticaret, pazarlama, serbest calisma ve pasif gelir.",
+      "topics": [
+        "startup",
+        "girisim",
+        "e-ticaret",
+        "pazarlama",
+        "pasif gelir",
+        "kendi isi"
+      ],
+      "youtube_channel_id": "UCvfuE893JTeSJx72j3eq3hQ",
+      "status": "active",
+      "elevenlabs_voice_id": "IuRRIAcbQK5AQk1XevPj",
+      "elevenlabs_enabled": false
+    },
+    "saglik_pusulasi": {
+      "name": "Saglik Pusulasi",
+      "slogan": "Saglikli Yasamin Rehberi!",
+      "niche": "saglik",
+      "language": "tr",
+      "category_id": "26",
+      "upload_times": [
+        "10:30",
+        "22:30"
+      ],
+      "color_primary": [
+        50,
+        205,
+        130
+      ],
+      "color_bg": [
+        10,
+        35,
+        25
+      ],
+      "pexels_query": "health fitness wellness nutrition",
+      "persona": "Saglikli yasam, beslenme, spor, psikoloji ve uzun yasam icin pratik bilgiler.",
+      "topics": [
+        "saglik",
+        "beslenme",
+        "spor",
+        "diyet",
+        "psikoloji",
+        "uyku",
+        "stres"
+      ],
+      "channel_id": "saglik_pusulasi",
+      "tagline": "Sağlık & Wellness Rehberi",
+      "status": "active",
+      "youtube_channel_id": "UCFgiTIusu01pgxviXU33jBQ",
+      "elevenlabs_voice_id": "mBUB5zYuPwfVE6DTcEjf",
+      "elevenlabs_enabled": false
+    },
+    "teknoloji_pusulasi": {
+      "name": "Teknoloji Pusulasi",
+      "slogan": "Teknolojiyle Geleceği Yakala!",
+      "niche": "teknoloji",
+      "language": "tr",
+      "category_id": "28",
+      "upload_times": [
+        "11:00",
+        "23:00"
+      ],
+      "color_primary": [
+        100,
+        200,
+        255
+      ],
+      "color_bg": [
+        5,
+        15,
+        40
+      ],
+      "pexels_query": "technology artificial intelligence digital",
+      "persona": "Yapay zeka, yazilim, gadgetlar, dijital araclar ve teknoloji kariyeri.",
+      "topics": [
+        "yapay zeka",
+        "AI",
+        "yazilim",
+        "teknoloji",
+        "ChatGPT",
+        "otomasyon",
+        "dijital"
+      ],
+      "channel_id": "teknoloji_pusulasi",
+      "tagline": "Teknoloji & Yapay Zeka",
+      "status": "active",
+      "youtube_channel_id": "UCZgzLieTfwq6_euBi1nEsrQ",
+      "elevenlabs_voice_id": "D1xRw7f8ZHedI7xJgfvz",
+      "elevenlabs_enabled": false
+    },
+    "egitim_rehberi": {
+      "name": "Egitim Rehberi",
+      "slogan": "Ogrenmenin Siniri Yok!",
+      "niche": "egitim",
+      "language": "tr",
+      "category_id": "27",
+      "upload_times": [
+        "11:30",
+        "23:30"
+      ],
+      "color_primary": [
+        255,
+        165,
+        0
+      ],
+      "color_bg": [
+        35,
+        25,
+        5
+      ],
+      "pexels_query": "education learning study books",
+      "persona": "Kisisel gelisim, ogrenme teknikleri, hafiza, verimlilik, hedef belirleme ve motivasyon.",
+      "topics": [
+        "ogrenme",
+        "verimlilik",
+        "hafiza",
+        "hedef",
+        "motivasyon",
+        "kitap",
+        "egitim"
+      ],
+      "channel_id": "egitim_rehberi",
+      "tagline": "Online Eğitim & Kişisel Gelişim",
+      "status": "active",
+      "youtube_channel_id": "UCVmjUlrK8L5rA-To5iGDbIw",
+      "elevenlabs_voice_id": "KbaseEXyT9EE0CQLEfbB",
+      "elevenlabs_enabled": false
+    },
+    "gayrimenkul_tv": {
+      "name": "Gayrimenkul TV",
+      "slogan": "Tasinmazda Akilli Yatirim!",
+      "niche": "gayrimenkul",
+      "language": "tr",
+      "category_id": "27",
+      "upload_times": [
+        "12:00",
+        "00:00"
+      ],
+      "color_primary": [
+        180,
+        130,
+        80
+      ],
+      "color_bg": [
+        30,
+        20,
+        10
+      ],
+      "pexels_query": "real estate property house investment",
+      "persona": "Turkiye'de gayrimenkul yatirimi, kira geliri, konut alim satim ve emlak piyasasi.",
+      "topics": [
+        "gayrimenkul",
+        "konut",
+        "kira",
+        "emlak",
+        "tasinmaz",
+        "daire",
+        "arsa"
+      ],
+      "channel_id": "gayrimenkul_tv",
+      "tagline": "Gayrimenkul Yatırım Rehberi",
+      "status": "active",
+      "youtube_channel_id": "UCIAevq41ewEZORIZ7ODMOoA",
+      "elevenlabs_voice_id": "j82ax9yhzfYwq9lDvRWL",
+      "elevenlabs_enabled": false
+    },
+    "psikoloji_okulu": {
+      "name": "Psikoloji Okulu",
+      "slogan": "Zihnini Guclendir!",
+      "niche": "psikoloji",
+      "language": "tr",
+      "category_id": "26",
+      "upload_times": [
+        "12:30",
+        "00:30"
+      ],
+      "color_primary": [
+        180,
+        100,
+        220
+      ],
+      "color_bg": [
+        25,
+        10,
+        40
+      ],
+      "pexels_query": "psychology mind mental health meditation",
+      "persona": "Psikoloji, zihin sagligi, iliskiler, stres yonetimi, ozguven ve mutluluk bilimi.",
+      "topics": [
+        "psikoloji",
+        "zihin",
+        "stres",
+        "ozguven",
+        "iliskiler",
+        "mutluluk",
+        "meditasyon"
+      ],
+      "channel_id": "psikoloji_okulu",
+      "tagline": "Psikoloji & Kişisel Gelişim",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "para_kocu": {
+      "channel_id": "para_kocu",
+      "name": "Para Koçu",
+      "niche": "kisisel_finans",
+      "language": "tr",
+      "slogan": "Finansal Özgürlüğe Giden Yol",
+      "tagline": "Birikim & Yatırım Koçu",
+      "upload_times": [
+        "08:15",
+        "20:15"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "financial freedom savings goals success",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "zenginlik_pusulasi": {
+      "channel_id": "zenginlik_pusulasi",
+      "name": "Zenginlik Pusulası",
+      "niche": "kisisel_finans",
+      "language": "tr",
+      "slogan": "Servet İnşa Et",
+      "tagline": "Servet & Emeklilik Planlaması",
+      "upload_times": [
+        "08:30",
+        "20:30"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "wealth building investment passive income",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "butce_ustasi": {
+      "channel_id": "butce_ustasi",
+      "name": "Bütçe Ustası",
+      "niche": "kisisel_finans",
+      "language": "tr",
+      "slogan": "Her Kuruşu Değerlendir",
+      "tagline": "Bütçe & Tasarruf Uzmanı",
+      "upload_times": [
+        "08:45",
+        "20:45"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "budget planning savings frugal living",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "bist_analiz": {
+      "channel_id": "bist_analiz",
+      "name": "BIST Analiz",
+      "niche": "borsa",
+      "language": "tr",
+      "slogan": "Teknik Analiz ile Kazan",
+      "tagline": "BIST 100 Teknik Analiz",
+      "upload_times": [
+        "09:15",
+        "21:15"
+      ],
+      "color_primary": [
+        16,
+        185,
+        129
+      ],
+      "color_bg": [
+        5,
+        20,
+        15
+      ],
+      "pexels_query": "stock chart technical analysis trading",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "temetu_akademi": {
+      "channel_id": "temetu_akademi",
+      "name": "Temettü Akademi",
+      "niche": "borsa",
+      "language": "tr",
+      "slogan": "Temettüyle Pasif Gelir",
+      "tagline": "Temettü Yatırımı Rehberi",
+      "upload_times": [
+        "09:30",
+        "21:30"
+      ],
+      "color_primary": [
+        245,
+        158,
+        11
+      ],
+      "color_bg": [
+        20,
+        15,
+        5
+      ],
+      "pexels_query": "dividend stocks passive income investment",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "hisse_radar": {
+      "channel_id": "hisse_radar",
+      "name": "Hisse Radar",
+      "niche": "borsa",
+      "language": "tr",
+      "slogan": "Doğru Hisseyi Bul",
+      "tagline": "Hisse Analizi & Tarama",
+      "upload_times": [
+        "09:45",
+        "21:45"
+      ],
+      "color_primary": [
+        168,
+        85,
+        247
+      ],
+      "color_bg": [
+        20,
+        10,
+        30
+      ],
+      "pexels_query": "stock trading financial analysis market research",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "bitcoin_akademi": {
+      "channel_id": "bitcoin_akademi",
+      "name": "Bitcoin Akademi",
+      "niche": "kripto",
+      "language": "tr",
+      "slogan": "Bitcoin'in Gücünü Keşfet",
+      "tagline": "Bitcoin & Blockchain Eğitimi",
+      "upload_times": [
+        "10:15",
+        "22:15"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        12,
+        0
+      ],
+      "pexels_query": "bitcoin cryptocurrency trading investment",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "altcoin_radar": {
+      "channel_id": "altcoin_radar",
+      "name": "Altcoin Radar",
+      "niche": "kripto",
+      "language": "tr",
+      "slogan": "100x Altcoin Ara",
+      "tagline": "Altcoin Analizi & Haberleri",
+      "upload_times": [
+        "10:30",
+        "22:30"
+      ],
+      "color_primary": [
+        6,
+        182,
+        212
+      ],
+      "color_bg": [
+        5,
+        20,
+        25
+      ],
+      "pexels_query": "cryptocurrency altcoin trading blockchain",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "web3_pusulasi": {
+      "channel_id": "web3_pusulasi",
+      "name": "Web3 Pusulası",
+      "niche": "kripto",
+      "language": "tr",
+      "slogan": "Web3 & NFT Dünyasına Gir",
+      "tagline": "Web3, NFT & Metaverse",
+      "upload_times": [
+        "10:45",
+        "22:45"
+      ],
+      "color_primary": [
+        139,
+        92,
+        246
+      ],
+      "color_bg": [
+        15,
+        5,
+        30
+      ],
+      "pexels_query": "web3 nft digital art blockchain technology",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "maas_kocu": {
+      "channel_id": "maas_kocu",
+      "name": "Maaş Koçu",
+      "niche": "kariyer",
+      "language": "tr",
+      "slogan": "Maaşını 2 Katına Çıkar",
+      "tagline": "Maaş Müzakeresi & İş Hayatı",
+      "upload_times": [
+        "11:15",
+        "23:15"
+      ],
+      "color_primary": [
+        20,
+        184,
+        166
+      ],
+      "color_bg": [
+        5,
+        20,
+        18
+      ],
+      "pexels_query": "salary negotiation career promotion success",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "girisimci_akademi": {
+      "channel_id": "girisimci_akademi",
+      "name": "Girişimci Akademi",
+      "niche": "girisim",
+      "language": "tr",
+      "slogan": "Kendi İşini Kur!",
+      "tagline": "Girişimcilik & Startup Rehberi",
+      "upload_times": [
+        "11:30",
+        "23:30"
+      ],
+      "color_primary": [
+        234,
+        88,
+        12
+      ],
+      "color_bg": [
+        20,
+        10,
+        5
+      ],
+      "pexels_query": "startup entrepreneur business innovation office",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "freelance_pusulasi": {
+      "channel_id": "freelance_pusulasi",
+      "name": "Freelance Pusulası",
+      "niche": "kariyer",
+      "language": "tr",
+      "slogan": "Uzaktan Çalış, Özgür Ol!",
+      "tagline": "Freelance & Uzaktan Çalışma",
+      "upload_times": [
+        "11:45",
+        "23:45"
+      ],
+      "color_primary": [
+        16,
+        185,
+        129
+      ],
+      "color_bg": [
+        5,
+        20,
+        15
+      ],
+      "pexels_query": "freelance remote work laptop digital nomad",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "konut_rehberi": {
+      "channel_id": "konut_rehberi",
+      "name": "Konut Rehberi",
+      "niche": "gayrimenkul",
+      "language": "tr",
+      "slogan": "Doğru Evi Doğru Fiyata Al",
+      "tagline": "Ev Alma & Satma Rehberi",
+      "upload_times": [
+        "12:15",
+        "00:15"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        30
+      ],
+      "pexels_query": "house buying real estate mortgage property",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "finance_compass_en": {
+      "channel_id": "finance_compass_en",
+      "name": "Finance Compass",
+      "niche": "kisisel_finans",
+      "language": "en",
+      "slogan": "Navigate Your Financial Future",
+      "tagline": "Personal Finance & Investment",
+      "upload_times": [
+        "14:00",
+        "02:00"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "stock_academy_en": {
+      "channel_id": "stock_academy_en",
+      "name": "Stock Academy",
+      "niche": "borsa",
+      "language": "en",
+      "slogan": "Master the Stock Market",
+      "tagline": "Stock Market & Investing",
+      "upload_times": [
+        "14:15",
+        "02:15"
+      ],
+      "color_primary": [
+        239,
+        68,
+        68
+      ],
+      "color_bg": [
+        20,
+        10,
+        10
+      ],
+      "pexels_query": "stock market trading wall street finance",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "crypto_compass_en": {
+      "channel_id": "crypto_compass_en",
+      "name": "Crypto Compass",
+      "niche": "kripto",
+      "language": "en",
+      "slogan": "Navigate the Crypto World",
+      "tagline": "Bitcoin & Cryptocurrency Guide",
+      "upload_times": [
+        "14:30",
+        "02:30"
+      ],
+      "color_primary": [
+        249,
+        115,
+        22
+      ],
+      "color_bg": [
+        20,
+        10,
+        5
+      ],
+      "pexels_query": "cryptocurrency bitcoin blockchain trading",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "career_compass_en": {
+      "channel_id": "career_compass_en",
+      "name": "Career Compass",
+      "niche": "kariyer",
+      "language": "en",
+      "slogan": "Navigate Your Career Path",
+      "tagline": "Career Growth & Salary Tips",
+      "upload_times": [
+        "14:45",
+        "02:45"
+      ],
+      "color_primary": [
+        59,
+        130,
+        246
+      ],
+      "color_bg": [
+        10,
+        15,
+        25
+      ],
+      "pexels_query": "career success professional business leadership",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "real_estate_compass_en": {
+      "channel_id": "real_estate_compass_en",
+      "name": "Real Estate Compass",
+      "niche": "gayrimenkul",
+      "language": "en",
+      "slogan": "Build Wealth Through Real Estate",
+      "tagline": "Real Estate Investment Guide",
+      "upload_times": [
+        "15:00",
+        "03:00"
+      ],
+      "color_primary": [
+        245,
+        158,
+        11
+      ],
+      "color_bg": [
+        20,
+        15,
+        5
+      ],
+      "pexels_query": "real estate investment property wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "wealth_builder_en": {
+      "channel_id": "wealth_builder_en",
+      "name": "Wealth Builder",
+      "niche": "kisisel_finans",
+      "language": "en",
+      "slogan": "Build Generational Wealth",
+      "tagline": "Wealth Building & FIRE Movement",
+      "upload_times": [
+        "15:15",
+        "03:15"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        5,
+        20,
+        10
+      ],
+      "pexels_query": "wealth building financial independence retire early",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "dividend_king_en": {
+      "channel_id": "dividend_king_en",
+      "name": "Dividend King",
+      "niche": "borsa",
+      "language": "en",
+      "slogan": "Live Off Dividends",
+      "tagline": "Dividend Investing Guide",
+      "upload_times": [
+        "15:30",
+        "03:30"
+      ],
+      "color_primary": [
+        16,
+        185,
+        129
+      ],
+      "color_bg": [
+        5,
+        18,
+        12
+      ],
+      "pexels_query": "dividend stocks passive income investment",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "tech_finance_en": {
+      "channel_id": "tech_finance_en",
+      "name": "Tech Finance",
+      "niche": "teknoloji",
+      "language": "en",
+      "slogan": "Where Tech Meets Finance",
+      "tagline": "Tech Stocks & AI Investment",
+      "upload_times": [
+        "15:45",
+        "03:45"
+      ],
+      "color_primary": [
+        6,
+        182,
+        212
+      ],
+      "color_bg": [
+        5,
+        18,
+        22
+      ],
+      "pexels_query": "technology innovation investment stocks future",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "startup_compass_en": {
+      "channel_id": "startup_compass_en",
+      "name": "Startup Compass",
+      "niche": "girisim",
+      "language": "en",
+      "slogan": "From Idea to IPO",
+      "tagline": "Startup & Entrepreneurship Guide",
+      "upload_times": [
+        "16:00",
+        "04:00"
+      ],
+      "color_primary": [
+        234,
+        88,
+        12
+      ],
+      "color_bg": [
+        20,
+        8,
+        3
+      ],
+      "pexels_query": "startup entrepreneur innovation success office",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "health_wealth_en": {
+      "channel_id": "health_wealth_en",
+      "name": "Health & Wealth",
+      "niche": "saglik",
+      "language": "en",
+      "slogan": "Healthy Body, Wealthy Mind",
+      "tagline": "Health, Wellness & Finance",
+      "upload_times": [
+        "16:15",
+        "04:15"
+      ],
+      "color_primary": [
+        244,
+        114,
+        182
+      ],
+      "color_bg": [
+        20,
+        8,
+        15
+      ],
+      "pexels_query": "health wellness fitness success lifestyle",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "finanz_kompass_de": {
+      "channel_id": "finanz_kompass_de",
+      "name": "Finanz Kompass",
+      "niche": "kisisel_finans",
+      "language": "de",
+      "slogan": "Navigiere deine Finanzen",
+      "tagline": "Persönliche Finanzen & Investitionen",
+      "upload_times": [
+        "16:30",
+        "04:30"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money investment savings",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "aktien_akademie_de": {
+      "channel_id": "aktien_akademie_de",
+      "name": "Aktien Akademie",
+      "niche": "borsa",
+      "language": "de",
+      "slogan": "Meistere die Börse",
+      "tagline": "Aktien & Börsen Guide",
+      "upload_times": [
+        "16:45",
+        "04:45"
+      ],
+      "color_primary": [
+        239,
+        68,
+        68
+      ],
+      "color_bg": [
+        20,
+        10,
+        10
+      ],
+      "pexels_query": "stock market trading finance investing",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "krypto_kompass_de": {
+      "channel_id": "krypto_kompass_de",
+      "name": "Krypto Kompass",
+      "niche": "kripto",
+      "language": "de",
+      "slogan": "Navigiere die Krypto-Welt",
+      "tagline": "Bitcoin & Kryptowährungen",
+      "upload_times": [
+        "17:00",
+        "05:00"
+      ],
+      "color_primary": [
+        249,
+        115,
+        22
+      ],
+      "color_bg": [
+        20,
+        10,
+        5
+      ],
+      "pexels_query": "cryptocurrency bitcoin blockchain digital",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "karriere_kompass_de": {
+      "channel_id": "karriere_kompass_de",
+      "name": "Karriere Kompass",
+      "niche": "kariyer",
+      "language": "de",
+      "slogan": "Deine Karriere, deine Regeln",
+      "tagline": "Karriere & Gehaltsverhandlung",
+      "upload_times": [
+        "17:15",
+        "05:15"
+      ],
+      "color_primary": [
+        59,
+        130,
+        246
+      ],
+      "color_bg": [
+        10,
+        15,
+        25
+      ],
+      "pexels_query": "career success business professional leadership",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "immobilien_kompass_de": {
+      "channel_id": "immobilien_kompass_de",
+      "name": "Immobilien Kompass",
+      "niche": "gayrimenkul",
+      "language": "de",
+      "slogan": "Reich mit Immobilien",
+      "tagline": "Immobilien Investment Guide",
+      "upload_times": [
+        "17:30",
+        "05:30"
+      ],
+      "color_primary": [
+        245,
+        158,
+        11
+      ],
+      "color_bg": [
+        20,
+        15,
+        5
+      ],
+      "pexels_query": "real estate property investment house luxury",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kisisel_finans_tr_001": {
+      "channel_id": "kisisel_finans_tr_001",
+      "name": "Kisisel Finans TR 1",
+      "niche": "kisisel_finans",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kisisel Finans Channel",
+      "upload_times": [
+        "17:45",
+        "05:45"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kisisel_finans_en_001": {
+      "channel_id": "kisisel_finans_en_001",
+      "name": "Kisisel Finans EN 1",
+      "niche": "kisisel_finans",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kisisel Finans Channel",
+      "upload_times": [
+        "18:00",
+        "06:00"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kisisel_finans_de_001": {
+      "channel_id": "kisisel_finans_de_001",
+      "name": "Kisisel Finans DE 1",
+      "niche": "kisisel_finans",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kisisel Finans Channel",
+      "upload_times": [
+        "18:15",
+        "06:15"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kisisel_finans_es_001": {
+      "channel_id": "kisisel_finans_es_001",
+      "name": "Kisisel Finans ES 1",
+      "niche": "kisisel_finans",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kisisel Finans Channel",
+      "upload_times": [
+        "18:30",
+        "06:30"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kisisel_finans_fr_001": {
+      "channel_id": "kisisel_finans_fr_001",
+      "name": "Kisisel Finans FR 1",
+      "niche": "kisisel_finans",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kisisel Finans Channel",
+      "upload_times": [
+        "18:45",
+        "06:45"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "borsa_tr_002": {
+      "channel_id": "borsa_tr_002",
+      "name": "Borsa TR 2",
+      "niche": "borsa",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Borsa Channel",
+      "upload_times": [
+        "19:00",
+        "07:00"
+      ],
+      "color_primary": [
+        245,
+        158,
+        11
+      ],
+      "color_bg": [
+        20,
+        15,
+        5
+      ],
+      "pexels_query": "technical analysis stocks",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "borsa_en_002": {
+      "channel_id": "borsa_en_002",
+      "name": "Borsa EN 2",
+      "niche": "borsa",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Borsa Channel",
+      "upload_times": [
+        "19:15",
+        "07:15"
+      ],
+      "color_primary": [
+        245,
+        158,
+        11
+      ],
+      "color_bg": [
+        20,
+        15,
+        5
+      ],
+      "pexels_query": "technical analysis stocks",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "borsa_de_002": {
+      "channel_id": "borsa_de_002",
+      "name": "Borsa DE 2",
+      "niche": "borsa",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Borsa Channel",
+      "upload_times": [
+        "19:30",
+        "07:30"
+      ],
+      "color_primary": [
+        245,
+        158,
+        11
+      ],
+      "color_bg": [
+        20,
+        15,
+        5
+      ],
+      "pexels_query": "technical analysis stocks",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "borsa_es_002": {
+      "channel_id": "borsa_es_002",
+      "name": "Borsa ES 2",
+      "niche": "borsa",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Borsa Channel",
+      "upload_times": [
+        "19:45",
+        "07:45"
+      ],
+      "color_primary": [
+        245,
+        158,
+        11
+      ],
+      "color_bg": [
+        20,
+        15,
+        5
+      ],
+      "pexels_query": "technical analysis stocks",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "borsa_fr_002": {
+      "channel_id": "borsa_fr_002",
+      "name": "Borsa FR 2",
+      "niche": "borsa",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Borsa Channel",
+      "upload_times": [
+        "20:00",
+        "08:00"
+      ],
+      "color_primary": [
+        245,
+        158,
+        11
+      ],
+      "color_bg": [
+        20,
+        15,
+        5
+      ],
+      "pexels_query": "technical analysis stocks",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kripto_tr_003": {
+      "channel_id": "kripto_tr_003",
+      "name": "Kripto TR 3",
+      "niche": "kripto",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kripto Channel",
+      "upload_times": [
+        "20:15",
+        "08:15"
+      ],
+      "color_primary": [
+        139,
+        92,
+        246
+      ],
+      "color_bg": [
+        15,
+        5,
+        30
+      ],
+      "pexels_query": "web3 nft metaverse",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kripto_en_003": {
+      "channel_id": "kripto_en_003",
+      "name": "Kripto EN 3",
+      "niche": "kripto",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kripto Channel",
+      "upload_times": [
+        "20:30",
+        "08:30"
+      ],
+      "color_primary": [
+        139,
+        92,
+        246
+      ],
+      "color_bg": [
+        15,
+        5,
+        30
+      ],
+      "pexels_query": "web3 nft metaverse",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kripto_de_003": {
+      "channel_id": "kripto_de_003",
+      "name": "Kripto DE 3",
+      "niche": "kripto",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kripto Channel",
+      "upload_times": [
+        "20:45",
+        "08:45"
+      ],
+      "color_primary": [
+        139,
+        92,
+        246
+      ],
+      "color_bg": [
+        15,
+        5,
+        30
+      ],
+      "pexels_query": "web3 nft metaverse",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kripto_es_003": {
+      "channel_id": "kripto_es_003",
+      "name": "Kripto ES 3",
+      "niche": "kripto",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kripto Channel",
+      "upload_times": [
+        "21:00",
+        "09:00"
+      ],
+      "color_primary": [
+        139,
+        92,
+        246
+      ],
+      "color_bg": [
+        15,
+        5,
+        30
+      ],
+      "pexels_query": "web3 nft metaverse",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kripto_fr_003": {
+      "channel_id": "kripto_fr_003",
+      "name": "Kripto FR 3",
+      "niche": "kripto",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kripto Channel",
+      "upload_times": [
+        "21:15",
+        "09:15"
+      ],
+      "color_primary": [
+        139,
+        92,
+        246
+      ],
+      "color_bg": [
+        15,
+        5,
+        30
+      ],
+      "pexels_query": "web3 nft metaverse",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kariyer_tr_004": {
+      "channel_id": "kariyer_tr_004",
+      "name": "Kariyer TR 4",
+      "niche": "kariyer",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kariyer Channel",
+      "upload_times": [
+        "21:30",
+        "09:30"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kariyer_en_004": {
+      "channel_id": "kariyer_en_004",
+      "name": "Kariyer EN 4",
+      "niche": "kariyer",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kariyer Channel",
+      "upload_times": [
+        "21:45",
+        "09:45"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kariyer_de_004": {
+      "channel_id": "kariyer_de_004",
+      "name": "Kariyer DE 4",
+      "niche": "kariyer",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kariyer Channel",
+      "upload_times": [
+        "22:00",
+        "10:00"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kariyer_es_004": {
+      "channel_id": "kariyer_es_004",
+      "name": "Kariyer ES 4",
+      "niche": "kariyer",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kariyer Channel",
+      "upload_times": [
+        "22:15",
+        "10:15"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kariyer_fr_004": {
+      "channel_id": "kariyer_fr_004",
+      "name": "Kariyer FR 4",
+      "niche": "kariyer",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kariyer Channel",
+      "upload_times": [
+        "22:30",
+        "10:30"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "gayrimenkul_tr_005": {
+      "channel_id": "gayrimenkul_tr_005",
+      "name": "Gayrimenkul TR 5",
+      "niche": "gayrimenkul",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Gayrimenkul Channel",
+      "upload_times": [
+        "22:45",
+        "10:45"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "gayrimenkul_en_005": {
+      "channel_id": "gayrimenkul_en_005",
+      "name": "Gayrimenkul EN 5",
+      "niche": "gayrimenkul",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Gayrimenkul Channel",
+      "upload_times": [
+        "23:00",
+        "11:00"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "gayrimenkul_de_005": {
+      "channel_id": "gayrimenkul_de_005",
+      "name": "Gayrimenkul DE 5",
+      "niche": "gayrimenkul",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Gayrimenkul Channel",
+      "upload_times": [
+        "23:15",
+        "11:15"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "gayrimenkul_es_005": {
+      "channel_id": "gayrimenkul_es_005",
+      "name": "Gayrimenkul ES 5",
+      "niche": "gayrimenkul",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Gayrimenkul Channel",
+      "upload_times": [
+        "23:30",
+        "11:30"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "gayrimenkul_fr_005": {
+      "channel_id": "gayrimenkul_fr_005",
+      "name": "Gayrimenkul FR 5",
+      "niche": "gayrimenkul",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Gayrimenkul Channel",
+      "upload_times": [
+        "23:45",
+        "11:45"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "saglik_tr_006": {
+      "channel_id": "saglik_tr_006",
+      "name": "Saglik TR 6",
+      "niche": "saglik",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Saglik Channel",
+      "upload_times": [
+        "00:00",
+        "12:00"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "saglik_en_006": {
+      "channel_id": "saglik_en_006",
+      "name": "Saglik EN 6",
+      "niche": "saglik",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Saglik Channel",
+      "upload_times": [
+        "00:15",
+        "12:15"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "saglik_de_006": {
+      "channel_id": "saglik_de_006",
+      "name": "Saglik DE 6",
+      "niche": "saglik",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Saglik Channel",
+      "upload_times": [
+        "00:30",
+        "12:30"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "saglik_es_006": {
+      "channel_id": "saglik_es_006",
+      "name": "Saglik ES 6",
+      "niche": "saglik",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Saglik Channel",
+      "upload_times": [
+        "00:45",
+        "12:45"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "saglik_fr_006": {
+      "channel_id": "saglik_fr_006",
+      "name": "Saglik FR 6",
+      "niche": "saglik",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Saglik Channel",
+      "upload_times": [
+        "01:00",
+        "13:00"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "teknoloji_tr_007": {
+      "channel_id": "teknoloji_tr_007",
+      "name": "Teknoloji TR 7",
+      "niche": "teknoloji",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Teknoloji Channel",
+      "upload_times": [
+        "01:15",
+        "13:15"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "teknoloji_en_007": {
+      "channel_id": "teknoloji_en_007",
+      "name": "Teknoloji EN 7",
+      "niche": "teknoloji",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Teknoloji Channel",
+      "upload_times": [
+        "01:30",
+        "13:30"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "teknoloji_de_007": {
+      "channel_id": "teknoloji_de_007",
+      "name": "Teknoloji DE 7",
+      "niche": "teknoloji",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Teknoloji Channel",
+      "upload_times": [
+        "01:45",
+        "13:45"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "teknoloji_es_007": {
+      "channel_id": "teknoloji_es_007",
+      "name": "Teknoloji ES 7",
+      "niche": "teknoloji",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Teknoloji Channel",
+      "upload_times": [
+        "02:00",
+        "14:00"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "teknoloji_fr_007": {
+      "channel_id": "teknoloji_fr_007",
+      "name": "Teknoloji FR 7",
+      "niche": "teknoloji",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Teknoloji Channel",
+      "upload_times": [
+        "02:15",
+        "14:15"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "egitim_tr_008": {
+      "channel_id": "egitim_tr_008",
+      "name": "Egitim TR 8",
+      "niche": "egitim",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Egitim Channel",
+      "upload_times": [
+        "02:30",
+        "14:30"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "egitim_en_008": {
+      "channel_id": "egitim_en_008",
+      "name": "Egitim EN 8",
+      "niche": "egitim",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Egitim Channel",
+      "upload_times": [
+        "02:45",
+        "14:45"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "egitim_de_008": {
+      "channel_id": "egitim_de_008",
+      "name": "Egitim DE 8",
+      "niche": "egitim",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Egitim Channel",
+      "upload_times": [
+        "03:00",
+        "15:00"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "egitim_es_008": {
+      "channel_id": "egitim_es_008",
+      "name": "Egitim ES 8",
+      "niche": "egitim",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Egitim Channel",
+      "upload_times": [
+        "03:15",
+        "15:15"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "egitim_fr_008": {
+      "channel_id": "egitim_fr_008",
+      "name": "Egitim FR 8",
+      "niche": "egitim",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Egitim Channel",
+      "upload_times": [
+        "03:30",
+        "15:30"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "girisim_tr_009": {
+      "channel_id": "girisim_tr_009",
+      "name": "Girisim TR 9",
+      "niche": "girisim",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Girisim Channel",
+      "upload_times": [
+        "03:45",
+        "15:45"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "girisim_en_009": {
+      "channel_id": "girisim_en_009",
+      "name": "Girisim EN 9",
+      "niche": "girisim",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Girisim Channel",
+      "upload_times": [
+        "04:00",
+        "16:00"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "girisim_de_009": {
+      "channel_id": "girisim_de_009",
+      "name": "Girisim DE 9",
+      "niche": "girisim",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Girisim Channel",
+      "upload_times": [
+        "04:15",
+        "16:15"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "girisim_es_009": {
+      "channel_id": "girisim_es_009",
+      "name": "Girisim ES 9",
+      "niche": "girisim",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Girisim Channel",
+      "upload_times": [
+        "04:30",
+        "16:30"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "girisim_fr_009": {
+      "channel_id": "girisim_fr_009",
+      "name": "Girisim FR 9",
+      "niche": "girisim",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Girisim Channel",
+      "upload_times": [
+        "04:45",
+        "16:45"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "psikoloji_tr_010": {
+      "channel_id": "psikoloji_tr_010",
+      "name": "Psikoloji TR 10",
+      "niche": "psikoloji",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Psikoloji Channel",
+      "upload_times": [
+        "05:00",
+        "17:00"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "psikoloji_en_010": {
+      "channel_id": "psikoloji_en_010",
+      "name": "Psikoloji EN 10",
+      "niche": "psikoloji",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Psikoloji Channel",
+      "upload_times": [
+        "05:15",
+        "17:15"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "psikoloji_de_010": {
+      "channel_id": "psikoloji_de_010",
+      "name": "Psikoloji DE 10",
+      "niche": "psikoloji",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Psikoloji Channel",
+      "upload_times": [
+        "05:30",
+        "17:30"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "psikoloji_es_010": {
+      "channel_id": "psikoloji_es_010",
+      "name": "Psikoloji ES 10",
+      "niche": "psikoloji",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Psikoloji Channel",
+      "upload_times": [
+        "05:45",
+        "17:45"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "psikoloji_fr_010": {
+      "channel_id": "psikoloji_fr_010",
+      "name": "Psikoloji FR 10",
+      "niche": "psikoloji",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Psikoloji Channel",
+      "upload_times": [
+        "06:00",
+        "18:00"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kisisel_finans_tr_011": {
+      "channel_id": "kisisel_finans_tr_011",
+      "name": "Kisisel Finans TR 11",
+      "niche": "kisisel_finans",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kisisel Finans Channel",
+      "upload_times": [
+        "06:15",
+        "18:15"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kisisel_finans_en_011": {
+      "channel_id": "kisisel_finans_en_011",
+      "name": "Kisisel Finans EN 11",
+      "niche": "kisisel_finans",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kisisel Finans Channel",
+      "upload_times": [
+        "06:30",
+        "18:30"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kisisel_finans_de_011": {
+      "channel_id": "kisisel_finans_de_011",
+      "name": "Kisisel Finans DE 11",
+      "niche": "kisisel_finans",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kisisel Finans Channel",
+      "upload_times": [
+        "06:45",
+        "18:45"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kisisel_finans_es_011": {
+      "channel_id": "kisisel_finans_es_011",
+      "name": "Kisisel Finans ES 11",
+      "niche": "kisisel_finans",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kisisel Finans Channel",
+      "upload_times": [
+        "07:00",
+        "19:00"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kisisel_finans_fr_011": {
+      "channel_id": "kisisel_finans_fr_011",
+      "name": "Kisisel Finans FR 11",
+      "niche": "kisisel_finans",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kisisel Finans Channel",
+      "upload_times": [
+        "07:15",
+        "19:15"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "borsa_tr_012": {
+      "channel_id": "borsa_tr_012",
+      "name": "Borsa TR 12",
+      "niche": "borsa",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Borsa Channel",
+      "upload_times": [
+        "07:30",
+        "19:30"
+      ],
+      "color_primary": [
+        239,
+        68,
+        68
+      ],
+      "color_bg": [
+        20,
+        10,
+        10
+      ],
+      "pexels_query": "stock market trading",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "borsa_en_012": {
+      "channel_id": "borsa_en_012",
+      "name": "Borsa EN 12",
+      "niche": "borsa",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Borsa Channel",
+      "upload_times": [
+        "07:45",
+        "19:45"
+      ],
+      "color_primary": [
+        239,
+        68,
+        68
+      ],
+      "color_bg": [
+        20,
+        10,
+        10
+      ],
+      "pexels_query": "stock market trading",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "borsa_de_012": {
+      "channel_id": "borsa_de_012",
+      "name": "Borsa DE 12",
+      "niche": "borsa",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Borsa Channel",
+      "upload_times": [
+        "08:00",
+        "20:00"
+      ],
+      "color_primary": [
+        239,
+        68,
+        68
+      ],
+      "color_bg": [
+        20,
+        10,
+        10
+      ],
+      "pexels_query": "stock market trading",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "borsa_es_012": {
+      "channel_id": "borsa_es_012",
+      "name": "Borsa ES 12",
+      "niche": "borsa",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Borsa Channel",
+      "upload_times": [
+        "08:15",
+        "20:15"
+      ],
+      "color_primary": [
+        239,
+        68,
+        68
+      ],
+      "color_bg": [
+        20,
+        10,
+        10
+      ],
+      "pexels_query": "stock market trading",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "borsa_fr_012": {
+      "channel_id": "borsa_fr_012",
+      "name": "Borsa FR 12",
+      "niche": "borsa",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Borsa Channel",
+      "upload_times": [
+        "08:30",
+        "20:30"
+      ],
+      "color_primary": [
+        239,
+        68,
+        68
+      ],
+      "color_bg": [
+        20,
+        10,
+        10
+      ],
+      "pexels_query": "stock market trading",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kripto_tr_013": {
+      "channel_id": "kripto_tr_013",
+      "name": "Kripto TR 13",
+      "niche": "kripto",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kripto Channel",
+      "upload_times": [
+        "08:45",
+        "20:45"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        12,
+        0
+      ],
+      "pexels_query": "bitcoin trading crypto",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kripto_en_013": {
+      "channel_id": "kripto_en_013",
+      "name": "Kripto EN 13",
+      "niche": "kripto",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kripto Channel",
+      "upload_times": [
+        "09:00",
+        "21:00"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        12,
+        0
+      ],
+      "pexels_query": "bitcoin trading crypto",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kripto_de_013": {
+      "channel_id": "kripto_de_013",
+      "name": "Kripto DE 13",
+      "niche": "kripto",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kripto Channel",
+      "upload_times": [
+        "09:15",
+        "21:15"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        12,
+        0
+      ],
+      "pexels_query": "bitcoin trading crypto",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kripto_es_013": {
+      "channel_id": "kripto_es_013",
+      "name": "Kripto ES 13",
+      "niche": "kripto",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kripto Channel",
+      "upload_times": [
+        "09:30",
+        "21:30"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        12,
+        0
+      ],
+      "pexels_query": "bitcoin trading crypto",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kripto_fr_013": {
+      "channel_id": "kripto_fr_013",
+      "name": "Kripto FR 13",
+      "niche": "kripto",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kripto Channel",
+      "upload_times": [
+        "09:45",
+        "21:45"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        12,
+        0
+      ],
+      "pexels_query": "bitcoin trading crypto",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kariyer_tr_014": {
+      "channel_id": "kariyer_tr_014",
+      "name": "Kariyer TR 14",
+      "niche": "kariyer",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kariyer Channel",
+      "upload_times": [
+        "10:00",
+        "22:00"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kariyer_en_014": {
+      "channel_id": "kariyer_en_014",
+      "name": "Kariyer EN 14",
+      "niche": "kariyer",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kariyer Channel",
+      "upload_times": [
+        "10:15",
+        "22:15"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kariyer_de_014": {
+      "channel_id": "kariyer_de_014",
+      "name": "Kariyer DE 14",
+      "niche": "kariyer",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kariyer Channel",
+      "upload_times": [
+        "10:30",
+        "22:30"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kariyer_es_014": {
+      "channel_id": "kariyer_es_014",
+      "name": "Kariyer ES 14",
+      "niche": "kariyer",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kariyer Channel",
+      "upload_times": [
+        "10:45",
+        "22:45"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kariyer_fr_014": {
+      "channel_id": "kariyer_fr_014",
+      "name": "Kariyer FR 14",
+      "niche": "kariyer",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kariyer Channel",
+      "upload_times": [
+        "11:00",
+        "23:00"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "gayrimenkul_tr_015": {
+      "channel_id": "gayrimenkul_tr_015",
+      "name": "Gayrimenkul TR 15",
+      "niche": "gayrimenkul",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Gayrimenkul Channel",
+      "upload_times": [
+        "11:15",
+        "23:15"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "gayrimenkul_en_015": {
+      "channel_id": "gayrimenkul_en_015",
+      "name": "Gayrimenkul EN 15",
+      "niche": "gayrimenkul",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Gayrimenkul Channel",
+      "upload_times": [
+        "11:30",
+        "23:30"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "gayrimenkul_de_015": {
+      "channel_id": "gayrimenkul_de_015",
+      "name": "Gayrimenkul DE 15",
+      "niche": "gayrimenkul",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Gayrimenkul Channel",
+      "upload_times": [
+        "11:45",
+        "23:45"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "gayrimenkul_es_015": {
+      "channel_id": "gayrimenkul_es_015",
+      "name": "Gayrimenkul ES 15",
+      "niche": "gayrimenkul",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Gayrimenkul Channel",
+      "upload_times": [
+        "12:00",
+        "00:00"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "gayrimenkul_fr_015": {
+      "channel_id": "gayrimenkul_fr_015",
+      "name": "Gayrimenkul FR 15",
+      "niche": "gayrimenkul",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Gayrimenkul Channel",
+      "upload_times": [
+        "12:15",
+        "00:15"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "saglik_tr_016": {
+      "channel_id": "saglik_tr_016",
+      "name": "Saglik TR 16",
+      "niche": "saglik",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Saglik Channel",
+      "upload_times": [
+        "12:30",
+        "00:30"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "saglik_en_016": {
+      "channel_id": "saglik_en_016",
+      "name": "Saglik EN 16",
+      "niche": "saglik",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Saglik Channel",
+      "upload_times": [
+        "12:45",
+        "00:45"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "saglik_de_016": {
+      "channel_id": "saglik_de_016",
+      "name": "Saglik DE 16",
+      "niche": "saglik",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Saglik Channel",
+      "upload_times": [
+        "13:00",
+        "01:00"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "saglik_es_016": {
+      "channel_id": "saglik_es_016",
+      "name": "Saglik ES 16",
+      "niche": "saglik",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Saglik Channel",
+      "upload_times": [
+        "13:15",
+        "01:15"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "saglik_fr_016": {
+      "channel_id": "saglik_fr_016",
+      "name": "Saglik FR 16",
+      "niche": "saglik",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Saglik Channel",
+      "upload_times": [
+        "13:30",
+        "01:30"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "teknoloji_tr_017": {
+      "channel_id": "teknoloji_tr_017",
+      "name": "Teknoloji TR 17",
+      "niche": "teknoloji",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Teknoloji Channel",
+      "upload_times": [
+        "13:45",
+        "01:45"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "teknoloji_en_017": {
+      "channel_id": "teknoloji_en_017",
+      "name": "Teknoloji EN 17",
+      "niche": "teknoloji",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Teknoloji Channel",
+      "upload_times": [
+        "14:00",
+        "02:00"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "teknoloji_de_017": {
+      "channel_id": "teknoloji_de_017",
+      "name": "Teknoloji DE 17",
+      "niche": "teknoloji",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Teknoloji Channel",
+      "upload_times": [
+        "14:15",
+        "02:15"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "teknoloji_es_017": {
+      "channel_id": "teknoloji_es_017",
+      "name": "Teknoloji ES 17",
+      "niche": "teknoloji",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Teknoloji Channel",
+      "upload_times": [
+        "14:30",
+        "02:30"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "teknoloji_fr_017": {
+      "channel_id": "teknoloji_fr_017",
+      "name": "Teknoloji FR 17",
+      "niche": "teknoloji",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Teknoloji Channel",
+      "upload_times": [
+        "14:45",
+        "02:45"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "egitim_tr_018": {
+      "channel_id": "egitim_tr_018",
+      "name": "Egitim TR 18",
+      "niche": "egitim",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Egitim Channel",
+      "upload_times": [
+        "15:00",
+        "03:00"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "egitim_en_018": {
+      "channel_id": "egitim_en_018",
+      "name": "Egitim EN 18",
+      "niche": "egitim",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Egitim Channel",
+      "upload_times": [
+        "15:15",
+        "03:15"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "egitim_de_018": {
+      "channel_id": "egitim_de_018",
+      "name": "Egitim DE 18",
+      "niche": "egitim",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Egitim Channel",
+      "upload_times": [
+        "15:30",
+        "03:30"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "egitim_es_018": {
+      "channel_id": "egitim_es_018",
+      "name": "Egitim ES 18",
+      "niche": "egitim",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Egitim Channel",
+      "upload_times": [
+        "15:45",
+        "03:45"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "egitim_fr_018": {
+      "channel_id": "egitim_fr_018",
+      "name": "Egitim FR 18",
+      "niche": "egitim",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Egitim Channel",
+      "upload_times": [
+        "16:00",
+        "04:00"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "girisim_tr_019": {
+      "channel_id": "girisim_tr_019",
+      "name": "Girisim TR 19",
+      "niche": "girisim",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Girisim Channel",
+      "upload_times": [
+        "16:15",
+        "04:15"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "girisim_en_019": {
+      "channel_id": "girisim_en_019",
+      "name": "Girisim EN 19",
+      "niche": "girisim",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Girisim Channel",
+      "upload_times": [
+        "16:30",
+        "04:30"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "girisim_de_019": {
+      "channel_id": "girisim_de_019",
+      "name": "Girisim DE 19",
+      "niche": "girisim",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Girisim Channel",
+      "upload_times": [
+        "16:45",
+        "04:45"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "girisim_es_019": {
+      "channel_id": "girisim_es_019",
+      "name": "Girisim ES 19",
+      "niche": "girisim",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Girisim Channel",
+      "upload_times": [
+        "17:00",
+        "05:00"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "girisim_fr_019": {
+      "channel_id": "girisim_fr_019",
+      "name": "Girisim FR 19",
+      "niche": "girisim",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Girisim Channel",
+      "upload_times": [
+        "17:15",
+        "05:15"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "psikoloji_tr_020": {
+      "channel_id": "psikoloji_tr_020",
+      "name": "Psikoloji TR 20",
+      "niche": "psikoloji",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Psikoloji Channel",
+      "upload_times": [
+        "17:30",
+        "05:30"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "psikoloji_en_020": {
+      "channel_id": "psikoloji_en_020",
+      "name": "Psikoloji EN 20",
+      "niche": "psikoloji",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Psikoloji Channel",
+      "upload_times": [
+        "17:45",
+        "05:45"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "psikoloji_de_020": {
+      "channel_id": "psikoloji_de_020",
+      "name": "Psikoloji DE 20",
+      "niche": "psikoloji",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Psikoloji Channel",
+      "upload_times": [
+        "18:00",
+        "06:00"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "psikoloji_es_020": {
+      "channel_id": "psikoloji_es_020",
+      "name": "Psikoloji ES 20",
+      "niche": "psikoloji",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Psikoloji Channel",
+      "upload_times": [
+        "18:15",
+        "06:15"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "psikoloji_fr_020": {
+      "channel_id": "psikoloji_fr_020",
+      "name": "Psikoloji FR 20",
+      "niche": "psikoloji",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Psikoloji Channel",
+      "upload_times": [
+        "18:30",
+        "06:30"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kisisel_finans_tr_021": {
+      "channel_id": "kisisel_finans_tr_021",
+      "name": "Kisisel Finans TR 21",
+      "niche": "kisisel_finans",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kisisel Finans Channel",
+      "upload_times": [
+        "18:45",
+        "06:45"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kisisel_finans_en_021": {
+      "channel_id": "kisisel_finans_en_021",
+      "name": "Kisisel Finans EN 21",
+      "niche": "kisisel_finans",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kisisel Finans Channel",
+      "upload_times": [
+        "19:00",
+        "07:00"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kisisel_finans_de_021": {
+      "channel_id": "kisisel_finans_de_021",
+      "name": "Kisisel Finans DE 21",
+      "niche": "kisisel_finans",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kisisel Finans Channel",
+      "upload_times": [
+        "19:15",
+        "07:15"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kisisel_finans_es_021": {
+      "channel_id": "kisisel_finans_es_021",
+      "name": "Kisisel Finans ES 21",
+      "niche": "kisisel_finans",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kisisel Finans Channel",
+      "upload_times": [
+        "19:30",
+        "07:30"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kisisel_finans_fr_021": {
+      "channel_id": "kisisel_finans_fr_021",
+      "name": "Kisisel Finans FR 21",
+      "niche": "kisisel_finans",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kisisel Finans Channel",
+      "upload_times": [
+        "19:45",
+        "07:45"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "borsa_tr_022": {
+      "channel_id": "borsa_tr_022",
+      "name": "Borsa TR 22",
+      "niche": "borsa",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Borsa Channel",
+      "upload_times": [
+        "20:00",
+        "08:00"
+      ],
+      "color_primary": [
+        245,
+        158,
+        11
+      ],
+      "color_bg": [
+        20,
+        15,
+        5
+      ],
+      "pexels_query": "technical analysis stocks",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "borsa_en_022": {
+      "channel_id": "borsa_en_022",
+      "name": "Borsa EN 22",
+      "niche": "borsa",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Borsa Channel",
+      "upload_times": [
+        "20:15",
+        "08:15"
+      ],
+      "color_primary": [
+        245,
+        158,
+        11
+      ],
+      "color_bg": [
+        20,
+        15,
+        5
+      ],
+      "pexels_query": "technical analysis stocks",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "borsa_de_022": {
+      "channel_id": "borsa_de_022",
+      "name": "Borsa DE 22",
+      "niche": "borsa",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Borsa Channel",
+      "upload_times": [
+        "20:30",
+        "08:30"
+      ],
+      "color_primary": [
+        245,
+        158,
+        11
+      ],
+      "color_bg": [
+        20,
+        15,
+        5
+      ],
+      "pexels_query": "technical analysis stocks",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "borsa_es_022": {
+      "channel_id": "borsa_es_022",
+      "name": "Borsa ES 22",
+      "niche": "borsa",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Borsa Channel",
+      "upload_times": [
+        "20:45",
+        "08:45"
+      ],
+      "color_primary": [
+        245,
+        158,
+        11
+      ],
+      "color_bg": [
+        20,
+        15,
+        5
+      ],
+      "pexels_query": "technical analysis stocks",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "borsa_fr_022": {
+      "channel_id": "borsa_fr_022",
+      "name": "Borsa FR 22",
+      "niche": "borsa",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Borsa Channel",
+      "upload_times": [
+        "21:00",
+        "09:00"
+      ],
+      "color_primary": [
+        245,
+        158,
+        11
+      ],
+      "color_bg": [
+        20,
+        15,
+        5
+      ],
+      "pexels_query": "technical analysis stocks",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kripto_tr_023": {
+      "channel_id": "kripto_tr_023",
+      "name": "Kripto TR 23",
+      "niche": "kripto",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kripto Channel",
+      "upload_times": [
+        "21:15",
+        "09:15"
+      ],
+      "color_primary": [
+        139,
+        92,
+        246
+      ],
+      "color_bg": [
+        15,
+        5,
+        30
+      ],
+      "pexels_query": "web3 nft metaverse",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kripto_en_023": {
+      "channel_id": "kripto_en_023",
+      "name": "Kripto EN 23",
+      "niche": "kripto",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kripto Channel",
+      "upload_times": [
+        "21:30",
+        "09:30"
+      ],
+      "color_primary": [
+        139,
+        92,
+        246
+      ],
+      "color_bg": [
+        15,
+        5,
+        30
+      ],
+      "pexels_query": "web3 nft metaverse",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kripto_de_023": {
+      "channel_id": "kripto_de_023",
+      "name": "Kripto DE 23",
+      "niche": "kripto",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kripto Channel",
+      "upload_times": [
+        "21:45",
+        "09:45"
+      ],
+      "color_primary": [
+        139,
+        92,
+        246
+      ],
+      "color_bg": [
+        15,
+        5,
+        30
+      ],
+      "pexels_query": "web3 nft metaverse",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kripto_es_023": {
+      "channel_id": "kripto_es_023",
+      "name": "Kripto ES 23",
+      "niche": "kripto",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kripto Channel",
+      "upload_times": [
+        "22:00",
+        "10:00"
+      ],
+      "color_primary": [
+        139,
+        92,
+        246
+      ],
+      "color_bg": [
+        15,
+        5,
+        30
+      ],
+      "pexels_query": "web3 nft metaverse",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kripto_fr_023": {
+      "channel_id": "kripto_fr_023",
+      "name": "Kripto FR 23",
+      "niche": "kripto",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kripto Channel",
+      "upload_times": [
+        "22:15",
+        "10:15"
+      ],
+      "color_primary": [
+        139,
+        92,
+        246
+      ],
+      "color_bg": [
+        15,
+        5,
+        30
+      ],
+      "pexels_query": "web3 nft metaverse",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kariyer_tr_024": {
+      "channel_id": "kariyer_tr_024",
+      "name": "Kariyer TR 24",
+      "niche": "kariyer",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kariyer Channel",
+      "upload_times": [
+        "22:30",
+        "10:30"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kariyer_en_024": {
+      "channel_id": "kariyer_en_024",
+      "name": "Kariyer EN 24",
+      "niche": "kariyer",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kariyer Channel",
+      "upload_times": [
+        "22:45",
+        "10:45"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kariyer_de_024": {
+      "channel_id": "kariyer_de_024",
+      "name": "Kariyer DE 24",
+      "niche": "kariyer",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kariyer Channel",
+      "upload_times": [
+        "23:00",
+        "11:00"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kariyer_es_024": {
+      "channel_id": "kariyer_es_024",
+      "name": "Kariyer ES 24",
+      "niche": "kariyer",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kariyer Channel",
+      "upload_times": [
+        "23:15",
+        "11:15"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kariyer_fr_024": {
+      "channel_id": "kariyer_fr_024",
+      "name": "Kariyer FR 24",
+      "niche": "kariyer",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kariyer Channel",
+      "upload_times": [
+        "23:30",
+        "11:30"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "gayrimenkul_tr_025": {
+      "channel_id": "gayrimenkul_tr_025",
+      "name": "Gayrimenkul TR 25",
+      "niche": "gayrimenkul",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Gayrimenkul Channel",
+      "upload_times": [
+        "23:45",
+        "11:45"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "gayrimenkul_en_025": {
+      "channel_id": "gayrimenkul_en_025",
+      "name": "Gayrimenkul EN 25",
+      "niche": "gayrimenkul",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Gayrimenkul Channel",
+      "upload_times": [
+        "00:00",
+        "12:00"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "gayrimenkul_de_025": {
+      "channel_id": "gayrimenkul_de_025",
+      "name": "Gayrimenkul DE 25",
+      "niche": "gayrimenkul",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Gayrimenkul Channel",
+      "upload_times": [
+        "00:15",
+        "12:15"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "gayrimenkul_es_025": {
+      "channel_id": "gayrimenkul_es_025",
+      "name": "Gayrimenkul ES 25",
+      "niche": "gayrimenkul",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Gayrimenkul Channel",
+      "upload_times": [
+        "00:30",
+        "12:30"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "gayrimenkul_fr_025": {
+      "channel_id": "gayrimenkul_fr_025",
+      "name": "Gayrimenkul FR 25",
+      "niche": "gayrimenkul",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Gayrimenkul Channel",
+      "upload_times": [
+        "00:45",
+        "12:45"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "saglik_tr_026": {
+      "channel_id": "saglik_tr_026",
+      "name": "Saglik TR 26",
+      "niche": "saglik",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Saglik Channel",
+      "upload_times": [
+        "01:00",
+        "13:00"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "saglik_en_026": {
+      "channel_id": "saglik_en_026",
+      "name": "Saglik EN 26",
+      "niche": "saglik",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Saglik Channel",
+      "upload_times": [
+        "01:15",
+        "13:15"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "saglik_de_026": {
+      "channel_id": "saglik_de_026",
+      "name": "Saglik DE 26",
+      "niche": "saglik",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Saglik Channel",
+      "upload_times": [
+        "01:30",
+        "13:30"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "saglik_es_026": {
+      "channel_id": "saglik_es_026",
+      "name": "Saglik ES 26",
+      "niche": "saglik",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Saglik Channel",
+      "upload_times": [
+        "01:45",
+        "13:45"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "saglik_fr_026": {
+      "channel_id": "saglik_fr_026",
+      "name": "Saglik FR 26",
+      "niche": "saglik",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Saglik Channel",
+      "upload_times": [
+        "02:00",
+        "14:00"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "teknoloji_tr_027": {
+      "channel_id": "teknoloji_tr_027",
+      "name": "Teknoloji TR 27",
+      "niche": "teknoloji",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Teknoloji Channel",
+      "upload_times": [
+        "02:15",
+        "14:15"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "teknoloji_en_027": {
+      "channel_id": "teknoloji_en_027",
+      "name": "Teknoloji EN 27",
+      "niche": "teknoloji",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Teknoloji Channel",
+      "upload_times": [
+        "02:30",
+        "14:30"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "teknoloji_de_027": {
+      "channel_id": "teknoloji_de_027",
+      "name": "Teknoloji DE 27",
+      "niche": "teknoloji",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Teknoloji Channel",
+      "upload_times": [
+        "02:45",
+        "14:45"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "teknoloji_es_027": {
+      "channel_id": "teknoloji_es_027",
+      "name": "Teknoloji ES 27",
+      "niche": "teknoloji",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Teknoloji Channel",
+      "upload_times": [
+        "03:00",
+        "15:00"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "teknoloji_fr_027": {
+      "channel_id": "teknoloji_fr_027",
+      "name": "Teknoloji FR 27",
+      "niche": "teknoloji",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Teknoloji Channel",
+      "upload_times": [
+        "03:15",
+        "15:15"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "egitim_tr_028": {
+      "channel_id": "egitim_tr_028",
+      "name": "Egitim TR 28",
+      "niche": "egitim",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Egitim Channel",
+      "upload_times": [
+        "03:30",
+        "15:30"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "egitim_en_028": {
+      "channel_id": "egitim_en_028",
+      "name": "Egitim EN 28",
+      "niche": "egitim",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Egitim Channel",
+      "upload_times": [
+        "03:45",
+        "15:45"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "egitim_de_028": {
+      "channel_id": "egitim_de_028",
+      "name": "Egitim DE 28",
+      "niche": "egitim",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Egitim Channel",
+      "upload_times": [
+        "04:00",
+        "16:00"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "egitim_es_028": {
+      "channel_id": "egitim_es_028",
+      "name": "Egitim ES 28",
+      "niche": "egitim",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Egitim Channel",
+      "upload_times": [
+        "04:15",
+        "16:15"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "egitim_fr_028": {
+      "channel_id": "egitim_fr_028",
+      "name": "Egitim FR 28",
+      "niche": "egitim",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Egitim Channel",
+      "upload_times": [
+        "04:30",
+        "16:30"
+      ],
+      "color_primary": [
+        212,
+        175,
+        55
+      ],
+      "color_bg": [
+        10,
+        18,
+        40
+      ],
+      "pexels_query": "personal finance money",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "girisim_tr_029": {
+      "channel_id": "girisim_tr_029",
+      "name": "Girisim TR 29",
+      "niche": "girisim",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Girisim Channel",
+      "upload_times": [
+        "04:45",
+        "16:45"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "girisim_en_029": {
+      "channel_id": "girisim_en_029",
+      "name": "Girisim EN 29",
+      "niche": "girisim",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Girisim Channel",
+      "upload_times": [
+        "05:00",
+        "17:00"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "girisim_de_029": {
+      "channel_id": "girisim_de_029",
+      "name": "Girisim DE 29",
+      "niche": "girisim",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Girisim Channel",
+      "upload_times": [
+        "05:15",
+        "17:15"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "girisim_es_029": {
+      "channel_id": "girisim_es_029",
+      "name": "Girisim ES 29",
+      "niche": "girisim",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Girisim Channel",
+      "upload_times": [
+        "05:30",
+        "17:30"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "girisim_fr_029": {
+      "channel_id": "girisim_fr_029",
+      "name": "Girisim FR 29",
+      "niche": "girisim",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Girisim Channel",
+      "upload_times": [
+        "05:45",
+        "17:45"
+      ],
+      "color_primary": [
+        34,
+        197,
+        94
+      ],
+      "color_bg": [
+        10,
+        30,
+        20
+      ],
+      "pexels_query": "savings investment wealth",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "psikoloji_tr_030": {
+      "channel_id": "psikoloji_tr_030",
+      "name": "Psikoloji TR 30",
+      "niche": "psikoloji",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Psikoloji Channel",
+      "upload_times": [
+        "06:00",
+        "18:00"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "psikoloji_en_030": {
+      "channel_id": "psikoloji_en_030",
+      "name": "Psikoloji EN 30",
+      "niche": "psikoloji",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Psikoloji Channel",
+      "upload_times": [
+        "06:15",
+        "18:15"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "psikoloji_de_030": {
+      "channel_id": "psikoloji_de_030",
+      "name": "Psikoloji DE 30",
+      "niche": "psikoloji",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Psikoloji Channel",
+      "upload_times": [
+        "06:30",
+        "18:30"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "psikoloji_es_030": {
+      "channel_id": "psikoloji_es_030",
+      "name": "Psikoloji ES 30",
+      "niche": "psikoloji",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Psikoloji Channel",
+      "upload_times": [
+        "06:45",
+        "18:45"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "psikoloji_fr_030": {
+      "channel_id": "psikoloji_fr_030",
+      "name": "Psikoloji FR 30",
+      "niche": "psikoloji",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Psikoloji Channel",
+      "upload_times": [
+        "07:00",
+        "19:00"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        10,
+        0
+      ],
+      "pexels_query": "financial planning budget",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kisisel_finans_tr_031": {
+      "channel_id": "kisisel_finans_tr_031",
+      "name": "Kisisel Finans TR 31",
+      "niche": "kisisel_finans",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kisisel Finans Channel",
+      "upload_times": [
+        "07:15",
+        "19:15"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kisisel_finans_en_031": {
+      "channel_id": "kisisel_finans_en_031",
+      "name": "Kisisel Finans EN 31",
+      "niche": "kisisel_finans",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kisisel Finans Channel",
+      "upload_times": [
+        "07:30",
+        "19:30"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kisisel_finans_de_031": {
+      "channel_id": "kisisel_finans_de_031",
+      "name": "Kisisel Finans DE 31",
+      "niche": "kisisel_finans",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kisisel Finans Channel",
+      "upload_times": [
+        "07:45",
+        "19:45"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kisisel_finans_es_031": {
+      "channel_id": "kisisel_finans_es_031",
+      "name": "Kisisel Finans ES 31",
+      "niche": "kisisel_finans",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kisisel Finans Channel",
+      "upload_times": [
+        "08:00",
+        "20:00"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kisisel_finans_fr_031": {
+      "channel_id": "kisisel_finans_fr_031",
+      "name": "Kisisel Finans FR 31",
+      "niche": "kisisel_finans",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kisisel Finans Channel",
+      "upload_times": [
+        "08:15",
+        "20:15"
+      ],
+      "color_primary": [
+        99,
+        102,
+        241
+      ],
+      "color_bg": [
+        15,
+        15,
+        35
+      ],
+      "pexels_query": "money management tips",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "borsa_tr_032": {
+      "channel_id": "borsa_tr_032",
+      "name": "Borsa TR 32",
+      "niche": "borsa",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Borsa Channel",
+      "upload_times": [
+        "08:30",
+        "20:30"
+      ],
+      "color_primary": [
+        239,
+        68,
+        68
+      ],
+      "color_bg": [
+        20,
+        10,
+        10
+      ],
+      "pexels_query": "stock market trading",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "borsa_en_032": {
+      "channel_id": "borsa_en_032",
+      "name": "Borsa EN 32",
+      "niche": "borsa",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Borsa Channel",
+      "upload_times": [
+        "08:45",
+        "20:45"
+      ],
+      "color_primary": [
+        239,
+        68,
+        68
+      ],
+      "color_bg": [
+        20,
+        10,
+        10
+      ],
+      "pexels_query": "stock market trading",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "borsa_de_032": {
+      "channel_id": "borsa_de_032",
+      "name": "Borsa DE 32",
+      "niche": "borsa",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Borsa Channel",
+      "upload_times": [
+        "09:00",
+        "21:00"
+      ],
+      "color_primary": [
+        239,
+        68,
+        68
+      ],
+      "color_bg": [
+        20,
+        10,
+        10
+      ],
+      "pexels_query": "stock market trading",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "borsa_es_032": {
+      "channel_id": "borsa_es_032",
+      "name": "Borsa ES 32",
+      "niche": "borsa",
+      "language": "es",
+      "slogan": "Content Creator Pro",
+      "tagline": "Borsa Channel",
+      "upload_times": [
+        "09:15",
+        "21:15"
+      ],
+      "color_primary": [
+        239,
+        68,
+        68
+      ],
+      "color_bg": [
+        20,
+        10,
+        10
+      ],
+      "pexels_query": "stock market trading",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "borsa_fr_032": {
+      "channel_id": "borsa_fr_032",
+      "name": "Borsa FR 32",
+      "niche": "borsa",
+      "language": "fr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Borsa Channel",
+      "upload_times": [
+        "09:30",
+        "21:30"
+      ],
+      "color_primary": [
+        239,
+        68,
+        68
+      ],
+      "color_bg": [
+        20,
+        10,
+        10
+      ],
+      "pexels_query": "stock market trading",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kripto_tr_033": {
+      "channel_id": "kripto_tr_033",
+      "name": "Kripto TR 33",
+      "niche": "kripto",
+      "language": "tr",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kripto Channel",
+      "upload_times": [
+        "09:45",
+        "21:45"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        12,
+        0
+      ],
+      "pexels_query": "bitcoin trading crypto",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kripto_en_033": {
+      "channel_id": "kripto_en_033",
+      "name": "Kripto EN 33",
+      "niche": "kripto",
+      "language": "en",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kripto Channel",
+      "upload_times": [
+        "10:00",
+        "22:00"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        12,
+        0
+      ],
+      "pexels_query": "bitcoin trading crypto",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    },
+    "kripto_de_033": {
+      "channel_id": "kripto_de_033",
+      "name": "Kripto DE 33",
+      "niche": "kripto",
+      "language": "de",
+      "slogan": "Content Creator Pro",
+      "tagline": "Kripto Channel",
+      "upload_times": [
+        "10:15",
+        "22:15"
+      ],
+      "color_primary": [
+        251,
+        191,
+        36
+      ],
+      "color_bg": [
+        20,
+        12,
+        0
+      ],
+      "pexels_query": "bitcoin trading crypto",
+      "status": "pending_oauth",
+      "elevenlabs_enabled": false
+    }
+  }
+}

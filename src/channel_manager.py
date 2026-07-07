@@ -1,0 +1,131 @@
+"""
+Kanal Yoneticisi - Cok Kanalli Sistem
+Her kanalin konfigürasyonunu, token yolunu ve ayarlarini yonetir.
+"""
+import json
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+REGISTRY_PATH = "channels/channel_registry.json"
+CHANNELS_DIR = "channels"
+
+
+@dataclass
+class ChannelConfig:
+    channel_id: str
+    name: str
+    niche: str
+    language: str
+    upload_times: list[str]
+    color_primary: list[int]
+    color_bg: list[int]
+
+    # Opsiyonel alanlar (yeni kanallar için default)
+    slogan: str = ""
+    category_id: str = "27"
+    pexels_query: str = "business finance money"
+    persona: str = ""
+    topics: list = field(default_factory=list)
+
+    # API anahtarlari (channels/{id}/.env'den yuklenir)
+    anthropic_api_key: str = ""
+    youtube_client_id: str = ""
+    youtube_client_secret: str = ""
+    pexels_api_key: str = ""
+    elevenlabs_api_key: str = ""
+    elevenlabs_voice_id: str = ""  # Her kanala özel ses — boşsa global .env'den alınır
+    elevenlabs_enabled: bool = False  # True = ElevenLabs, False = Edge TTS (ücretsiz)
+
+    # Klasorler
+    base_dir: str = ""
+    output_dir: str = ""
+    scripts_dir: str = ""
+    audio_dir: str = ""
+    videos_dir: str = ""
+    token_path: str = ""
+    client_secrets_path: str = ""
+
+    def __post_init__(self):
+        self.base_dir = f"{CHANNELS_DIR}/{self.channel_id}"
+        self.output_dir = f"{self.base_dir}/output"
+        self.scripts_dir = f"{self.base_dir}/output/scripts"
+        self.audio_dir = f"{self.base_dir}/output/audio"
+        self.videos_dir = f"{self.base_dir}/output/videos"
+        self.token_path = f"{self.base_dir}/youtube_token.pickle"
+        self.client_secrets_path = f"{self.base_dir}/client_secrets.json"
+
+        # .env dosyasindan API anahtarlarini yukle
+        env_path = f"{self.base_dir}/.env"
+        if Path(env_path).exists():
+            self._load_env(env_path)
+        else:
+            # Ana .env'den yukle (ilk kanal icin)
+            self._load_env(".env")
+
+    def _load_env(self, path: str):
+        from dotenv import dotenv_values
+        env = dotenv_values(path)
+        self.anthropic_api_key = env.get("ANTHROPIC_API_KEY", os.getenv("ANTHROPIC_API_KEY", ""))
+        self.youtube_client_id = env.get("YOUTUBE_CLIENT_ID", os.getenv("YOUTUBE_CLIENT_ID", ""))
+        self.youtube_client_secret = env.get("YOUTUBE_CLIENT_SECRET", os.getenv("YOUTUBE_CLIENT_SECRET", ""))
+        self.pexels_api_key = env.get("PEXELS_API_KEY", os.getenv("PEXELS_API_KEY", ""))
+        self.elevenlabs_api_key = env.get("ELEVENLABS_API_KEY", os.getenv("ELEVENLABS_API_KEY", ""))
+        self.elevenlabs_voice_id = env.get("ELEVENLABS_VOICE_ID", os.getenv("ELEVENLABS_VOICE_ID", ""))
+
+    def ensure_directories(self):
+        for d in [self.output_dir, self.scripts_dir, self.audio_dir, self.videos_dir,
+                  f"{self.base_dir}/branding"]:
+            Path(d).mkdir(parents=True, exist_ok=True)
+
+    @property
+    def video_width(self) -> int:
+        return 1920
+
+    @property
+    def video_height(self) -> int:
+        return 1080
+
+    @property
+    def default_category_id(self) -> str:
+        return self.category_id
+
+    @property
+    def channel_language(self) -> str:
+        return self.language
+
+
+def load_registry() -> dict[str, Any]:
+    """Channel registry JSON'unu yukle."""
+    path = Path(REGISTRY_PATH)
+    if not path.exists():
+        raise FileNotFoundError(f"Registry bulunamadi: {REGISTRY_PATH}")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def get_channel(channel_id: str) -> ChannelConfig:
+    """Belirli bir kanalin konfigurasyonunu dondur."""
+    registry = load_registry()
+    channels = registry.get("channels", {})
+    if channel_id not in channels:
+        available = list(channels.keys())
+        raise ValueError(f"Kanal bulunamadi: '{channel_id}'. Mevcut: {available}")
+    data = dict(channels[channel_id])  # kopya al
+    data.pop("channel_id", None)  # cift gelmesin
+    # ChannelConfig'in kabul etmediği extra alanları temizle
+    import dataclasses
+    known = {f.name for f in dataclasses.fields(ChannelConfig)}
+    data = {k: v for k, v in data.items() if k in known}
+    return ChannelConfig(channel_id=channel_id, **data)
+
+
+def list_channels() -> list[str]:
+    """Tum kanal ID'lerini listele."""
+    registry = load_registry()
+    return list(registry.get("channels", {}).keys())
+
+
+def get_all_channels() -> list[ChannelConfig]:
+    """Tum kanallarin konfigurasyonlarini dondur."""
+    return [get_channel(cid) for cid in list_channels()]

@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>Para Pusulası — Sistem Kılavuzu v2</title>
+<style>
+  body { font-family: -apple-system, Arial, sans-serif; max-width: 860px; margin: 40px auto; padding: 0 24px; color: #222; line-height: 1.6; }
+  h1 { color: #1a1a2e; border-bottom: 3px solid #d4af37; padding-bottom: 10px; }
+  h2 { color: #16213e; border-left: 4px solid #d4af37; padding-left: 12px; margin-top: 36px; }
+  h3 { color: #0f3460; margin-bottom: 6px; }
+  code { background: #f4f4f4; padding: 2px 8px; border-radius: 4px; font-family: monospace; font-size: 13px; }
+  pre { background: #1a1a2e; color: #d4af37; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
+  .box { background: #fff9e6; border: 1px solid #d4af37; border-radius: 8px; padding: 16px; margin: 16px 0; }
+  .alert { background: #fff0f0; border: 1px solid #e55; border-radius: 8px; padding: 12px; margin: 12px 0; }
+  .green { background: #f0fff4; border: 1px solid #3c3; border-radius: 8px; padding: 12px; margin: 12px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; }
+  th { background: #1a1a2e; color: #d4af37; padding: 10px; text-align: left; }
+  td { padding: 8px 10px; border-bottom: 1px solid #eee; }
+  tr:nth-child(even) { background: #f9f9f9; }
+  .badge { display: inline-block; background: #d4af37; color: #000; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+  .checklist { list-style: none; padding: 0; }
+  .checklist li { padding: 6px 0; border-bottom: 1px solid #f0f0f0; }
+  .checklist li::before { content: "☐ "; font-size: 18px; }
+  .toc a { color: #0f3460; text-decoration: none; display: block; padding: 3px 0; }
+  .toc a:hover { color: #d4af37; }
+  @media print { .no-print { display: none; } }
+</style>
+</head>
+<body>
+
+<h1>🎯 Para Pusulası — Operasyon Kılavuzu</h1>
+<p><strong>Versiyon:</strong> 2.0 &nbsp;|&nbsp; <strong>Tarih:</strong> Temmuz 2026 &nbsp;|&nbsp; <strong>Durum:</strong> <span class="badge">AKTİF</span></p>
+
+<div class="box no-print">
+<strong>📋 İçindekiler</strong>
+<div class="toc" style="column-count:2; margin-top:8px;">
+<a href="#progress">0. PROGRESS (Güncel Durum)</a>
+<a href="#critical">1. Kritik Bilgiler</a>
+<a href="#claude-start">2. Claude Başlangıç Promptu</a>
+<a href="#claude-rules">3. Claude Çalışma Kuralları</a>
+<a href="#recovery">4. Kurtarma Kontrol Listesi</a>
+<a href="#frozen">5. Claude Dondu / Sohbet Koptu</a>
+<a href="#env">6. Ortamı Yeniden Başlatma</a>
+<a href="#channels">7. Kanal Listesi</a>
+<a href="#commands">8. Günlük Komutlar</a>
+<a href="#folders">9. Klasör Yapısı</a>
+<a href="#api">10. API Anahtarları</a>
+<a href="#telegram">11. Telegram Bildirimleri</a>
+<a href="#new-channel">12. Yeni Kanal Eklemek</a>
+<a href="#scaling">13. Ölçekleme Planı</a>
+<a href="#costs">14. Maliyet Özeti</a>
+</div>
+</div>
+
+<!-- 0 -->
+<h2 id="progress">0. PROGRESS — Güncel Durum</h2>
+<div class="alert">
+<strong>Bu bölümü her oturumda FIRST oku. PROGRESS.md ile senkron tut.</strong>
+</div>
+<p>Dosya: <code>/Users/klara/Downloads/adsız klasör/PROGRESS.md</code><br>
+VPS'teki hali: <code>/opt/parapusulasi/PROGRESS.md</code> (scheduler otomatik günceller)</p>
+
+<table>
+  <tr><th>Alan</th><th>Değer</th></tr>
+  <tr><td>Son güncelleme</td><td>2026-07-07</td></tr>
+  <tr><td>Son tamamlanan görev</td><td>VPS CPX32'ye yükseltildi, Azure TTS + ElevenLabs entegre, akıllı uyarılar eklendi</td></tr>
+  <tr><td>Yarım kalan</td><td>YouTube API quota artışı onayı bekleniyor</td></tr>
+  <tr><td>Bir sonraki adım</td><td>10. kanal (Psikoloji Okulu) ekle</td></tr>
+</table>
+
+<!-- 1 -->
+<h2 id="critical">1. Kritik Bilgiler</h2>
+<table>
+  <tr><th>Bilgi</th><th>Değer</th></tr>
+  <tr><td>VPS IP</td><td><code>168.119.126.103</code></td></tr>
+  <tr><td>VPS Plan</td><td>Hetzner CPX32 (4 vCPU, 8 GB RAM, €35.49/ay)</td></tr>
+  <tr><td>SSH Key</td><td><code>~/.ssh/hetzner_vps</code></td></tr>
+  <tr><td>VPS Proje Dizini</td><td><code>/opt/parapusulasi/</code></td></tr>
+  <tr><td>Mac Proje Dizini</td><td><code>/Users/klara/Downloads/adsız klasör/</code></td></tr>
+  <tr><td>Systemd Servis</td><td><code>parapusulasi</code> (otomatik başlar)</td></tr>
+  <tr><td>Telegram Bot</td><td>@ParaPusulasiNotifBot | Chat ID: 253487480</td></tr>
+  <tr><td>Hetzner Panel</td><td>console.hetzner.com</td></tr>
+  <tr><td>Google Cloud</td><td>console.cloud.google.com (Proje: 831084175247)</td></tr>
+</table>
+
+<!-- 2 -->
+<h2 id="claude-start">2. Claude Başlangıç Promptu</h2>
+<div class="box">
+<strong>Yeni sohbet açınca bu promptu kullan:</strong>
+<pre>Inspect the repository.
+
+Do not regenerate existing code.
+Do not overwrite files.
+Do not modify anything yet.
+
+Read PROGRESS.md first.
+
+Determine:
+- What was completed
+- What is unfinished
+- What is the next step
+
+Wait for my approval before making any changes.</pre>
+</div>
+
+<!-- 3 -->
+<h2 id="claude-rules">3. Claude Çalışma Kuralları</h2>
+<div class="alert">
+<strong>ASLA yapmaması gerekenler:</strong>
+<ul>
+  <li>Çalışan kodu silme veya yeniden yazma</li>
+  <li>Dosya isimlerini değiştirme</li>
+  <li>Büyük refactoring yapma</li>
+  <li>Repository'nin tamamını tarama (yavaşlatır)</li>
+  <li>Onay almadan VPS'e deploy etme</li>
+</ul>
+<strong>HER ZAMAN yapması gerekenler:</strong>
+<ul>
+  <li>Önce analiz et → sonra değişiklik öner → onay bekle</li>
+  <li>Her büyük görev sonunda PROGRESS.md'yi güncelle</li>
+  <li>Hata çıkarsa 2 farklı yaklaşım dene, sonra sor</li>
+</ul>
+</div>
+
+<!-- 4 -->
+<h2 id="recovery">4. Kurtarma Kontrol Listesi</h2>
+<p>Her sabah veya sorun çıkınca bu listeyi işaretle:</p>
+<ul class="checklist">
+  <li>VPS çalışıyor (<code>systemctl is-active parapusulasi</code> → "active")</li>
+  <li>Scheduler çalışıyor (log'da son 30 dakika içinde satır var)</li>
+  <li>Telegram çalışıyor (test mesajı gönder)</li>
+  <li>Kuyruk boş değil (en az 1 kanal için video var)</li>
+  <li>ElevenLabs API key geçerli (%25+ kredi kaldı)</li>
+  <li>Azure TTS çalışıyor</li>
+  <li>YouTube upload çalışıyor (quota aşılmadı)</li>
+  <li>Disk %70'in altında (<code>df -h /</code>)</li>
+  <li>RAM %75'in altında (<code>free -h</code>)</li>
+</ul>
+
+<!-- 5 -->
+<h2 id="frozen">5. Claude Dondu / Sohbet Koptu</h2>
+<h3>Belirtiler:</h3>
+<ul>
+  <li>"Reasoning..." yazıyor ama mavi ikon dönmüyor</li>
+  <li>Hiçbir şey seçilemiyor / tıklanamıyor</li>
+  <li>5+ dakika beklendi ama cevap gelmiyor</li>
+</ul>
+<h3>Çözüm (sırayla dene):</h3>
+<pre>1. VS Code → Command Palette (⌘⇧P) → "Developer: Reload Window"
+
+2. Yeni Chat aç (+ butonu) → yeni sohbet başlat
+
+3. VS Code'u tamamen kapat → yeniden aç
+
+4. VPS bağımsız çalışıyor — Mac kapalı olsa bile video yüklenir</pre>
+
+<!-- 6 -->
+<h2 id="env">6. Ortamı Yeniden Başlatma (Mac)</h2>
+<pre># 1. Proje dizinine git
+cd "/Users/klara/Downloads/adsız klasör"
+
+# 2. Virtual environment aktif et
+source venv/bin/activate
+
+# 3. Python kontrolü
+python --version   # Python 3.13.x olmalı
+which python       # .../venv/bin/python olmalı
+
+# 4. VPS bağlantısı test et
+ssh -i ~/.ssh/hetzner_vps root@168.119.126.103 "echo OK"</pre>
+
+<!-- 7 -->
+<h2 id="channels">7. Kanal Listesi (9 Aktif)</h2>
+<table>
+  <tr><th>Kanal</th><th>Ses Motoru</th><th>Ses</th><th>Yayın</th></tr>
+  <tr><td>Para Pusulası</td><td>ElevenLabs ⭐</td><td>Fatih Yıldırım</td><td>08:00 / 20:00</td></tr>
+  <tr><td>Borsa Akademi</td><td>ElevenLabs ⭐</td><td>Doga</td><td>08:30 / 20:30</td></tr>
+  <tr><td>Kripto Rehber</td><td>Azure NeuralHD</td><td>Aydın</td><td>09:00 / 21:00</td></tr>
+  <tr><td>Kariyer Pusulası</td><td>Azure</td><td>Emel</td><td>09:30 / 21:30</td></tr>
+  <tr><td>Girişim Okulu</td><td>Azure NeuralHD</td><td>Aydın</td><td>10:00 / 22:00</td></tr>
+  <tr><td>Sağlık Pusulası</td><td>Azure</td><td>Emel</td><td>10:30 / 22:30</td></tr>
+  <tr><td>Teknoloji Pusulası</td><td>Azure NeuralHD</td><td>Aydın</td><td>11:00 / 23:00</td></tr>
+  <tr><td>Eğitim Rehberi</td><td>Azure</td><td>Emel</td><td>11:30 / 23:30</td></tr>
+  <tr><td>Gayrimenkul TV</td><td>Azure NeuralHD</td><td>Aydın</td><td>12:00 / 00:00</td></tr>
+</table>
+
+<!-- 8 -->
+<h2 id="commands">8. Günlük Terminal Komutları</h2>
+<h3>Durum kontrol:</h3>
+<pre>ssh -i ~/.ssh/hetzner_vps root@168.119.126.103 \
+  "systemctl status parapusulasi --no-pager | head -6 && free -h | grep Mem"</pre>
+
+<h3>Servisi yeniden başlat:</h3>
+<pre>ssh -i ~/.ssh/hetzner_vps root@168.119.126.103 "systemctl restart parapusulasi"</pre>
+
+<h3>Son logları gör:</h3>
+<pre>ssh -i ~/.ssh/hetzner_vps root@168.119.126.103 \
+  "tail -30 /opt/parapusulasi/logs/vps_scheduler.log"</pre>
+
+<h3>Kuyruk durumu:</h3>
+<pre>ssh -i ~/.ssh/hetzner_vps root@168.119.126.103 \
+  "cat /opt/parapusulasi/output/queue/channel_queue.json | \
+  python3 -c \"import json,sys; q=json.load(sys.stdin); \
+  [print(c,e.get('publish_at','')[:16]) for c,v in q.items() for e in v]\""</pre>
+
+<h3>Hataları filtrele:</h3>
+<pre>ssh -i ~/.ssh/hetzner_vps root@168.119.126.103 \
+  "grep 'ERROR' /opt/parapusulasi/logs/vps_scheduler.log | tail -10"</pre>
+
+<h3>Telegram test:</h3>
+<pre>cd "/Users/klara/Downloads/adsız klasör" && source venv/bin/activate
+ssh -i ~/.ssh/hetzner_vps root@168.119.126.103 \
+  "cd /opt/parapusulasi && source venv/bin/activate && \
+  python3 -c \"import sys; sys.path.insert(0,'.'); \
+  from src.scheduler_utils import send_telegram; \
+  send_telegram('Test OK'); print('Gönderildi')\""</pre>
+
+<!-- 9 -->
+<h2 id="folders">9. Klasör Yapısı</h2>
+<pre>adsız klasör/              ← Mac'teki ana proje
+├── src/                   ← Tüm Python modülleri
+│   ├── pipeline.py        ← Ana iş akışı (içerik → ses → video → YouTube)
+│   ├── scheduler_utils.py ← Disk/Telegram/token yönetimi
+│   ├── tts_engine.py      ← Azure + ElevenLabs + Edge TTS
+│   ├── video_creator_pro.py ← Video render (MoviePy)
+│   ├── youtube_uploader.py  ← YouTube API upload
+│   ├── channel_manager.py   ← Kanal config yönetimi
+│   └── cross_promotion.py   ← Abone + beğeni otomasyonu
+├── scheduler.py           ← Ana scheduler (9 kanal koordinasyonu)
+├── channels/              ← Her kanalın token + config
+│   ├── channel_registry.json ← Master kanal listesi
+│   └── para_pusulasi/     ← Örnek kanal dizini
+│       ├── youtube_token.pickle
+│       └── branding/
+├── .env                   ← TÜM API anahtarları
+├── PROGRESS.md            ← Güncel durum (otomatik güncellenir)
+└── SISTEM_KILAVUZU.html   ← Bu belge
+
+/opt/parapusulasi/         ← VPS'teki kopya (aynı yapı)
+└── logs/
+    ├── vps_scheduler.log  ← Ana log
+    └── watchdog.log       ← Servis izleme log</pre>
+
+<!-- 10 -->
+<h2 id="api">10. API Anahtarları</h2>
+<div class="box">
+<strong>Tüm anahtarlar şu dosyada:</strong> <code>.env</code> (Mac) ve <code>/opt/parapusulasi/.env</code> (VPS)<br><br>
+<table>
+  <tr><th>Servis</th><th>Değişken Adı</th><th>Nereden Alınır</th></tr>
+  <tr><td>Anthropic Claude</td><td>ANTHROPIC_API_KEY</td><td>console.anthropic.com</td></tr>
+  <tr><td>YouTube OAuth</td><td>YOUTUBE_CLIENT_ID/SECRET</td><td>console.cloud.google.com</td></tr>
+  <tr><td>Azure TTS</td><td>AZURE_TTS_KEY / AZURE_TTS_REGION</td><td>portal.azure.com</td></tr>
+  <tr><td>ElevenLabs</td><td>ELEVENLABS_API_KEY / VOICE_ID</td><td>elevenlabs.io → Developers</td></tr>
+  <tr><td>Pexels</td><td>PEXELS_API_KEY</td><td>pexels.com/api</td></tr>
+  <tr><td>Telegram</td><td>TELEGRAM_BOT_TOKEN / CHAT_ID</td><td>@BotFather → Chat ID: 253487480</td></tr>
+</table>
+<strong>⚠️ .env dosyasını asla GitHub'a yükleme, asla paylaşma.</strong>
+</div>
+
+<!-- 11 -->
+<h2 id="telegram">11. Telegram Otomatik Bildirimleri</h2>
+<table>
+  <tr><th>Ne zaman</th><th>Mesaj</th><th>Sıklık</th></tr>
+  <tr><td>Video upload edilince</td><td>✅ Yeni Video Yüklendi + link</td><td>Her upload</td></tr>
+  <tr><td>Video yayına girince</td><td>🚀 Yayında! + link</td><td>Her yayın saati</td></tr>
+  <tr><td>Render hatası</td><td>⚠️ Hata + kanal adı</td><td>Her hata</td></tr>
+  <tr><td>Token süresi dolmuş</td><td>🔑 Token sorunu</td><td>Tespit anında</td></tr>
+  <tr><td>RAM > %75</td><td>VPS yükseltme önerisi</td><td>24 saatte 1</td></tr>
+  <tr><td>RAM > %90</td><td>ACİL RAM kritik</td><td>6 saatte 1</td></tr>
+  <tr><td>Disk > %70</td><td>Disk dolmak üzere</td><td>24 saatte 1</td></tr>
+  <tr><td>13 kanal</td><td>CPX42'ye geç</td><td>1 kez</td></tr>
+  <tr><td>18 kanal</td><td>2. VPS zamanı</td><td>1 kez</td></tr>
+  <tr><td>ElevenLabs &lt;%25</td><td>Kredi uyarısı</td><td>24 saatte 1</td></tr>
+  <tr><td>Servis çöküşü</td><td>ALARM + otomatik restart</td><td>Her çöküş</td></tr>
+  <tr><td>Günlük bakım (03:00)</td><td>📊 Günlük Rapor</td><td>Her gece</td></tr>
+</table>
+
+<!-- 12 -->
+<h2 id="new-channel">12. Yeni Kanal Eklemek</h2>
+<pre>1. YouTube'da kanal aç → URL'den Channel ID al (UC ile başlar)
+
+2. channel_registry.json'a ekle:
+   cd "/Users/klara/Downloads/adsız klasör"
+   # channels/channel_registry.json dosyasını düzenle
+
+3. OAuth bağla:
+   source venv/bin/activate
+   python auth.py --channel KANAL_ID
+
+4. VPS'e gönder:
+   scp -i ~/.ssh/hetzner_vps channels/KANAL_ID/youtube_token.pickle \
+     root@168.119.126.103:/opt/parapusulasi/channels/KANAL_ID/
+
+   scp -i ~/.ssh/hetzner_vps channels/channel_registry.json \
+     root@168.119.126.103:/opt/parapusulasi/channels/
+
+5. Servisi yeniden başlat:
+   ssh -i ~/.ssh/hetzner_vps root@168.119.126.103 "systemctl restart parapusulasi"
+
+✅ Sistem otomatik tanır ve video render'a başlar.</pre>
+
+<!-- 13 -->
+<h2 id="scaling">13. Ölçekleme Planı</h2>
+<div class="box">
+<strong>Telegram uyarı gelince yapılacaklar — otomatik hatırlatma var.</strong>
+</div>
+<table>
+  <tr><th>Kanal Sayısı</th><th>Yapılacak</th><th>Ek Maliyet</th></tr>
+  <tr><td>9-12</td><td>Mevcut CPX32 yeterli</td><td>—</td></tr>
+  <tr><td>13-20</td><td>CPX32 → CPX42 (Telegram uyarısı gelir)</td><td>+€34/ay</td></tr>
+  <tr><td>20-50</td><td>2. VPS + kanalları böl (Telegram uyarısı gelir)</td><td>+€35/ay</td></tr>
+  <tr><td>50-200</td><td>Her 20 kanal = 1 VPS (Claude kurulumu yapar)</td><td>+€35/VPS</td></tr>
+</table>
+
+<!-- 14 -->
+<h2 id="costs">14. Aylık Maliyet Özeti</h2>
+<table>
+  <tr><th>Hizmet</th><th>Plan</th><th>Ücret</th></tr>
+  <tr><td>Hetzner VPS</td><td>CPX32 (4 vCPU, 8 GB)</td><td>€35.49/ay</td></tr>
+  <tr><td>Anthropic Claude API</td><td>claude-opus-4-5</td><td>~$45/ay</td></tr>
+  <tr><td>ElevenLabs</td><td>Creator (2 kanal için)</td><td>$22/ay</td></tr>
+  <tr><td>Azure TTS</td><td>F0 Free (500k/ay)</td><td>$0</td></tr>
+  <tr><td>Pexels API</td><td>Ücretsiz</td><td>$0</td></tr>
+  <tr><td>Edge TTS</td><td>Ücretsiz</td><td>$0</td></tr>
+  <tr><td><strong>TOPLAM</strong></td><td></td><td><strong>~$110/ay</strong></td></tr>
+</table>
+
+<div class="alert">
+<strong>⚠️ Bekleyen:</strong> YouTube API quota artışı (200,000 birim). Google 1-3 iş günü içinde yanıtlar. Onaylanana kadar günde ~6 video upload edilebilir.
+</div>
+
+<hr>
+<p style="text-align:center; color:#888; font-size:12px;">
+Para Pusulası YouTube Otomasyon Sistemi — v2.0 — Temmuz 2026<br>
+<em>Bu belgeyi PDF olarak kaydet: ⌘P → PDF Olarak Kaydet</em>
+</p>
+
+</body>
+</html>
+<head>
+<meta charset="UTF-8">
+<title>Para Pusulası — Sistem Kılavuzu</title>
+<style>
+  body { font-family: -apple-system, Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #222; }
+  h1 { color: #1a1a2e; border-bottom: 3px solid #d4af37; padding-bottom: 10px; }
+  h2 { color: #16213e; border-left: 4px solid #d4af37; padding-left: 12px; margin-top: 30px; }
+  h3 { color: #0f3460; }
+  code { background: #f4f4f4; padding: 2px 8px; border-radius: 4px; font-family: monospace; font-size: 13px; }
+  pre { background: #1a1a2e; color: #d4af37; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6; }
+  .box { background: #fff9e6; border: 1px solid #d4af37; border-radius: 8px; padding: 16px; margin: 16px 0; }
+  .alert { background: #fff0f0; border: 1px solid #e55; border-radius: 8px; padding: 12px; margin: 12px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+  th { background: #1a1a2e; color: #d4af37; padding: 10px; text-align: left; }
+  td { padding: 8px 10px; border-bottom: 1px solid #eee; }
+  tr:nth-child(even) { background: #f9f9f9; }
+  .badge { display: inline-block; background: #d4af37; color: #000; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+  @media print { .no-print { display: none; } }
+</style>
+</head>
+<body>
+
+<h1>🎯 Para Pusulası — YouTube Otomasyon Sistemi</h1>
+<p><strong>Hazırlanma tarihi:</strong> Temmuz 2026 &nbsp;|&nbsp; <strong>Durum:</strong> <span class="badge">AKTİF</span></p>
+
+<div class="box">
+<strong>Bu belge ne işe yarar?</strong><br>
+Sohbet koptuğunda, sistem bozulduğunda veya bir şey kontrol etmek istediğinde bu kılavuzu kullan.
+</div>
+
+<h2>1. Kritik Bilgiler</h2>
+<table>
+  <tr><th>Bilgi</th><th>Değer</th></tr>
+  <tr><td>VPS IP Adresi</td><td><code>168.119.126.103</code></td></tr>
+  <tr><td>SSH Key Yolu</td><td><code>~/.ssh/hetzner_vps</code></td></tr>
+  <tr><td>VPS Plan</td><td>Hetzner CPX32 (4 vCPU, 8 GB RAM, €35.49/ay)</td></tr>
+  <tr><td>VPS Proje Dizini</td><td><code>/opt/parapusulasi/</code></td></tr>
+  <tr><td>Mac Proje Dizini</td><td><code>/Users/klara/Downloads/adsız klasör/</code></td></tr>
+  <tr><td>Telegram Bot</td><td>@ParaPusulasiNotifBot</td></tr>
+  <tr><td>Telegram Chat ID</td><td>253487480</td></tr>
+</table>
+
+<h2>2. Kanal Listesi (9 Aktif Kanal)</h2>
+<table>
+  <tr><th>Kanal</th><th>Ses</th><th>Yayın Saatleri</th><th>YouTube ID</th></tr>
+  <tr><td>Para Pusulası</td><td>ElevenLabs (Fatih Yıldırım)</td><td>08:00 / 20:00</td><td>UC6tU7UqYylfSA75pj3rEY_Q</td></tr>
+  <tr><td>Borsa Akademi</td><td>ElevenLabs (Doga)</td><td>08:30 / 20:30</td><td>UCwQERXHCUOngXXTnJ9goBSQ</td></tr>
+  <tr><td>Kripto Rehber</td><td>Azure (Aydın NeuralHD)</td><td>09:00 / 21:00</td><td>UCyFK7LdIPM01fAf3f0W2x9Q</td></tr>
+  <tr><td>Kariyer Pusulası</td><td>Azure (Emel)</td><td>09:30 / 21:30</td><td>UC-LxyfIrfqWDfFCzJLVBwEg</td></tr>
+  <tr><td>Girişim Okulu</td><td>Azure (Aydın NeuralHD)</td><td>10:00 / 22:00</td><td>UCvfuE893JTeSJx72j3eq3hQ</td></tr>
+  <tr><td>Sağlık Pusulası</td><td>Azure (Emel)</td><td>10:30 / 22:30</td><td>UCFgiTIusu01pgxviXU33jBQ</td></tr>
+  <tr><td>Teknoloji Pusulası</td><td>Azure (Aydın NeuralHD)</td><td>11:00 / 23:00</td><td>UCZgzLieTfwq6_euBi1nEsrQ</td></tr>
+  <tr><td>Eğitim Rehberi</td><td>Azure (Emel)</td><td>11:30 / 23:30</td><td>UCVmjUlrK8L5rA-To5iGDbIw</td></tr>
+  <tr><td>Gayrimenkul TV</td><td>Azure (Aydın NeuralHD)</td><td>12:00 / 00:00</td><td>UCIAevq41ewEZORIZ7ODMOoA</td></tr>
+</table>
+
+<h2>3. Günlük Terminal Komutları</h2>
+
+<h3>Sistem durumu kontrol:</h3>
+<pre>ssh -i ~/.ssh/hetzner_vps root@168.119.126.103 "systemctl status parapusulasi --no-pager | head -6"</pre>
+
+<h3>Servisi yeniden başlat:</h3>
+<pre>ssh -i ~/.ssh/hetzner_vps root@168.119.126.103 "systemctl restart parapusulasi"</pre>
+
+<h3>Son logları gör:</h3>
+<pre>ssh -i ~/.ssh/hetzner_vps root@168.119.126.103 "tail -20 /opt/parapusulasi/logs/vps_scheduler.log"</pre>
+
+<h3>Hangi videolar zamanlandı:</h3>
+<pre>ssh -i ~/.ssh/hetzner_vps root@168.119.126.103 "cat /opt/parapusulasi/output/queue/channel_queue.json | python3 -c \"import json,sys; q=json.load(sys.stdin); [print(c,e.get('publish_at','')[:16]) for c,v in q.items() for e in v]\""</pre>
+
+<h3>RAM ve disk durumu:</h3>
+<pre>ssh -i ~/.ssh/hetzner_vps root@168.119.126.103 "free -h && df -h / | tail -1"</pre>
+
+<h2>4. Otomatik Telegram Bildirimleri</h2>
+<table>
+  <tr><th>Tetikleyici</th><th>Mesaj</th></tr>
+  <tr><td>Video yüklenince</td><td>✅ Yeni Video Yüklendi + link</td></tr>
+  <tr><td>Video yayına girince</td><td>🚀 Yeni Video Yayında + link</td></tr>
+  <tr><td>Render hatası</td><td>⚠️ Render Hatası + kanal adı</td></tr>
+  <tr><td>RAM > %75</td><td>VPS yükseltme uyarısı</td></tr>
+  <tr><td>Disk > %70</td><td>Disk dolmak üzere</td></tr>
+  <tr><td>13 kanal</td><td>CPX42'ye geç zamanı</td></tr>
+  <tr><td>18 kanal</td><td>2. VPS açma zamanı</td></tr>
+  <tr><td>ElevenLabs kredi &lt; %25</td><td>Kredit azalıyor</td></tr>
+  <tr><td>Servis çöküşü</td><td>ALARM + otomatik restart</td></tr>
+</table>
+
+<h2>5. Yeni Kanal Eklemek</h2>
+<div class="box">
+<strong>Adımlar:</strong><br>
+1. YouTube'da kanal aç → URL'den Channel ID al<br>
+2. <code>channels/channel_registry.json</code>'a kanal ekle<br>
+3. <code>python auth.py --channel KANAL_ID</code> → OAuth<br>
+4. Token'ı VPS'e gönder: <code>scp -i ~/.ssh/hetzner_vps channels/KANAL/youtube_token.pickle root@168.119.126.103:/opt/parapusulasi/channels/KANAL/</code><br>
+5. Registry'i VPS'e gönder: <code>scp -i ~/.ssh/hetzner_vps channels/channel_registry.json root@168.119.126.103:/opt/parapusulasi/channels/</code><br>
+6. Servis restart: adım 3'teki komut
+</div>
+
+<h2>6. Aylık Maliyet Özeti</h2>
+<table>
+  <tr><th>Hizmet</th><th>Ücret</th><th>Ne İçin</th></tr>
+  <tr><td>Hetzner VPS CPX32</td><td>€35.49/ay</td><td>7/24 sunucu</td></tr>
+  <tr><td>Anthropic Claude API</td><td>~$45/ay</td><td>Video içerik üretimi</td></tr>
+  <tr><td>ElevenLabs Creator</td><td>$11 (ilk ay, sonra $22)</td><td>Para Pusulası + Borsa Akademi sesi</td></tr>
+  <tr><td>Azure TTS</td><td>Ücretsiz (500k/ay)</td><td>Diğer 7 kanal sesi</td></tr>
+  <tr><td>Pexels API</td><td>Ücretsiz</td><td>Stok görseller</td></tr>
+  <tr><td><strong>TOPLAM</strong></td><td><strong>~$115/ay</strong></td><td></td></tr>
+</table>
+
+<h2>7. Sohbet Koptuysa — Ne Yapmalısın</h2>
+<div class="box">
+<strong>VS Code'da yeni Copilot sohbeti aç ve şunu yaz:</strong><br><br>
+<em>"adsız klasör" projesindeyim. YouTube otomasyon sistemi kuruyoruz (9 Türkçe kanal, VPS 168.119.126.103). Son durumu kontrol et ve devam et."</em>
+</div>
+
+<h2>8. Ölçekleme Planı</h2>
+<table>
+  <tr><th>Kanal Sayısı</th><th>Yapılacak</th><th>Maliyet Değişimi</th></tr>
+  <tr><td>9-12 kanal</td><td>Mevcut CPX32 yeterli</td><td>—</td></tr>
+  <tr><td>13-20 kanal</td><td>CPX42'ye geç (Telegram uyarısı gelir)</td><td>+€34/ay</td></tr>
+  <tr><td>20-50 kanal</td><td>2. VPS aç + kanalları böl</td><td>+€35/ay</td></tr>
+  <tr><td>50-200 kanal</td><td>Her 20 kanal için 1 VPS</td><td>+€35/VPS</td></tr>
+</table>
+
+<div class="alert">
+<strong>⚠️ Önemli:</strong> YouTube API günlük 10,000 birim limit var. Quota artışı için başvuru yapıldı (Google 1-3 iş günü içinde yanıtlar). Onaylanana kadar günde ~6 video upload edilebilir.
+</div>
+
+<hr>
+<p style="text-align:center; color:#888; font-size:12px;">Para Pusulası YouTube Otomasyon Sistemi — Temmuz 2026</p>
+
+</body>
+</html>

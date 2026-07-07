@@ -1,0 +1,23 @@
+# Güvenlik — asla commit etme
+.env
+**/*.pickle
+**/client_secrets.json
+**/.env
+
+# Büyük dosyalar
+**/output/
+**/clips/
+**/*.mp3
+**/*.mp4
+**/*.jpg
+**/*.jpeg
+**/*.png
+**/logs/
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Geçici
+/tmp/
+*.m4a

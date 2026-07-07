@@ -3,11 +3,18 @@ Tam Otomasyon Pipeline - Tek ve Cok Kanalli Mod
 """
 import logging
 import os
+from contextlib import contextmanager
 from pathlib import Path
 
 from .config import config as _default_config
 from .content_generator import ContentGenerator, VideoContent
 from .image_fetcher import ImageFetcher
+from .telemetry import (
+    build_event_envelope,
+    emit_event,
+    generate_content_id,
+    generate_run_id,
+)
 from .tts_engine import TTSEngine
 from .video_creator_pro import VideoCreator
 from .youtube_uploader import YouTubeUploader
@@ -27,15 +34,54 @@ def run_full_pipeline(
     cfg = channel_cfg if channel_cfg else _default_config
     cfg.ensure_directories()
     result = {"channel": getattr(cfg, "channel_id", "default")}
+    result["content_id"] = generate_content_id()
+    result["run_id"] = generate_run_id()
+
+    def _emit(stage: str, event_type: str, payload: dict | None = None):
+        try:
+            envelope = build_event_envelope(
+                content_id=result["content_id"],
+                run_id=result["run_id"],
+                channel_id=result.get("channel"),
+                stage=stage,
+                event_type=event_type,
+                payload=payload or {},
+            )
+            emit_event(envelope, logger=logger)
+        except Exception:
+            # Telemetry must be fail-open and never affect production flow.
+            pass
+
+    @contextmanager
+    def _stage(stage: str, start_payload: dict | None = None, complete_payload_fn=None):
+        _emit(stage, "stage_started", start_payload)
+        try:
+            yield
+        except Exception as e:
+            _emit(stage, "stage_failed", {"error": str(e)[:300]})
+            raise
+        else:
+            payload = {}
+            if callable(complete_payload_fn):
+                try:
+                    payload = complete_payload_fn() or {}
+                except Exception:
+                    payload = {}
+            _emit(stage, "stage_completed", payload)
 
     # ─── ADIM 1: Icerik Uretimi ────────────────────────────────────────────────
     logger.info("=" * 60)
     logger.info(f"ADIM 1/4 - Icerik Uretimi [{result['channel']}]")
     logger.info("=" * 60)
-    generator = ContentGenerator(channel_cfg=cfg)
-    content: VideoContent = generator.generate_and_save(topic)
-    result["title"] = content.title
-    result["script_path"] = f"{cfg.scripts_dir}/{content.created_at[:10]}_{content.title[:30]}.json"
+    with _stage(
+        "content_generation",
+        start_payload={"generate_only": generate_only},
+        complete_payload_fn=lambda: {"title": result.get("title", "")[:120]},
+    ):
+        generator = ContentGenerator(channel_cfg=cfg)
+        content: VideoContent = generator.generate_and_save(topic)
+        result["title"] = content.title
+        result["script_path"] = f"{cfg.scripts_dir}/{content.created_at[:10]}_{content.title[:30]}.json"
 
     if generate_only:
         logger.info("Sadece icerik uretme modu.")
@@ -45,90 +91,95 @@ def run_full_pipeline(
     logger.info("=" * 60)
     logger.info(f"ADIM 2/4 - Edge TTS [{result['channel']}]")
     logger.info("=" * 60)
-    tts = TTSEngine(channel_cfg=cfg)
-    audio_path = tts.generate_audio(content.script)
-    result["audio_path"] = audio_path
+    with _stage("tts", complete_payload_fn=lambda: {"audio_path": str(result.get("audio_path", ""))[:180]}):
+        tts = TTSEngine(channel_cfg=cfg)
+        audio_path = tts.generate_audio(content.script)
+        result["audio_path"] = audio_path
 
     # ─── ADIM 2.5: Stok Video Klipleri + Grafik ──────────────────────────────
     logger.info("Pexels video klipleri indiriliyor...")
-    fetcher = ImageFetcher(channel_cfg=cfg)
-    from datetime import datetime as _dt
-    media_dir = f"{cfg.output_dir}/clips/{_dt.now().strftime('%Y%m%d_%H%M%S')}"
+    with _stage("media_fetch", complete_payload_fn=lambda: {"media_count": len(image_paths)}):
+        fetcher = ImageFetcher(channel_cfg=cfg)
+        from datetime import datetime as _dt
+        media_dir = f"{cfg.output_dir}/clips/{_dt.now().strftime('%Y%m%d_%H%M%S')}"
 
-    # İçerikten gelen özgün Pexels sorgusu varsa kullan, yoksa kanal default'u
-    pexels_query = getattr(content, "pexels_search", None) or getattr(cfg, "pexels_query", None)
+        # İçerikten gelen özgün Pexels sorgusu varsa kullan, yoksa kanal default'u
+        pexels_query = getattr(content, "pexels_search", None) or getattr(cfg, "pexels_query", None)
 
-    # Storyblocks (premium) varsa önce dene, yoksa Pexels kullan
-    image_paths = []
-    try:
-        from .premium_services import has_storyblocks, fetch_storyblocks_clips
-        if has_storyblocks():
-            image_paths = fetch_storyblocks_clips(
-                pexels_query or content.title, count=4, output_dir=media_dir
+        # Storyblocks (premium) varsa önce dene, yoksa Pexels kullan
+        image_paths = []
+        try:
+            from .premium_services import has_storyblocks, fetch_storyblocks_clips
+            if has_storyblocks():
+                image_paths = fetch_storyblocks_clips(
+                    pexels_query or content.title, count=4, output_dir=media_dir
+                )
+                if image_paths:
+                    logger.info(f"Storyblocks: {len(image_paths)} premium klip")
+        except Exception as e:
+            logger.warning(f"Storyblocks atlandı: {e}")
+
+        if not image_paths:
+            image_paths = fetcher.fetch_video_clips(
+                content.title, count=4, output_dir=media_dir, query_override=pexels_query
             )
-            if image_paths:
-                logger.info(f"Storyblocks: {len(image_paths)} premium klip")
-    except Exception as e:
-        logger.warning(f"Storyblocks atlandı: {e}")
 
-    if not image_paths:
-        image_paths = fetcher.fetch_video_clips(
-            content.title, count=4, output_dir=media_dir, query_override=pexels_query
-        )
-
-    # Finansal grafik üret — video ortasına (değişken pozisyon) ekle
-    chart_path = None
-    try:
-        from .chart_generator import generate_chart, generate_placeholder_chart
-        chart_data = getattr(content, "chart_data", None)
-        chart_out = f"{media_dir}/chart.png"
-        if chart_data and isinstance(chart_data, dict) and chart_data.get("type"):
-            chart_path = generate_chart(chart_data, chart_out)
-        else:
-            chart_path = generate_placeholder_chart(content.title, chart_out)
-        if chart_path and image_paths:
-            # Grafiği kliplerin ortasına veya 1/3'üne yerleştir (ilk kare değil)
-            insert_pos = max(1, len(image_paths) // 2)
-            image_paths.insert(insert_pos, chart_path)
-            logger.info(f"Grafik pozisyon {insert_pos}'e eklendi: {chart_path}")
-        elif chart_path:
-            image_paths = [chart_path]
-    except Exception as e:
-        logger.warning(f"Grafik oluşturulamadı: {e}")
+        # Finansal grafik üret — video ortasına (değişken pozisyon) ekle
+        chart_path = None
+        try:
+            from .chart_generator import generate_chart, generate_placeholder_chart
+            chart_data = getattr(content, "chart_data", None)
+            chart_out = f"{media_dir}/chart.png"
+            if chart_data and isinstance(chart_data, dict) and chart_data.get("type"):
+                chart_path = generate_chart(chart_data, chart_out)
+            else:
+                chart_path = generate_placeholder_chart(content.title, chart_out)
+            if chart_path and image_paths:
+                # Grafiği kliplerin ortasına veya 1/3'üne yerleştir (ilk kare değil)
+                insert_pos = max(1, len(image_paths) // 2)
+                image_paths.insert(insert_pos, chart_path)
+                logger.info(f"Grafik pozisyon {insert_pos}'e eklendi: {chart_path}")
+            elif chart_path:
+                image_paths = [chart_path]
+        except Exception as e:
+            logger.warning(f"Grafik oluşturulamadı: {e}")
 
     # ─── ADIM 3: Video Montaji ────────────────────────────────────────────────
     logger.info("=" * 60)
     logger.info(f"ADIM 3/4 - Video Montaji [{result['channel']}]")
     logger.info("=" * 60)
-    creator = VideoCreator(channel_cfg=cfg)
-    video_path = creator.create_video(
-        audio_path, content.title,
-        image_paths=image_paths or None,
-        script=content.script,
-    )
-    # Thumbnail için konuya özel ayrı fotoğraf çek (video klipten farklı)
-    try:
-        thumb_bg = None
-        # Öncelik: DALL-E 3 (varsa) → Pexels foto → Pexels video frame
-        from .premium_services import has_dalle, generate_dalle_thumbnail
-        if has_dalle():
-            dalle_prompt = getattr(content, "thumbnail_prompt", content.title)
-            dalle_path = f"{cfg.videos_dir}/thumb_dalle_{__import__('uuid').uuid4().hex[:8]}.jpg"
-            thumb_bg = generate_dalle_thumbnail(dalle_prompt, dalle_path)
-            if thumb_bg:
-                logger.info("DALL-E 3 thumbnail kullanılıyor")
-        if not thumb_bg:
-            thumb_bg = fetcher.fetch_thumbnail_photo(content.title)
-        if not thumb_bg:
+    with _stage("render", complete_payload_fn=lambda: {"video_path": str(result.get("video_path", ""))[:180]}):
+        creator = VideoCreator(channel_cfg=cfg)
+        video_path = creator.create_video(
+            audio_path, content.title,
+            image_paths=image_paths or None,
+            script=content.script,
+        )
+        # Thumbnail için konuya özel ayrı fotoğraf çek (video klipten farklı)
+        try:
+            thumb_bg = None
+            # Öncelik: DALL-E 3 (varsa) → Pexels foto → Pexels video frame
+            from .premium_services import has_dalle, generate_dalle_thumbnail
+            if has_dalle():
+                dalle_prompt = getattr(content, "thumbnail_prompt", content.title)
+                dalle_path = f"{cfg.videos_dir}/thumb_dalle_{__import__('uuid').uuid4().hex[:8]}.jpg"
+                thumb_bg = generate_dalle_thumbnail(dalle_prompt, dalle_path)
+                if thumb_bg:
+                    logger.info("DALL-E 3 thumbnail kullanılıyor")
+            if not thumb_bg:
+                thumb_bg = fetcher.fetch_thumbnail_photo(content.title)
+            if not thumb_bg:
+                thumb_bg = image_paths[0] if image_paths else None
+        except Exception:
             thumb_bg = image_paths[0] if image_paths else None
-    except Exception:
-        thumb_bg = image_paths[0] if image_paths else None
-    thumbnail_path = creator.create_thumbnail(content.title, image_path=thumb_bg)
-    result["video_path"] = video_path
-    result["thumbnail_path"] = thumbnail_path
+        thumbnail_path = creator.create_thumbnail(content.title, image_path=thumb_bg)
+        result["video_path"] = video_path
+        result["thumbnail_path"] = thumbnail_path
 
     # ─── ADIM 3.5: YouTube Short ──────────────────────────────────────────────
+    _emit("shorts_render", "stage_started")
     short_path = None
+    short_render_error = None
     for short_attempt in range(1, 3):  # 2 deneme hakkı
         try:
             logger.info(f"YouTube Short oluşturuluyor (deneme {short_attempt})...")
@@ -146,24 +197,39 @@ def run_full_pipeline(
         except Exception as e:
             logger.warning(f"Short oluşturulamadı (deneme {short_attempt}/2): {e}")
             if short_attempt == 2:
+                short_render_error = e
                 logger.error(f"Short kalıcı olarak başarısız: {e}")
+    if result.get("short_path"):
+        _emit("shorts_render", "stage_completed", {"short_created": True})
+    else:
+        if short_render_error is not None:
+            _emit("shorts_render", "stage_failed", {"error": str(short_render_error)[:300]})
+        else:
+            _emit("shorts_render", "stage_failed", {"error": "short_not_created"})
 
     # ─── ADIM 4: YouTube Yukleme ──────────────────────────────────────────────
     logger.info("=" * 60)
     logger.info(f"ADIM 4/4 - YouTube [{result['channel']}]")
     logger.info("=" * 60)
-    uploader = YouTubeUploader(channel_cfg=cfg)
-    video_id = uploader.upload_video(
-        video_path=video_path,
-        content=content,
-        thumbnail_path=thumbnail_path,
-        privacy=privacy,
-        publish_at=publish_at,
-    )
-    result["video_id"] = video_id
-    result["youtube_url"] = f"https://youtube.com/watch?v={video_id}"
+    with _stage(
+        "upload",
+        start_payload={"privacy": privacy, "publish_at": publish_at},
+        complete_payload_fn=lambda: {"video_id": str(result.get("video_id", ""))},
+    ):
+        uploader = YouTubeUploader(channel_cfg=cfg)
+        video_id = uploader.upload_video(
+            video_path=video_path,
+            content=content,
+            thumbnail_path=thumbnail_path,
+            privacy=privacy,
+            publish_at=publish_at,
+        )
+        result["video_id"] = video_id
+        result["youtube_url"] = f"https://youtube.com/watch?v={video_id}"
 
     # ─── ADIM 4.5: Short Yukle ────────────────────────────────────────────────
+    _emit("shorts_upload", "stage_started")
+    shorts_upload_error = None
     if result.get("short_path"):
         try:
             from .content_generator import VideoContent as VC
@@ -187,7 +253,19 @@ def run_full_pipeline(
             result["short_url"] = f"https://youtube.com/shorts/{short_id}"
             logger.info(f"Short yuklendi: {result['short_url']}")
         except Exception as e:
+            shorts_upload_error = e
             logger.error(f"Short yuklenemedi: {e}")
+    if result.get("short_path"):
+        if result.get("short_url"):
+            _emit("shorts_upload", "stage_completed", {"short_uploaded": True})
+        else:
+            _emit(
+                "shorts_upload",
+                "stage_failed",
+                {"error": str(shorts_upload_error)[:300] if shorts_upload_error else "short_upload_failed"},
+            )
+    else:
+        _emit("shorts_upload", "stage_completed", {"short_uploaded": False, "skipped": True})
 
     logger.info("=" * 60)
     logger.info(f"✅ TAMAMLANDI! Video: {result['youtube_url']}")

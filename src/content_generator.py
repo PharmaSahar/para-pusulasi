@@ -15,6 +15,7 @@ import anthropic
 from .channel_dna import build_channel_dna_metadata
 from .config import config
 from .prompt_registry import build_prompt_metadata
+from .quality_scoring import build_quality_scores
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +131,7 @@ class VideoContent:
     chart_data: dict = field(default_factory=dict)  # Finansal grafik verisi
     prompt_metadata: dict = field(default_factory=dict)
     channel_dna_metadata: dict = field(default_factory=dict)
+    quality_score_metadata: dict = field(default_factory=dict)
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
     def to_dict(self) -> dict:
@@ -147,6 +149,7 @@ class VideoContent:
             "chart_data": self.chart_data,
             "prompt_metadata": self.prompt_metadata,
             "channel_dna_metadata": self.channel_dna_metadata,
+            "quality_score_metadata": self.quality_score_metadata,
             "created_at": self.created_at,
         }
 
@@ -462,6 +465,17 @@ class ContentGenerator:
             except Exception:
                 raw_chart = {}
 
+        try:
+            quality_score_metadata = build_quality_scores(
+                title=data.get("title", ""),
+                description=data.get("description", ""),
+                script=data.get("script", ""),
+                tags=data.get("tags", []),
+            )
+        except Exception:
+            # Scoring is metadata-only and must never block generation.
+            quality_score_metadata = {}
+
         content = VideoContent(
             title=data["title"],
             description=data["description"],
@@ -476,6 +490,7 @@ class ContentGenerator:
             chart_data=raw_chart or {},
             prompt_metadata=prompt_metadata,
             channel_dna_metadata=channel_dna_metadata,
+            quality_score_metadata=quality_score_metadata,
         )
         logger.info("Icerik hazir: " + content.title)
         return content

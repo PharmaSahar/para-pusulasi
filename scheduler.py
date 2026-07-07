@@ -65,6 +65,9 @@ render_locks = {}  # Her kanal için kilit — aynı anda iki render başlaması
 
 def load_queue() -> dict:
     with QUEUE_LOCK:
+        mode = os.getenv("JOB_STORE_MODE", "json").strip().lower()
+        if mode not in {"json", "shadow"}:
+            mode = "json"
         Path(QUEUE_FILE).parent.mkdir(parents=True, exist_ok=True)
         if not Path(QUEUE_FILE).exists():
             return {}
@@ -76,15 +79,39 @@ def load_queue() -> dict:
 
 def save_queue(data: dict):
     with QUEUE_LOCK:
+        mode = os.getenv("JOB_STORE_MODE", "json").strip().lower()
+        if mode not in {"json", "shadow"}:
+            mode = "json"
         path = Path(QUEUE_FILE)
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = path.with_suffix(path.suffix + ".tmp")
         tmp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         os.replace(tmp_path, path)
 
+        if mode == "shadow":
+            try:
+                from src.job_store import mirror_legacy_queue_snapshot
+
+                report = mirror_legacy_queue_snapshot(
+                    data,
+                    db_path=os.getenv("JOB_STORE_DB_PATH", "output/state/jobs.db"),
+                )
+                if report.get("missing_count", 0) > 0:
+                    logger.warning(
+                        "Shadow parity mismatch: missing=%s expected=%s mirrored=%s",
+                        report.get("missing_count", 0),
+                        report.get("expected", 0),
+                        report.get("mirrored", 0),
+                    )
+            except Exception as e:
+                logger.warning("Shadow mirror failed (non-blocking): %s", e)
+
 
 def update_queue(mutator):
     with QUEUE_LOCK:
+        mode = os.getenv("JOB_STORE_MODE", "json").strip().lower()
+        if mode not in {"json", "shadow"}:
+            mode = "json"
         path = Path(QUEUE_FILE)
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -95,6 +122,24 @@ def update_queue(mutator):
         tmp_path = path.with_suffix(path.suffix + ".tmp")
         tmp_path.write_text(json.dumps(queue, ensure_ascii=False, indent=2), encoding="utf-8")
         os.replace(tmp_path, path)
+
+        if mode == "shadow":
+            try:
+                from src.job_store import mirror_legacy_queue_snapshot
+
+                report = mirror_legacy_queue_snapshot(
+                    queue,
+                    db_path=os.getenv("JOB_STORE_DB_PATH", "output/state/jobs.db"),
+                )
+                if report.get("missing_count", 0) > 0:
+                    logger.warning(
+                        "Shadow parity mismatch: missing=%s expected=%s mirrored=%s",
+                        report.get("missing_count", 0),
+                        report.get("expected", 0),
+                        report.get("mirrored", 0),
+                    )
+            except Exception as e:
+                logger.warning("Shadow mirror failed (non-blocking): %s", e)
 
 
 def get_ready_channels() -> list:
@@ -554,6 +599,22 @@ def main():
 
     from rich.console import Console
     console = Console()
+
+    mode = os.getenv("JOB_STORE_MODE", "json").strip().lower()
+    if mode not in {"json", "shadow"}:
+        logger.warning("Geçersiz JOB_STORE_MODE='%s', json kullanılacak.", mode)
+        mode = "json"
+
+    if mode == "shadow":
+        try:
+            from src.job_store import initialize_database
+
+            initialize_database(os.getenv("JOB_STORE_DB_PATH", "output/state/jobs.db"))
+            logger.info("JOB_STORE_MODE=shadow aktif: SQLite shadow mirror etkin.")
+        except Exception as e:
+            logger.warning("Shadow DB init failed (non-blocking): %s", e)
+    else:
+        logger.info("JOB_STORE_MODE=json aktif: JSON production source of truth.")
 
     # scheduler_utils opsiyonel — yoksa basit fallback kullan
     try:

@@ -288,3 +288,55 @@ def bootstrap_legacy_queue(
                 )
             )
     return created
+
+
+def mirror_legacy_queue_snapshot(
+    queue_data: dict,
+    *,
+    db_path: str | Path = DEFAULT_DB_PATH,
+    workflow_type: str = "render_schedule_shadow",
+) -> dict:
+    """Mirror current JSON queue entries into SQLite and report parity.
+
+    This helper is intentionally passive for shadow mode: it never drives
+    scheduler execution, only mirrors entries and returns a parity report.
+    """
+    initialize_database(db_path)
+
+    expected = 0
+    mirrored = 0
+    missing: list[str] = []
+
+    with open_database(db_path) as connection:
+        for channel_id, entries in (queue_data or {}).items():
+            for entry in entries or []:
+                expected += 1
+                payload = {
+                    "channel_id": channel_id,
+                    "legacy_entry": entry,
+                }
+                publish_at = entry.get("publish_at") if isinstance(entry, dict) else None
+                idempotency_key = build_idempotency_key(channel_id, workflow_type, payload)
+                job = create_job(
+                    connection,
+                    channel_id=channel_id,
+                    workflow_type=workflow_type,
+                    payload=payload,
+                    publish_at=publish_at,
+                    priority=100,
+                    max_attempts=3,
+                    next_run_at=publish_at,
+                    status=JobStatus.QUEUED.value,
+                    idempotency_key=idempotency_key,
+                )
+                if job is not None:
+                    mirrored += 1
+                if get_job_by_idempotency_key(connection, idempotency_key) is None:
+                    missing.append(idempotency_key)
+
+    return {
+        "expected": expected,
+        "mirrored": mirrored,
+        "missing_count": len(missing),
+        "missing": missing,
+    }

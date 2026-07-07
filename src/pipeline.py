@@ -9,6 +9,7 @@ from pathlib import Path
 from .config import config as _default_config
 from .content_generator import ContentGenerator, VideoContent
 from .image_fetcher import ImageFetcher
+from .analytics_join import build_analytics_join_metadata
 from .telemetry import (
     build_event_envelope,
     emit_event,
@@ -100,6 +101,19 @@ def run_full_pipeline(
         content: VideoContent = generator.generate_and_save(topic)
         result["title"] = content.title
         result["script_path"] = f"{cfg.scripts_dir}/{content.created_at[:10]}_{content.title[:30]}.json"
+
+    try:
+        result["analytics_join_metadata"] = build_analytics_join_metadata(
+            content_id=result["content_id"],
+            run_id=result["run_id"],
+            channel_id=result.get("channel"),
+            telemetry_metadata=telemetry_metadata,
+            prompt_metadata=getattr(content, "prompt_metadata", None),
+            channel_dna_metadata=getattr(content, "channel_dna_metadata", None),
+            quality_score_metadata=getattr(content, "quality_score_metadata", None),
+        )
+    except Exception:
+        result["analytics_join_metadata"] = {}
 
     if generate_only:
         logger.info("Sadece icerik uretme modu.")

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .config import config as _default_config
 from .content_generator import ContentGenerator, VideoContent
+from .editor_review import build_editor_review_metadata
 from .image_fetcher import ImageFetcher
 from .analytics_join import build_analytics_join_metadata
 from .telemetry import (
@@ -114,6 +115,16 @@ def run_full_pipeline(
         )
     except Exception:
         result["analytics_join_metadata"] = {}
+
+    try:
+        result["editor_review_metadata"] = build_editor_review_metadata(
+            title=getattr(content, "title", ""),
+            description=getattr(content, "description", ""),
+            script=getattr(content, "script", ""),
+            tags=getattr(content, "tags", None),
+        )
+    except Exception:
+        result["editor_review_metadata"] = {}
 
     if generate_only:
         logger.info("Sadece icerik uretme modu.")

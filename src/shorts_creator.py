@@ -53,6 +53,20 @@ class ShortsCreator:
         self.channel_name = getattr(channel_cfg, "name", "Para Pusulasi") if channel_cfg else "Para Pusulasi"
         self.primary = tuple(getattr(channel_cfg, "color_primary", [212, 175, 55])[:3]) if channel_cfg else (212, 175, 55)
         self.bg = tuple(getattr(channel_cfg, "color_bg", [15, 25, 60])[:3]) if channel_cfg else (15, 25, 60)
+        self.textclip_font = self._resolve_textclip_font()
+
+    def _resolve_textclip_font(self):
+        """MoviePy TextClip için platforma uygun font yolunu döndür."""
+        font_paths = [
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+            "/Library/Fonts/Arial.ttf",
+        ]
+        for f in font_paths:
+            if os.path.exists(f):
+                return f
+        return None
 
     def get_font(self, size):
         font_paths = [
@@ -202,46 +216,55 @@ class ShortsCreator:
     def _create_short_title(self, title, duration):
         import textwrap
         wrapped = "\n".join(textwrap.wrap(title, width=22))
+        clip_kwargs = {}
+        if self.textclip_font:
+            clip_kwargs["font"] = self.textclip_font
         return (
             TextClip(
                 text=wrapped,
                 font_size=85,
                 color="white",
-                font="Arial",
                 size=(SHORT_WIDTH - 80, None),
                 text_align="center",
                 stroke_color="black",
                 stroke_width=3,
+                **clip_kwargs,
             )
             .with_position(("center", SHORT_HEIGHT // 3))
             .with_duration(duration)
         )
 
     def _create_channel_label(self, duration):
+        clip_kwargs = {}
+        if self.textclip_font:
+            clip_kwargs["font"] = self.textclip_font
         return (
             TextClip(
                 text=f"@{self.channel_name.replace(' ', '')}",
                 font_size=48,
                 color="white",
-                font="Arial",
                 text_align="center",
                 stroke_color="black",
                 stroke_width=2,
+                **clip_kwargs,
             )
             .with_position(("center", SHORT_HEIGHT - 200))
             .with_duration(duration)
         )
 
     def _create_shorts_badge(self, duration):
+        clip_kwargs = {}
+        if self.textclip_font:
+            clip_kwargs["font"] = self.textclip_font
         return (
             TextClip(
                 text="#Shorts",
                 font_size=42,
                 color=self.primary,
-                font="Arial",
                 text_align="center",
                 stroke_color="black",
                 stroke_width=1,
+                **clip_kwargs,
             )
             .with_position(("center", SHORT_HEIGHT - 150))
             .with_duration(duration)

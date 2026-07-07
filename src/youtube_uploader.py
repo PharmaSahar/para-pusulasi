@@ -25,6 +25,8 @@ class YouTubeUploader:
     def __init__(self, channel_cfg=None):
         self.service = None
         self.channel_cfg = channel_cfg
+        self._can_upload_thumbnail = True
+        self._can_add_comment = True
 
     def _get_service(self):
         if not self.service:
@@ -87,16 +89,17 @@ class YouTubeUploader:
         video_id = self._resumable_upload(request)
         logger.info(f"Video yuklendi: https://youtube.com/watch?v={video_id}")
 
-        if thumbnail_path and Path(thumbnail_path).exists():
+        if self._can_upload_thumbnail and thumbnail_path and Path(thumbnail_path).exists():
             self._upload_thumbnail(video_id, thumbnail_path)
 
         # Playlist ve yorum: quota koruma için devre dışı
         # Her upload 1600 birim, günlük limit 10000 — playlist/yorum ekstra birim yiyor
         # Kanala göre quota kalmışsa yorum ekle
-        try:
-            self._add_pinned_comment(video_id, content.title)
-        except Exception:
-            pass  # Quota aşılmışsa sessizce atla
+        if self._can_add_comment:
+            try:
+                self._add_pinned_comment(video_id, content.title)
+            except Exception:
+                pass  # Quota aşılmışsa sessizce atla
 
         return video_id
 
@@ -130,7 +133,11 @@ class YouTubeUploader:
             ).execute()
             logger.info(f"Sabitlenecek yorum eklendi: {comment_id}")
         except Exception as e:
-            logger.warning(f"Yorum eklenemedi: {e}")
+            if isinstance(e, HttpError) and getattr(e, "resp", None) and e.resp.status == 403:
+                self._can_add_comment = False
+                logger.info("Yorum izni yok (403) -> yorum ekleme bu oturum için devre dışı.")
+            else:
+                logger.warning(f"Yorum eklenemedi: {e}")
 
     def _sanitize_tags(self, tags: list) -> list:
         """YouTube tag kurallarına uygun hale getir: emoji yok, max 500 karakter toplam."""
@@ -188,7 +195,11 @@ class YouTubeUploader:
             ).execute()
             logger.info(f"Thumbnail yüklendi: {thumbnail_path}")
         except HttpError as e:
-            logger.warning(f"Thumbnail yüklenemedi: {e}")
+            if getattr(e, "resp", None) and e.resp.status == 403:
+                self._can_upload_thumbnail = False
+                logger.info("Thumbnail yükleme izni yok (403) -> thumbnail yükleme bu oturum için devre dışı.")
+            else:
+                logger.warning(f"Thumbnail yüklenemedi: {e}")
 
     def get_channel_stats(self) -> dict:
         """Kanal istatistiklerini getir."""

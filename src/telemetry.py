@@ -6,6 +6,26 @@ from datetime import datetime, timezone
 import json
 import uuid
 
+_DEFAULT_SINK = None
+_SINK_INIT_ATTEMPTED = False
+
+
+def _get_default_sink():
+    global _DEFAULT_SINK
+    global _SINK_INIT_ATTEMPTED
+    if _SINK_INIT_ATTEMPTED:
+        return _DEFAULT_SINK
+    _SINK_INIT_ATTEMPTED = True
+    try:
+        from .telemetry_sink import build_jsonl_sink, get_sink_config
+
+        cfg = get_sink_config()
+        if cfg.get("enabled", True):
+            _DEFAULT_SINK = build_jsonl_sink()
+    except Exception:
+        _DEFAULT_SINK = None
+    return _DEFAULT_SINK
+
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -50,9 +70,9 @@ def emit_event(event: dict, *, logger=None, sink=None) -> None:
     This must never break production execution.
     """
     try:
-        if sink is not None:
-            sink(event)
-            return
+        active_sink = sink if sink is not None else _get_default_sink()
+        if active_sink is not None:
+            active_sink(event)
         if logger is not None:
             logger.info("telemetry_event=%s", json.dumps(event, ensure_ascii=False, sort_keys=True))
     except Exception:

@@ -4,6 +4,7 @@ Tam Otomasyon Pipeline - Tek ve Cok Kanalli Mod
 import logging
 import os
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import config as _default_config
@@ -11,6 +12,7 @@ from .content_generator import ContentGenerator, VideoContent
 from .editor_review import build_editor_review_metadata
 from .image_fetcher import ImageFetcher
 from .analytics_join import build_analytics_join_metadata
+from .render_metrics import build_render_metrics
 from .telemetry import (
     build_event_envelope,
     emit_event,
@@ -191,7 +193,9 @@ def run_full_pipeline(
     logger.info("=" * 60)
     logger.info(f"ADIM 3/4 - Video Montaji [{result['channel']}]")
     logger.info("=" * 60)
+    render_started_at = None
     with _stage("render", complete_payload_fn=lambda: {"video_path": str(result.get("video_path", ""))[:180]}):
+        render_started_at = datetime.now(timezone.utc)
         creator = VideoCreator(channel_cfg=cfg)
         video_path = creator.create_video(
             audio_path, content.title,
@@ -218,6 +222,18 @@ def run_full_pipeline(
         thumbnail_path = creator.create_thumbnail(content.title, image_path=thumb_bg)
         result["video_path"] = video_path
         result["thumbnail_path"] = thumbnail_path
+
+    try:
+        render_finished_at = datetime.now(timezone.utc)
+        result["render_metrics"] = build_render_metrics(
+            render_started_at=render_started_at or render_finished_at,
+            render_finished_at=render_finished_at,
+            render_status="completed",
+            output_resolution=f"{getattr(cfg, 'video_width', 1920)}x{getattr(cfg, 'video_height', 1080)}",
+            output_fps=24,
+        )
+    except Exception:
+        result["render_metrics"] = {}
 
     # ─── ADIM 3.5: YouTube Short ──────────────────────────────────────────────
     _emit("shorts_render", "stage_started")

@@ -13,6 +13,7 @@ from pathlib import Path
 import anthropic
 
 from .config import config
+from .prompt_registry import build_prompt_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +127,7 @@ class VideoContent:
     next_video_teaser: str = ""
     pexels_search: str = ""   # Konuya özgün Pexels arama terimi
     chart_data: dict = field(default_factory=dict)  # Finansal grafik verisi
+    prompt_metadata: dict = field(default_factory=dict)
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
     def to_dict(self) -> dict:
@@ -141,6 +143,7 @@ class VideoContent:
             "next_video_teaser": self.next_video_teaser,
             "pexels_search": self.pexels_search,
             "chart_data": self.chart_data,
+            "prompt_metadata": self.prompt_metadata,
             "created_at": self.created_at,
         }
 
@@ -403,6 +406,12 @@ class ContentGenerator:
         prompt = _build_content_prompt(topic, prev_title, next_hint, getattr(self, '_last_content_type', 'semi_evergreen'))
         logger.info("Icerik uretiliyor: " + topic)
 
+        try:
+            prompt_metadata = build_prompt_metadata(prompt)
+        except Exception:
+            # Registry is metadata-only and must never block generation.
+            prompt_metadata = {}
+
         response = self.client.messages.create(
             model=self.model,
             max_tokens=8192,
@@ -439,6 +448,7 @@ class ContentGenerator:
             next_video_teaser=data.get("next_video_teaser", ""),
             pexels_search=data.get("pexels_search", ""),
             chart_data=raw_chart or {},
+            prompt_metadata=prompt_metadata,
         )
         logger.info("Icerik hazir: " + content.title)
         return content

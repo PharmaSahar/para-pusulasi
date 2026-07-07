@@ -48,6 +48,9 @@
 <a href="#telegram">11. Telegram Bildirimleri</a>
 <a href="#new-channel">12. Yeni Kanal Eklemek</a>
 <a href="#scaling">13. Ölçekleme Planı</a>
+<a href="#git">14. Git / Versiyon Kontrolü</a>
+<a href="#issues">15. Bilinen Sorunlar</a>
+<a href="#emergency">🚨 EMERGENCY</a>
 <a href="#costs">14. Maliyet Özeti</a>
 </div>
 </div>
@@ -87,13 +90,12 @@ VPS'teki hali: <code>/opt/parapusulasi/PROGRESS.md</code> (scheduler otomatik g�
 <h2 id="claude-start">2. Claude Başlangıç Promptu</h2>
 <div class="box">
 <strong>Yeni sohbet açınca bu promptu kullan:</strong>
-<pre>Inspect the repository.
+<pre>Read PROGRESS.md completely before inspecting any source code.
+Treat PROGRESS.md as the source of truth.
 
 Do not regenerate existing code.
 Do not overwrite files.
 Do not modify anything yet.
-
-Read PROGRESS.md first.
 
 Determine:
 - What was completed
@@ -277,7 +279,6 @@ ssh -i ~/.ssh/hetzner_vps root@168.119.126.103 \
 
 <!-- 12 -->
 <h2 id="new-channel">12. Yeni Kanal Eklemek</h2>
-<pre>1. YouTube'da kanal aç → URL'den Channel ID al (UC ile başlar)
 
 2. channel_registry.json'a ekle:
    cd "/Users/klara/Downloads/adsız klasör"

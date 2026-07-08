@@ -25,21 +25,26 @@ class RegisteredFactProvider:
     name: str
     provider: object
     interface: str
+    priority: int
 
 
 REGISTERED_FACT_PROVIDERS: tuple[RegisteredFactProvider, ...] = (
-    RegisteredFactProvider(name="FX", provider=LiveFXProvider(), interface="TrustedFactProvider"),
-    RegisteredFactProvider(name="market", provider=LiveMarketFactProvider(), interface="FactDataProvider"),
-    RegisteredFactProvider(name="crypto", provider=LiveCryptoFactProvider(), interface="FactDataProvider"),
-    RegisteredFactProvider(name="commodity", provider=LiveCommodityFactProvider(), interface="FactDataProvider"),
-    RegisteredFactProvider(name="macro", provider=LiveMacroFactProvider(), interface="FactDataProvider"),
-    RegisteredFactProvider(name="calendar", provider=LiveCalendarFactProvider(), interface="FactDataProvider"),
-    RegisteredFactProvider(name="news", provider=LiveNewsFactProvider(), interface="FactDataProvider"),
+    RegisteredFactProvider(name="FX", provider=LiveFXProvider(), interface="TrustedFactProvider", priority=100),
+    RegisteredFactProvider(name="market", provider=LiveMarketFactProvider(), interface="FactDataProvider", priority=90),
+    RegisteredFactProvider(name="crypto", provider=LiveCryptoFactProvider(), interface="FactDataProvider", priority=80),
+    RegisteredFactProvider(name="commodity", provider=LiveCommodityFactProvider(), interface="FactDataProvider", priority=70),
+    RegisteredFactProvider(name="macro", provider=LiveMacroFactProvider(), interface="FactDataProvider", priority=60),
+    RegisteredFactProvider(name="calendar", provider=LiveCalendarFactProvider(), interface="FactDataProvider", priority=50),
+    RegisteredFactProvider(name="news", provider=LiveNewsFactProvider(), interface="FactDataProvider", priority=40),
 )
 
 
 def list_registered_fact_provider_names() -> tuple[str, ...]:
     return tuple(entry.name for entry in REGISTERED_FACT_PROVIDERS)
+
+
+def list_registered_fact_provider_priorities() -> tuple[int, ...]:
+    return tuple(entry.priority for entry in REGISTERED_FACT_PROVIDERS)
 
 
 def build_fact_data_provider_registry() -> ProviderRegistry:
@@ -67,4 +72,5 @@ __all__ = [
     "build_fact_data_provider_registry",
     "get_registered_fact_provider",
     "list_registered_fact_provider_names",
+    "list_registered_fact_provider_priorities",
 ]

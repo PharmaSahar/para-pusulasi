@@ -593,8 +593,58 @@ def fill_empty_queues_job():
     except Exception as e:
         logger.warning(f"fill_empty_queues_job genel hatası: {e}")
 
+
+def _print_help() -> None:
+    print("Para Pusulasi Scheduler")
+    print("Kullanim:")
+    print("  python scheduler.py          # Token'i olan tum kanallari calistir")
+    print("  python scheduler.py --list   # Aktif kanallari listele")
+    print("  python scheduler.py --status # Kuyruk durumunu goster")
+    print("  python scheduler.py --health-check # Uretim hazirlik kontrolunu calistir")
+    print("  python scheduler.py --help   # Bu yardim metnini goster")
+
+
+def _run_startup_health_check(*, create_missing_directories: bool, require_telegram: bool):
+    from src.config import config as runtime_config
+    from src.production_readiness import run_production_health_check
+
+    result = run_production_health_check(
+        runtime_config,
+        require_telegram=require_telegram,
+        create_missing_directories=create_missing_directories,
+    )
+    logger.info(
+        "Configuration loaded: niche=%s language=%s timezone=%s",
+        runtime_config.niche,
+        runtime_config.channel_language,
+        runtime_config.timezone,
+    )
+    logger.info(
+        "Fact Bundle pipeline adapter is %s",
+        "enabled" if result.fact_bundle_enabled else "disabled",
+    )
+    logger.info("Health check result: %s", "PASS" if result.ok else "FAIL")
+    return result
+
 def main():
     args = sys.argv[1:]
+
+    if "--help" in args or "-h" in args:
+        _print_help()
+        return
+
+    if "--health-check" in args:
+        result = _run_startup_health_check(
+            create_missing_directories=False,
+            require_telegram=True,
+        )
+        if result.ok:
+            print("Health check: PASS")
+            return
+        print("Health check: FAIL")
+        for error in result.errors:
+            print(f"- {error}")
+        sys.exit(1)
 
     if "--list" in args or "--status" in args:
         show_status()
@@ -619,6 +669,16 @@ def main():
     else:
         logger.info("JOB_STORE_MODE=json aktif: JSON production source of truth.")
 
+    startup_health = _run_startup_health_check(
+        create_missing_directories=True,
+        require_telegram=True,
+    )
+    if not startup_health.ok:
+        for error in startup_health.errors:
+            logger.error("Startup validation failed: %s", error)
+            print(f"ERROR: {error}")
+        sys.exit(1)
+
     # scheduler_utils opsiyonel — yoksa basit fallback kullan
     try:
         from src.scheduler_utils import notify_startup, cleanup_old_renders
@@ -632,6 +692,8 @@ def main():
     if not ready:
         console.print("[red]Hiçbir kanalın token'i yok! Önce setup_channel.py çalıştırın.[/red]")
         sys.exit(1)
+
+    logger.info("Scheduler starting")
 
     console.print(f"\n[bold green]Para Pusulası Scheduler v4.0[/bold green]")
     console.print(f"[dim]{len(ready)} kanal aktif | MAX {MAX_PARALLEL_RENDERS} paralel render[/dim]\n")

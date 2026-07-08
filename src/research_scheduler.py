@@ -14,6 +14,7 @@ from typing import Any
 
 from .github_trends_collector import GitHubTrendsCollector
 from .google_trends_collector import GoogleTrendsCollector
+from .hacker_news_collector import HackerNewsCollector
 from .reddit_trends_collector import RedditTrendsCollector
 from .research_db import DEFAULT_RESEARCH_ROOT
 
@@ -27,6 +28,7 @@ def build_registered_collectors(*, research_root: Path | str = DEFAULT_RESEARCH_
         "google_trends": GoogleTrendsCollector(research_root=research_root),
         "github_trends": GitHubTrendsCollector(research_root=research_root),
         "reddit_trends": RedditTrendsCollector(research_root=research_root),
+        "hacker_news": HackerNewsCollector(research_root=research_root),
     }
 
 
@@ -60,6 +62,8 @@ def run_research_collectors_once(
             payload.setdefault("languages", [])
         elif name == "reddit_trends":
             payload.setdefault("subreddits", [])
+        elif name == "hacker_news":
+            payload.setdefault("boards", [])
         else:
             payload.setdefault("queries", [])
         payload.setdefault("observed_at_utc", observed_at_utc)

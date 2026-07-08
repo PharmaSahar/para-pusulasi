@@ -20,9 +20,14 @@ class _MockCollectorFail:
         raise RuntimeError("collector failed")
 
 
-def test_build_registered_collectors_starts_with_google_trends_only(tmp_path):
+def test_build_registered_collectors_includes_default_passive_sources(tmp_path):
     registry = build_registered_collectors(research_root=tmp_path)
-    assert set(registry.keys()) == {"google_trends", "github_trends", "reddit_trends"}
+    assert set(registry.keys()) == {
+        "google_trends",
+        "github_trends",
+        "reddit_trends",
+        "hacker_news",
+    }
 
 
 def test_run_research_collectors_once_fail_open_per_collector():

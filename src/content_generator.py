@@ -233,6 +233,7 @@ def _build_content_prompt(
     additional_guidance: str | None = None,
 ) -> str:
     year = datetime.now().year
+    strict_fact_mode = bool(additional_guidance and "FACT-CHECK SAFE MODE" in additional_guidance)
 
     # SONSUZ ÇEŞİTLİLİK: Sabit şablon değil, parametrik sistem
     # Her parametre bağımsız rastgele → 10×8×6×5×4 = 9,600 benzersiz kombinasyon
@@ -296,11 +297,26 @@ def _build_content_prompt(
 
     type_instruction = {
         "evergreen": "Tarih veya geçici rakam KULLANMA — video 2-3 yıl boyunca değerini korusun.",
-        "semi_evergreen": f"2026 verilerini kullan ama temel bilgiler zamansız olsun.",
+        "semi_evergreen": f"{year} verilerini kullan ama temel bilgiler zamansız olsun.",
         "trending": f"Bu hafta gündemde olan meseleyi yorumla — hız ve güncellik öncelikli.",
     }.get(content_type, "")
 
     extra_guidance = f"\nEK YONLENDIRME: {additional_guidance}\n" if additional_guidance else ""
+    title_rule = "60 karakter altı, özgün, viral başlık"
+    number_style_rule = "• Rakamları net ver: 'Yani ayda 7.500 TL — yılda 90.000 TL'"
+    strict_mode_block = ""
+
+    if not strict_fact_mode:
+        title_rule = f"60 karakter altı, özgün, {year} içeren viral başlık"
+    else:
+        number_style_rule = "• Canlı piyasa rakamı, hedef fiyat, kesin yüzde veya tarih verme; gerekiyorsa yalnızca açıkça varsayımsal eğitim örneği kullan"
+        strict_mode_block = """
+FACT-CHECK SAFE MODE AKTIF:
+• Başlıkta, hook'ta ve scriptte kesin fiyat hedefi, endeks seviyesi, yıl sonu tahmini, ETF/onay tarihi veya son tarih yazma
+• 'X olacak', 'Y seviyesine gelir', 'şu tarihte kesin olur' gibi ifadeleri kullanma
+• Konuyu risk yönetimi, temel prensipler, tarihsel dersler ve davranışsal hatalar üzerinden anlat
+• Volatil piyasa örnekleri vereceksen, bunları açıkça tarihsel veya varsayımsal eğitim örneği olarak etiketle
+"""
 
     return f"""Türk finans YouTube kanalı için TAMAMEN ORİJİNAL, YAPAY HİSSETTİRMEYEN senaryo yaz.
 
@@ -334,14 +350,16 @@ KESİNLİKLE YASAKLANAN İFADELER:
 DOĞAL TÜRK FİNANS YOUTUBER'I TONU:
 • Samimi, konuşma dili ama bilgi dolu
 • "Bak sana şunu söyleyeyim..." "Şimdi düşün bir..." gibi geçişler
-• Rakamları net ver: "Yani ayda 7.500 TL — yılda 90.000 TL"
+{number_style_rule}
 • Türkiye gerçekliğini yansıt: enflasyon, kira, maaş baskısı
 • İzleyicinin hayatına dokunan anlar yarat
+
+{strict_mode_block}
 
 Sadece JSON döndür:
 
 {{
-  "title": "60 karakter altı, özgün, {year} içeren viral başlık",
+    "title": "{title_rule}",
   "hook": "İlk 30 saniye — seçilen açılış stiline göre özgün, şaşırtıcı (görsel referans YASAK)",
   "description": "SEO açıklaması: 5 paragraf, 300+ kelime, başlık keywordlerini içersin",
   "tags": ["minimum 20 Türkçe/İngilizce etiket"],

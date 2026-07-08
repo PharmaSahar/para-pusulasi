@@ -113,6 +113,55 @@ Every feature requires targeted regression tests.
 ### Passive-first
 Never introduce production behavior while building research foundations.
 
+## Decision Hierarchy
+When making implementation decisions, always follow this priority order.
+
+1. Project Charter
+2. Architecture documents
+3. Collector Contract
+4. Existing tests
+5. Existing implementation
+6. New feature request
+
+If a new request conflicts with the Project Charter, the Project Charter takes
+precedence unless explicitly changed.
+
+## Product Philosophy
+The goal is not to automate YouTube.
+
+The goal is to build an autonomous media company.
+
+Every component should increase one or more of these capabilities:
+
+- Discover
+- Understand
+- Decide
+- Create
+- Publish
+- Learn
+
+If a feature does not improve at least one of these, its necessity should be
+questioned.
+
+## AI Guardrails
+When quality decreases, never optimize for speed.
+
+When diversity decreases, optimize for originality.
+
+When confidence is low, collect more evidence.
+
+When uncertain, prefer deterministic behavior over assumptions.
+
+## Definition of Done
+A feature is considered complete only if:
+
+- Architecture respected
+- Tests added
+- Regression passed
+- Documentation updated
+- Commit isolated
+- PR reviewed
+
 ## Architectural Rules
 Avoid:
 

@@ -27,6 +27,12 @@ from .youtube_uploader import YouTubeUploader
 
 logger = logging.getLogger(__name__)
 
+_FACT_CHECK_RETRY_GUIDANCE = (
+    "Yalnizca dogrulanabilir, kaynaklanabilir ve tarihsel baglami net olan veriler kullan. "
+    "Dogrudan anlik fiyat, endeks, enflasyon, faiz veya volatil piyasa seviyesi veriyorsan "
+    "bunlari kesin rakam gibi sunma; bunun yerine tarihli, veri-temelli, ihtiyatli ve dogrulanabilir ifade et."
+)
+
 
 def _is_enabled(value: object) -> bool:
     if isinstance(value, bool):
@@ -76,6 +82,10 @@ def _invoke_fact_bundle_pipeline_adapter(cfg, result: dict) -> None:
             "Fact Bundle pipeline adapter failed: error_type=%s",
             e.__class__.__name__,
         )
+
+
+def _is_unverifiable_claim_failure(reason: str) -> bool:
+    return "unverifiable_volatile_claim" in reason
 
 
 def _resolve_posting_slot(publish_at: str | None) -> str:
@@ -152,7 +162,7 @@ def run_full_pipeline(
         except Exception:
             pass
 
-    def _run_fact_check_guard(before_stage: str, script: str):
+    def _run_fact_check_guard(before_stage: str, script: str, *, suppress_retryable_alert: bool = False):
         nonlocal fact_check_metadata
         _emit("fact_check", "stage_started", {"before_stage": before_stage})
         try:
@@ -197,13 +207,26 @@ def run_full_pipeline(
                     "error": reason[:300],
                 },
             )
-            _telegram_fact_check_alert(
-                "🚫 <b>Fact Check FAIL</b>\n"
-                f"📺 Kanal: {result.get('channel', 'default')}\n"
-                f"⛔ Aşama öncesi: {before_stage}\n"
-                f"🧾 Sebep: {reason[:250]}"
-            )
+            if not (suppress_retryable_alert and _is_unverifiable_claim_failure(reason)):
+                _telegram_fact_check_alert(
+                    "🚫 <b>Fact Check FAIL</b>\n"
+                    f"📺 Kanal: {result.get('channel', 'default')}\n"
+                    f"⛔ Aşama öncesi: {before_stage}\n"
+                    f"🧾 Sebep: {reason[:250]}"
+                )
             raise RuntimeError(f"failed_fact_check: {reason}") from e
+
+    def _generate_content(generator: ContentGenerator, *, generation_topic: str | None, additional_guidance: str | None = None):
+        nonlocal content
+        if additional_guidance is None:
+            content = generator.generate_and_save(generation_topic)
+        else:
+            try:
+                content = generator.generate_and_save(generation_topic, additional_guidance=additional_guidance)
+            except TypeError:
+                content = generator.generate_and_save(generation_topic)
+        result["title"] = content.title
+        result["script_path"] = f"{cfg.scripts_dir}/{content.created_at[:10]}_{content.title[:30]}.json"
 
     @contextmanager
     def _stage(stage: str, start_payload: dict | None = None, complete_payload_fn=None):
@@ -233,9 +256,8 @@ def run_full_pipeline(
     ):
         generator = ContentGenerator(channel_cfg=cfg)
         telemetry_metadata["model_version"] = telemetry_metadata.get("model_version") or getattr(generator, "model", None)
-        content: VideoContent = generator.generate_and_save(topic)
-        result["title"] = content.title
-        result["script_path"] = f"{cfg.scripts_dir}/{content.created_at[:10]}_{content.title[:30]}.json"
+        content: VideoContent
+        _generate_content(generator, generation_topic=topic)
 
     diversity_video_record = None
     diversity_short_record = None
@@ -307,7 +329,17 @@ def run_full_pipeline(
         logger.info("Sadece icerik uretme modu.")
         return result
 
-    _run_fact_check_guard("tts", content.script)
+    try:
+        _run_fact_check_guard("tts", content.script, suppress_retryable_alert=True)
+    except RuntimeError as error:
+        reason = str(error)
+        if _is_unverifiable_claim_failure(reason):
+            logger.warning("Fact check unverifiable claim detected; regenerating content once with stricter guidance")
+            result["fact_check_regeneration_attempted"] = True
+            _generate_content(generator, generation_topic=topic or content.title, additional_guidance=_FACT_CHECK_RETRY_GUIDANCE)
+            _run_fact_check_guard("tts", content.script)
+        else:
+            raise
 
     # ─── ADIM 2: Sesli Anlatiom ────────────────────────────────────────────────
     logger.info("=" * 60)

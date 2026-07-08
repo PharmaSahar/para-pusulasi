@@ -225,7 +225,13 @@ def _load_trending_context() -> str:
     return "\n".join(f"- {t}" for t in selected)
 
 
-def _build_content_prompt(topic: str, prev_title: str | None, next_topic_hint: str, content_type: str = "semi_evergreen") -> str:
+def _build_content_prompt(
+    topic: str,
+    prev_title: str | None,
+    next_topic_hint: str,
+    content_type: str = "semi_evergreen",
+    additional_guidance: str | None = None,
+) -> str:
     year = datetime.now().year
 
     # SONSUZ ÇEŞİTLİLİK: Sabit şablon değil, parametrik sistem
@@ -294,11 +300,14 @@ def _build_content_prompt(topic: str, prev_title: str | None, next_topic_hint: s
         "trending": f"Bu hafta gündemde olan meseleyi yorumla — hız ve güncellik öncelikli.",
     }.get(content_type, "")
 
+    extra_guidance = f"\nEK YONLENDIRME: {additional_guidance}\n" if additional_guidance else ""
+
     return f"""Türk finans YouTube kanalı için TAMAMEN ORİJİNAL, YAPAY HİSSETTİRMEYEN senaryo yaz.
 
 KONU: {topic}
 YIL: {year}
 İÇERİK TÜRÜ: {type_instruction}
+{extra_guidance}
 
 BU VİDEO İÇİN SEÇILEN YARATICI PARAMETRELER:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -421,12 +430,23 @@ class ContentGenerator:
         logger.info(f"{len(combined[:count])} konu hazir.")
         return combined[:count]
 
-    def generate_video_content(self, topic: str, prev_title: str | None = None) -> VideoContent:
+    def generate_video_content(
+        self,
+        topic: str,
+        prev_title: str | None = None,
+        additional_guidance: str | None = None,
+    ) -> VideoContent:
         # Bir sonraki video ipucu
         topics = self.generate_topic_ideas(count=3)
         next_hint = topics[-1] if topics else "Yatirim hatalarından nasil kacinilir"
 
-        prompt = _build_content_prompt(topic, prev_title, next_hint, getattr(self, '_last_content_type', 'semi_evergreen'))
+        prompt = _build_content_prompt(
+            topic,
+            prev_title,
+            next_hint,
+            getattr(self, '_last_content_type', 'semi_evergreen'),
+            additional_guidance=additional_guidance,
+        )
         logger.info("Icerik uretiliyor: " + topic)
 
         try:
@@ -495,7 +515,11 @@ class ContentGenerator:
         logger.info("Icerik hazir: " + content.title)
         return content
 
-    def generate_and_save(self, topic: str | None = None) -> VideoContent:
+    def generate_and_save(
+        self,
+        topic: str | None = None,
+        additional_guidance: str | None = None,
+    ) -> VideoContent:
         from pathlib import Path as _Path
         from .content_pyramid import (
             get_content_type_for_next_video,
@@ -525,7 +549,7 @@ class ContentGenerator:
                 logger.info("Secilen konu: " + topic)
 
         prev_title = self._get_last_title()
-        content = self.generate_video_content(topic, prev_title)
+        content = self.generate_video_content(topic, prev_title, additional_guidance=additional_guidance)
         path = content.save()
 
         # Content type'ı kaydet

@@ -66,6 +66,10 @@ def test_replay_returns_summary_and_counts(tmp_path):
     assert summary["total_events_read"] == 4
     assert summary["total_events_emitted"] == 3
     assert summary["skipped_invalid"] == 1
+    assert summary["files_scanned"] == 1
+    assert summary["files_with_events"] == 1
+    assert summary["first_observed_at"] == "2026-07-08T12:00:00+00:00"
+    assert summary["last_observed_at"] == "2026-07-10T12:00:00+00:00"
     assert summary["by_source"]["google_trends"] == 1
     assert summary["by_source"]["github_trends"] == 1
     assert summary["by_source"]["reddit_trends"] == 1
@@ -77,6 +81,10 @@ def test_replay_source_filter(tmp_path):
 
     assert summary["total_events_read"] == 4
     assert summary["total_events_emitted"] == 1
+    assert summary["files_scanned"] == 1
+    assert summary["files_with_events"] == 1
+    assert summary["first_observed_at"] == "2026-07-09T12:00:00+00:00"
+    assert summary["last_observed_at"] == "2026-07-09T12:00:00+00:00"
     assert summary["by_source"] == {"github_trends": 1}
 
 
@@ -86,6 +94,10 @@ def test_replay_schema_version_filter(tmp_path):
 
     assert summary["total_events_read"] == 4
     assert summary["total_events_emitted"] == 2
+    assert summary["files_scanned"] == 1
+    assert summary["files_with_events"] == 1
+    assert summary["first_observed_at"] == "2026-07-08T12:00:00+00:00"
+    assert summary["last_observed_at"] == "2026-07-09T12:00:00+00:00"
     assert summary["by_source"] == {"google_trends": 1, "github_trends": 1}
 
 
@@ -99,4 +111,8 @@ def test_replay_observed_at_range_filter(tmp_path):
 
     assert summary["total_events_read"] == 4
     assert summary["total_events_emitted"] == 1
+    assert summary["files_scanned"] == 1
+    assert summary["files_with_events"] == 1
+    assert summary["first_observed_at"] == "2026-07-09T12:00:00+00:00"
+    assert summary["last_observed_at"] == "2026-07-09T12:00:00+00:00"
     assert summary["by_source"] == {"github_trends": 1}

@@ -44,6 +44,10 @@ def test_run_replay_once_prints_json_summary(capsys, tmp_path):
     assert payload["total_events_read"] == 2
     assert payload["total_events_emitted"] == 1
     assert payload["skipped_invalid"] == 1
+    assert payload["files_scanned"] == 1
+    assert payload["files_with_events"] == 1
+    assert payload["first_observed_at"] == "2026-07-08T12:00:00+00:00"
+    assert payload["last_observed_at"] == "2026-07-08T12:00:00+00:00"
     assert payload["by_source"] == {"google_trends": 1}
 
 
@@ -57,3 +61,5 @@ def test_run_replay_once_pretty_output_is_valid_json(capsys, tmp_path):
     assert code == 0
     assert payload["total_events_read"] == 2
     assert payload["total_events_emitted"] == 1
+    assert payload["files_scanned"] == 1
+    assert payload["files_with_events"] == 1

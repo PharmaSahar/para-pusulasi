@@ -55,6 +55,15 @@ def _iter_jsonl_files(root: Path) -> Iterator[Path]:
     return iter(sorted(root.rglob("*.jsonl")))
 
 
+def _try_parse_iso_datetime(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        return datetime.fromisoformat(_to_iso_like(value))
+    except ValueError:
+        return None
+
+
 def replay_research_events_once(
     *,
     research_root: Path | str,
@@ -70,10 +79,16 @@ def replay_research_events_once(
     total_events_emitted = 0
     skipped_invalid = 0
     by_source: dict[str, int] = {}
+    files_scanned = 0
+    files_with_events = 0
+    first_observed_dt: datetime | None = None
+    last_observed_dt: datetime | None = None
 
     source_filter = source.strip().lower() if isinstance(source, str) and source.strip() else None
 
     for path in _iter_jsonl_files(root):
+        files_scanned += 1
+        file_has_valid_event = False
         with path.open("r", encoding="utf-8") as fh:
             for line in fh:
                 text = line.strip()
@@ -86,6 +101,8 @@ def replay_research_events_once(
                 except json.JSONDecodeError:
                     skipped_invalid += 1
                     continue
+
+                file_has_valid_event = True
 
                 payload = event.get("payload", {})
                 event_source = payload.get("source") or event.get("source")
@@ -106,9 +123,23 @@ def replay_research_events_once(
                 source_key = str(event_source or "unknown")
                 by_source[source_key] = by_source.get(source_key, 0) + 1
 
+                observed_dt = _try_parse_iso_datetime(observed_at)
+                if observed_dt is not None:
+                    if first_observed_dt is None or observed_dt < first_observed_dt:
+                        first_observed_dt = observed_dt
+                    if last_observed_dt is None or observed_dt > last_observed_dt:
+                        last_observed_dt = observed_dt
+
+        if file_has_valid_event:
+            files_with_events += 1
+
     return {
         "total_events_read": total_events_read,
         "total_events_emitted": total_events_emitted,
         "skipped_invalid": skipped_invalid,
         "by_source": by_source,
+        "files_scanned": files_scanned,
+        "files_with_events": files_with_events,
+        "first_observed_at": first_observed_dt.isoformat() if first_observed_dt else None,
+        "last_observed_at": last_observed_dt.isoformat() if last_observed_dt else None,
     }

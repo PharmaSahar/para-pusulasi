@@ -76,6 +76,15 @@ class Config:
         days = os.getenv("UPLOAD_DAYS", "Monday,Wednesday,Friday")
         return [d.strip() for d in days.split(",")]
 
+    @property
+    def niche(self) -> str:
+        """Backward-compatible alias expected by legacy pipeline paths."""
+        return self.channel_niche
+
+    @niche.setter
+    def niche(self, value: str) -> None:
+        self.channel_niche = value
+
 
 # Tek örnek (singleton)
 config = Config()

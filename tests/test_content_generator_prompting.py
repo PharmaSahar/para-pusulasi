@@ -126,3 +126,38 @@ def test_generate_topic_ideas_filters_finance_trends_for_non_finance_channel(mon
 
     assert all("Dolar/TL" not in topic for topic in topics)
     assert all("Enflasyona" not in topic for topic in topics)
+
+
+def test_generate_topic_ideas_filters_finance_ai_topics_for_non_finance_channel(monkeypatch):
+    class FakeResponse:
+        def __init__(self, text: str):
+            self.content = [SimpleNamespace(text=text)]
+
+    class FakeMessages:
+        def create(self, **kwargs):
+            return FakeResponse(
+                "1. Dolar/TL 2026 sonu tahminleri\n"
+                "2. BIST 100 teknik analiz\n"
+                "3. Uyku kalitesini artırmanın yolları"
+            )
+
+    class FakeAnthropicClient:
+        def __init__(self, api_key=None):
+            self.messages = FakeMessages()
+
+    class FakeConfig:
+        anthropic_api_key = "key"
+        niche = "saglik"
+        persona = "Sen Saglik Pusulasi icin yazan editor-sensin."
+        name = "Saglik Pusulasi"
+        topics = ["beslenme", "uyku", "stres"]
+
+    monkeypatch.setattr(content_generator.anthropic, "Anthropic", FakeAnthropicClient)
+    monkeypatch.setattr(content_generator, "_load_used_titles", lambda: [])
+
+    generator = content_generator.ContentGenerator(channel_cfg=FakeConfig())
+    topics = generator.generate_topic_ideas(count=3)
+
+    assert all("Dolar/TL" not in topic for topic in topics)
+    assert all("BIST" not in topic for topic in topics)
+    assert any("Uyku" in topic or "uyku" in topic for topic in topics)

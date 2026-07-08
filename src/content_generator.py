@@ -156,6 +156,16 @@ def _filter_trending_topics_for_niche(
     return filtered
 
 
+def _fallback_topics_for_niche(niche: str | None, channel_topics: list[str] | None = None) -> list[str]:
+    fallback = list(channel_topics or [])
+    fallback.extend(TOPIC_CATEGORIES.get((niche or "").strip().lower(), []))
+    return _filter_trending_topics_for_niche(
+        fallback,
+        niche=niche,
+        channel_topics=channel_topics,
+    )
+
+
 def _get_trending_topics(niche: str | None = None, channel_topics: list[str] | None = None) -> list[str]:
     """Return niche-aware trending seeds for topic generation."""
     normalized_niche = (niche or "").strip().lower()
@@ -580,6 +590,13 @@ class ContentGenerator:
             if line.strip() and not line.strip().startswith("#")
         ]
         combined = trending_from_web[:2] + [t for t in ai_topics if t not in trending_from_web]
+        combined = _filter_trending_topics_for_niche(
+            combined,
+            niche=self.niche,
+            channel_topics=self._channel_topics,
+        )
+        if not combined:
+            combined = _fallback_topics_for_niche(self.niche, self._channel_topics)
         logger.info(f"{len(combined[:count])} konu hazir.")
         return combined[:count]
 

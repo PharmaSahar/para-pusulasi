@@ -26,18 +26,33 @@ from .youtube_uploader import YouTubeUploader
 logger = logging.getLogger(__name__)
 
 
+def _resolve_posting_slot(publish_at: str | None) -> str:
+    """Infer morning/evening slot from scheduled publish time."""
+    if publish_at:
+        try:
+            dt = datetime.fromisoformat(str(publish_at).replace("Z", "+00:00"))
+            return "morning" if dt.hour < 15 else "evening"
+        except Exception:
+            pass
+    now_local = datetime.now()
+    return "morning" if now_local.hour < 15 else "evening"
+
+
 def run_full_pipeline(
     topic: str | None = None,
     generate_only: bool = False,
     privacy: str = os.getenv("DEFAULT_PRIVACY", "public"),
     channel_cfg=None,
     publish_at: str | None = None,
+    posting_slot: str | None = None,
 ) -> dict:
     """Tam pipeline: icerik -> ses -> video -> YouTube yukle."""
     # Aktif config belirle
     cfg = channel_cfg if channel_cfg else _default_config
     cfg.ensure_directories()
     result = {"channel": getattr(cfg, "channel_id", "default")}
+    slot = posting_slot or _resolve_posting_slot(publish_at)
+    result["slot"] = slot
     result["content_id"] = generate_content_id()
     result["run_id"] = generate_run_id()
 
@@ -104,6 +119,49 @@ def run_full_pipeline(
         content: VideoContent = generator.generate_and_save(topic)
         result["title"] = content.title
         result["script_path"] = f"{cfg.scripts_dir}/{content.created_at[:10]}_{content.title[:30]}.json"
+
+    diversity_video_record = None
+    diversity_short_record = None
+    try:
+        from .channel_visual_profiles import get_channel_visual_profile
+        from .thumbnail_history import load_recent_thumbnail_history
+        from .visual_diversity import enforce_thumbnail_diversity
+
+        visual_profile = get_channel_visual_profile(
+            str(result.get("channel", "default")),
+            niche=getattr(content, "niche", ""),
+        )
+        recent_history = load_recent_thumbnail_history()
+
+        video_guard = enforce_thumbnail_diversity(
+            channel_id=str(result.get("channel", "default")),
+            content_type="video",
+            slot=slot,
+            topic=content.title,
+            thumbnail_prompt=getattr(content, "thumbnail_prompt", "") or content.title,
+            profile=visual_profile,
+            recent_history=recent_history,
+            publish_at=publish_at,
+        )
+        diversity_video_record = dict(video_guard.get("record") or {})
+        content.thumbnail_prompt = diversity_video_record.get("thumbnail_prompt") or content.thumbnail_prompt
+        result["thumbnail_diversity"] = {
+            "video": {
+                "accepted": bool(video_guard.get("accepted")),
+                "regenerated": bool(video_guard.get("regenerated")),
+                "attempts": int(video_guard.get("attempts") or 0),
+                "rejected_attempts": video_guard.get("rejected_attempts") or [],
+            }
+        }
+    except Exception:
+        # Diversity guard is fail-open and must never block production runs.
+        result.setdefault("thumbnail_diversity", {})
+        result["thumbnail_diversity"]["video"] = {
+            "accepted": False,
+            "regenerated": False,
+            "attempts": 0,
+            "rejected_attempts": [],
+        }
 
     try:
         result["analytics_join_metadata"] = build_analytics_join_metadata(
@@ -224,6 +282,30 @@ def run_full_pipeline(
         result["thumbnail_path"] = thumbnail_path
 
     try:
+        from .thumbnail_history import append_thumbnail_history
+
+        if diversity_video_record:
+            entry = {
+                "channel_id": str(result.get("channel", "default")),
+                "content_type": "video",
+                "slot": slot,
+                "topic": content.title,
+                "thumbnail_prompt": diversity_video_record.get("thumbnail_prompt", getattr(content, "thumbnail_prompt", "")),
+                "visual_style": diversity_video_record.get("visual_style", ""),
+                "main_subject": diversity_video_record.get("main_subject", ""),
+                "background": diversity_video_record.get("background", ""),
+                "color_palette": diversity_video_record.get("color_palette", ""),
+                "camera_angle": diversity_video_record.get("camera_angle", ""),
+                "mood": diversity_video_record.get("mood", ""),
+                "fingerprint": diversity_video_record.get("fingerprint", ""),
+                "day": diversity_video_record.get("day", datetime.now(timezone.utc).date().isoformat()),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            append_thumbnail_history(entry)
+    except Exception:
+        pass
+
+    try:
         render_finished_at = datetime.now(timezone.utc)
         result["render_metrics"] = build_render_metrics(
             render_started_at=render_started_at or render_finished_at,
@@ -292,24 +374,102 @@ def run_full_pipeline(
     if result.get("short_path"):
         try:
             from .content_generator import VideoContent as VC
+            from .thumbnail_history import append_thumbnail_history, load_recent_thumbnail_history
+            from .visual_diversity import enforce_thumbnail_diversity
+            from .channel_visual_profiles import get_channel_visual_profile
+
             short_title = (content.title + " #Shorts")[:100]  # BUG FIX: parantez doğru yerde
+            short_slot = slot
+            short_thumbnail_path = thumbnail_path
+
+            try:
+                short_profile = get_channel_visual_profile(
+                    str(result.get("channel", "default")),
+                    niche=getattr(content, "niche", ""),
+                )
+                short_guard = enforce_thumbnail_diversity(
+                    channel_id=str(result.get("channel", "default")),
+                    content_type="short",
+                    slot=short_slot,
+                    topic=short_title,
+                    thumbnail_prompt=getattr(content, "thumbnail_prompt", short_title),
+                    profile=short_profile,
+                    recent_history=load_recent_thumbnail_history(),
+                    publish_at=publish_at,
+                )
+                diversity_short_record = dict(short_guard.get("record") or {})
+                if "thumbnail_diversity" not in result:
+                    result["thumbnail_diversity"] = {}
+                result["thumbnail_diversity"]["short"] = {
+                    "accepted": bool(short_guard.get("accepted")),
+                    "regenerated": bool(short_guard.get("regenerated")),
+                    "attempts": int(short_guard.get("attempts") or 0),
+                    "rejected_attempts": short_guard.get("rejected_attempts") or [],
+                }
+
+                # Build a distinct thumbnail for short to avoid same-day concept overlap.
+                short_thumb_bg = None
+                try:
+                    from .premium_services import has_dalle, generate_dalle_thumbnail
+                    if has_dalle():
+                        short_prompt = diversity_short_record.get("thumbnail_prompt") or short_title
+                        short_dalle_path = f"{cfg.videos_dir}/thumb_short_dalle_{__import__('uuid').uuid4().hex[:8]}.jpg"
+                        short_thumb_bg = generate_dalle_thumbnail(short_prompt, short_dalle_path)
+                except Exception:
+                    short_thumb_bg = None
+
+                if not short_thumb_bg:
+                    if image_paths:
+                        short_thumb_bg = image_paths[-1]
+                    else:
+                        short_thumb_bg = thumb_bg
+
+                short_thumbnail_path = creator.create_thumbnail(short_title, image_path=short_thumb_bg)
+            except Exception:
+                short_thumbnail_path = thumbnail_path
+
             short_content = VC(
                 title=short_title,
                 description=content.seo_description()[:5000],
                 tags=content.tags + ["Shorts", "YouTube Shorts"],
                 script=content.script,
-                thumbnail_prompt=content.thumbnail_prompt,
+                thumbnail_prompt=(
+                    diversity_short_record.get("thumbnail_prompt")
+                    if isinstance(diversity_short_record, dict)
+                    else content.thumbnail_prompt
+                ),
                 category_id=content.category_id,
                 niche=content.niche,
             )
             short_id = uploader.upload_video(
                 video_path=result["short_path"],
                 content=short_content,
-                thumbnail_path=thumbnail_path,
+                thumbnail_path=short_thumbnail_path,
                 privacy="public",
                 publish_at=None,
             )
             result["short_url"] = f"https://youtube.com/shorts/{short_id}"
+            result["short_thumbnail_path"] = short_thumbnail_path
+
+            if diversity_short_record:
+                append_thumbnail_history(
+                    {
+                        "channel_id": str(result.get("channel", "default")),
+                        "content_type": "short",
+                        "slot": short_slot,
+                        "topic": short_title,
+                        "thumbnail_prompt": diversity_short_record.get("thumbnail_prompt", short_content.thumbnail_prompt),
+                        "visual_style": diversity_short_record.get("visual_style", ""),
+                        "main_subject": diversity_short_record.get("main_subject", ""),
+                        "background": diversity_short_record.get("background", ""),
+                        "color_palette": diversity_short_record.get("color_palette", ""),
+                        "camera_angle": diversity_short_record.get("camera_angle", ""),
+                        "mood": diversity_short_record.get("mood", ""),
+                        "fingerprint": diversity_short_record.get("fingerprint", ""),
+                        "day": diversity_short_record.get("day", datetime.now(timezone.utc).date().isoformat()),
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
             logger.info(f"Short yuklendi: {result['short_url']}")
         except Exception as e:
             shorts_upload_error = e

@@ -119,13 +119,18 @@ class ProviderChainResult:
 
 
 def _run_with_timeout(fn: Callable[[], ProviderFactResponse], timeout_sec: float) -> ProviderFactResponse:
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(fn)
-        try:
-            return future.result(timeout=timeout_sec)
-        except FuturesTimeoutError as e:
-            future.cancel()
-            raise ProviderTimeoutError(f"provider timeout after {timeout_sec:.2f}s") from e
+    executor = ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(fn)
+    try:
+        return future.result(timeout=timeout_sec)
+    except FuturesTimeoutError as e:
+        # Do not wait for hung/slow provider task; continue fallback chain immediately.
+        future.cancel()
+        executor.shutdown(wait=False, cancel_futures=True)
+        raise ProviderTimeoutError(f"provider timeout after {timeout_sec:.2f}s") from e
+    finally:
+        if not future.cancelled():
+            executor.shutdown(wait=False, cancel_futures=True)
 
 
 def fetch_fact_with_provider_chain(
@@ -163,7 +168,7 @@ def fetch_fact_with_provider_chain(
         except ProviderTimeoutError:
             elapsed = time.monotonic() - start
             failures.append(f"{provider.provider_name}: timeout ({elapsed:.3f}s)")
-        except Exception as e:  # pragma: no cover - defensive normalization
+        except ProviderError as e:
             failures.append(f"{provider.provider_name}: {e}")
 
     raise ProviderChainExhaustedError(key, failures)

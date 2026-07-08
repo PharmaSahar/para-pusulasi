@@ -217,7 +217,7 @@ def test_provider_chain_uses_primary_when_successful():
 
 def test_provider_chain_falls_back_when_primary_fails():
     registry = ProviderRegistry()
-    registry.register(DummyDataProvider(name="primary", err=RuntimeError("primary down")))
+    registry.register(DummyDataProvider(name="primary", err=ProviderError("primary down")))
     registry.register(DummyDataProvider(name="fallback", response=_provider_response(source="fallback", value=47.1)))
 
     result = fetch_fact_with_provider_chain(
@@ -235,8 +235,8 @@ def test_provider_chain_falls_back_when_primary_fails():
 
 def test_provider_chain_raises_when_all_providers_fail():
     registry = ProviderRegistry()
-    registry.register(DummyDataProvider(name="primary", err=RuntimeError("primary down")))
-    registry.register(DummyDataProvider(name="fallback", err=RuntimeError("fallback down")))
+    registry.register(DummyDataProvider(name="primary", err=ProviderError("primary down")))
+    registry.register(DummyDataProvider(name="fallback", err=ProviderError("fallback down")))
 
     with pytest.raises(ProviderChainExhaustedError) as err:
         fetch_fact_with_provider_chain(
@@ -278,3 +278,51 @@ def test_provider_timeout_raises_when_no_fallback():
         )
 
     assert any("timeout" in failure for failure in err.value.failures)
+
+
+def test_provider_timeout_fallback_happens_quickly():
+    registry = ProviderRegistry()
+    registry.register(SlowDataProvider())
+    registry.register(DummyDataProvider(name="fallback", response=_provider_response(source="fallback", value=47.5)))
+
+    started = time.monotonic()
+    result = fetch_fact_with_provider_chain(
+        registry=registry,
+        key="usd_try",
+        primary_provider="slow",
+        fallback_providers=("fallback",),
+    )
+    elapsed = time.monotonic() - started
+
+    assert result.selected_provider == "fallback"
+    # Slow provider sleeps 0.2s; timeout is 0.01s. Fallback should not wait for full sleep.
+    assert elapsed < 0.12
+
+
+def test_provider_chain_propagates_unexpected_type_error():
+    registry = ProviderRegistry()
+    registry.register(DummyDataProvider(name="primary", err=TypeError("bad provider code")))
+    registry.register(DummyDataProvider(name="fallback", response=_provider_response(source="fallback", value=47.8)))
+
+    with pytest.raises(TypeError):
+        fetch_fact_with_provider_chain(
+            registry=registry,
+            key="usd_try",
+            primary_provider="primary",
+            fallback_providers=("fallback",),
+        )
+
+
+def test_provider_chain_unknown_provider_name_fails_clearly():
+    registry = ProviderRegistry()
+    registry.register(DummyDataProvider(name="fallback", response=_provider_response(source="fallback", value=47.2)))
+
+    with pytest.raises(ProviderError) as err:
+        fetch_fact_with_provider_chain(
+            registry=registry,
+            key="usd_try",
+            primary_provider="missing_primary",
+            fallback_providers=("fallback",),
+        )
+
+    assert "provider not registered" in str(err.value)

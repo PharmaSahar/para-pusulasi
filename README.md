@@ -1,115 +1,95 @@
-# 🎬 YouTube AI Pasif Gelir Otomasyonu
+# Autonomous Media Operating System
 
-Claude AI + YouTube Data API kullanarak tam otomatik YouTube içerik üretim ve yükleme sistemi.
+This repository is evolving from a single automation project into the operating
+system of an autonomous media company.
 
----
+Primary goal:
+- maximize long-term enterprise value
+- keep production stable and resilient
+- increase autonomy gradually and safely
 
-## 📊 SİSTEM MİMARİSİ
+## Current State
 
-```
-[Claude API] → Script Üret
-      ↓
-[gTTS / ElevenLabs] → Sesli Anlatım
-      ↓
-[MoviePy] → Video Montajı (görseller + ses)
-      ↓
-[YouTube Data API v3] → Otomatik Yükleme
-      ↓
-[Scheduler] → Günlük/Haftalık Çalıştırma
-```
+Production foundations are active and treated as protected assets:
+- multi-channel production
+- prompt registry and channel DNA
+- experiment metadata and quality scoring
+- analytics join and shadow editor review
+- render metrics, telemetry, and production health monitoring
 
----
+These are not experimental and are not rewritten without production evidence.
 
-## 💰 PASİF GELİR STRATEJİSİ
+## Research Platform (Passive)
 
-### Önerilen Niş Kategoriler (Yüksek RPM = Reklam Geliri)
-| Niş | Tahmini RPM | Zorluk |
-|-----|------------|--------|
-| Kişisel Finans / Yatırım | $5–$15 | Orta |
-| Teknoloji / Yazılım | $4–$12 | Düşük |
-| Sağlık / Yaşam Tarzı | $3–$8 | Düşük |
-| İş Dünyası / Girişimcilik | $6–$18 | Orta |
-| Eğitim / Öğrenme | $4–$10 | Düşük |
+The current roadmap focus is passive research infrastructure.
 
-### Gelir Kaynakları
-1. **YouTube AdSense** – 1000 abone + 4000 saat sonrası
-2. **Affiliate Marketing** – Video açıklamalarına bağlantı
-3. **Sponsorluk** – Niş büyüyünce
-4. **Kurs / Dijital Ürün** – Kanaldan yönlendirme
+Implemented layers:
+- collector contract with schema versioning
+- append-only research event store
+- passive collectors:
+  - google trends
+  - github trends
+  - reddit trends
+- one-shot research scheduler
+- one-shot research runner CLI
+- replay engine (line-by-line, fail-open)
+- replay runner CLI
+- deterministic replay coverage
+- research regression CI workflow
 
----
+All of the above are passive. They do not change production flow, scoring,
+backlog generation, or publication behavior.
 
-## 🚀 KURULUM
+## Core Principles
 
-### 1. Gereksinimler
+- production stability first
+- business value over engineering elegance
+- metadata before automation
+- one feature per patch
+- small, reversible changes
+- fail-open where appropriate
+- no duplicate sources of truth
+
+## Repository Pointers
+
+- Passive scheduler: [src/research_scheduler.py](src/research_scheduler.py)
+- Collector contract: [src/collector_contract.py](src/collector_contract.py)
+- Replay engine: [src/research_replay.py](src/research_replay.py)
+- One-shot replay CLI: [src/run_replay_once.py](src/run_replay_once.py)
+- CI workflow: [.github/workflows/research-ci.yml](.github/workflows/research-ci.yml)
+
+## Run Research Regression Locally
+
 ```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+pytest -q \
+  tests/test_collector_contract.py \
+  tests/test_google_trends_collector.py \
+  tests/test_github_trends_collector.py \
+  tests/test_reddit_trends_collector.py \
+  tests/test_research_scheduler.py \
+  tests/test_research_pipeline_smoke.py \
+  tests/test_research_db.py \
+  tests/test_research_replay.py \
+  tests/test_run_replay_once.py \
+  tests/test_research_replay_determinism.py
 ```
 
-### 2. API Anahtarları
-`.env.example` dosyasını `.env` olarak kopyala ve doldur:
+## One-shot Commands
+
+Run passive collectors once:
+
 ```bash
-cp .env.example .env
+python -m src.run_research_once --query bitcoin --query startup --pretty
 ```
 
-**Gerekli API'ler:**
-- **Anthropic (Claude):** https://console.anthropic.com
-- **YouTube Data API v3:** https://console.cloud.google.com
-- **ElevenLabs (isteğe bağlı):** https://elevenlabs.io
+Replay stored events once:
 
-### 3. YouTube OAuth Kurulumu
 ```bash
-python src/youtube_auth.py
+python -m src.run_replay_once --research-root research --schema-version 1 --pretty
 ```
 
-### 4. Çalıştır
-```bash
-# Tek video üret ve yükle
-python main.py --once
+## Documentation
 
-# Otomatik zamanlayıcı ile çalıştır
-python main.py --schedule
-
-# Sadece içerik üret (yüklemeden)
-python main.py --generate-only
-```
-
----
-
-## 📁 PROJE YAPISI
-
-```
-youtube-ai-automation/
-├── main.py                  # Ana giriş noktası
-├── requirements.txt         # Bağımlılıklar
-├── .env.example             # Ortam değişkenleri şablonu
-├── src/
-│   ├── config.py            # Yapılandırma yöneticisi
-│   ├── content_generator.py # Claude AI ile içerik üretimi
-│   ├── tts_engine.py        # Metinden sese dönüştürme
-│   ├── video_creator.py     # Video montajı
-│   ├── youtube_uploader.py  # YouTube yükleme
-│   ├── youtube_auth.py      # OAuth kimlik doğrulama
-│   └── scheduler.py         # Otomasyon zamanlayıcı
-├── assets/
-│   ├── backgrounds/         # Arka plan görselleri
-│   ├── music/               # Fon müziği (telif hakkı yok)
-│   └── fonts/               # Yazı tipleri
-├── output/
-│   ├── scripts/             # Üretilen scriptler
-│   ├── audio/               # Oluşturulan ses dosyaları
-│   └── videos/              # Hazır videolar
-└── logs/
-    └── automation.log       # İşlem günlükleri
-```
-
----
-
-## ⚠️ ÖNEMLİ NOTLAR
-
-- YouTube politikalarına uygun içerik üretin
-- Tamamen AI üretimi içerikler için açıklama ekleyin
-- Başlangıçta haftada 2-3 video idealdir
-- İlk 6-12 ay gelir düşük olabilir, sabırlı olun
+- [docs/architecture.md](docs/architecture.md)
+- [docs/collector_contract.md](docs/collector_contract.md)
+- [CHANGELOG.md](CHANGELOG.md)

@@ -55,6 +55,15 @@ KISALTMALAR:
 - Yuzde degerleri somut goster: "Her ay 7.500 TL ayirarak..."
 """
 
+CONTENT_SAFETY_BOUNDARY = """
+
+KANAL UYUMLULUK VE FACT-CHECK SINIRI:
+- Kanalin ana konusu finans veya piyasa degilse, BIST, hisse, dolar kuru, Bitcoin, altin, faiz ve enflasyon gibi piyasa referanslarini kendiliginden ekleme.
+- Bu tur piyasa referanslarini ancak konu dogrudan bunun uzerineyse ve dogrulanabilir bicimde ele aliniyorsa kullan.
+- Dogrulanamayan fiyat hedefi, endeks seviyesi, yuzde oran veya tarih iddiasi uretme.
+- Egitim, saglik, teknoloji, kariyer ve girisim konularinda gereksiz finansal iddialar yerine alanin kendi temel prensiplerine odaklan.
+"""
+
 TOPIC_CATEGORIES = {
     "kisisel_finans": [
         "BIST'te en cok temettü veren hisseler",
@@ -82,21 +91,65 @@ TOPIC_CATEGORIES = {
         "Risk yonetimi prensipleri",
         "Yatirim psikolojisi ve hatalar",
     ],
+    "saglik": [
+        "Saglikli beslenme aliskanliklari",
+        "Uyku kalitesini artirma yollari",
+        "Stres yonetimi ve nefes teknikleri",
+        "Evde uygulanabilir egzersiz rutinleri",
+        "Uzun omur ve gunluk saglik aliskanliklari",
+    ],
+    "kariyer": [
+        "Maas pazarligi yaparken dikkat edilmesi gerekenler",
+        "Remote calisma duzeni kurma",
+        "LinkedIn profilini guclendirme",
+        "Freelance kariyer baslangici",
+        "Is gorusmesi hazirlik sistemi",
+    ],
+    "girisimcilik": [
+        "Startup fikrini test etme",
+        "E-ticaret baslangic adimlari",
+        "Pazarlama kanali secimi",
+        "Pasif gelir modelleri",
+        "Ilk musteri bulma yontemleri",
+    ],
 }
 
+MARKET_SENSITIVE_NICHES = {"kisisel_finans", "borsa", "kripto", "gayrimenkul"}
 
-def _get_trending_topics() -> list[str]:
-    """2026 guncel finans gundemi konulari."""
-    return [
-        "Merkez Bankasi faiz kararinin portfoya etkisi",
-        "2026 BIST 100 tahminleri ve firsat hisseleri",
-        "Dolar/TL volatilitesinde portfoy koruma",
-        "Kripto piyasasindaki son gelismeler ve etkileri",
-        "Enflasyona karsi en iyi 5 yatirim araci",
-        "Borsa yeni baslayanlarin en cok yaptigi 7 hata",
-        "BES emeklilik sisteminde degisiklikler ne anlama geliyor",
-        "2026'da gayrimenkul yatirimi mantikli mi",
-    ]
+
+def _is_market_sensitive_niche(niche: str | None) -> bool:
+    return (niche or "").strip().lower() in MARKET_SENSITIVE_NICHES
+
+
+def _get_trending_topics(niche: str | None = None, channel_topics: list[str] | None = None) -> list[str]:
+    """Return niche-aware trending seeds for topic generation."""
+    normalized_niche = (niche or "").strip().lower()
+
+    if _is_market_sensitive_niche(normalized_niche):
+        return [
+            "Merkez Bankasi faiz kararinin portfoya etkisi",
+            "2026 BIST 100 tahminleri ve firsat hisseleri",
+            "Dolar/TL volatilitesinde portfoy koruma",
+            "Kripto piyasasindaki son gelismeler ve etkileri",
+            "Enflasyona karsi en iyi 5 yatirim araci",
+            "Borsa yeni baslayanlarin en cok yaptigi 7 hata",
+            "BES emeklilik sisteminde degisiklikler ne anlama geliyor",
+            "2026'da gayrimenkul yatirimi mantikli mi",
+        ]
+
+    niche_topics = list(TOPIC_CATEGORIES.get(normalized_niche, []))
+    if channel_topics:
+        niche_topics.extend(channel_topics)
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for topic in niche_topics:
+        lowered = topic.strip().lower()
+        if not lowered or lowered in seen:
+            continue
+        seen.add(lowered)
+        deduped.append(topic)
+    return deduped
 
 
 def _load_used_titles() -> list[str]:
@@ -195,15 +248,24 @@ class VideoContent:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-def _build_topic_prompt(count: int, used_titles: list[str]) -> str:
+def _build_topic_prompt(
+    count: int,
+    used_titles: list[str],
+    *,
+    niche: str | None = None,
+    channel_name: str = "Para Pusulasi",
+    channel_topics: list[str] | None = None,
+) -> str:
     year = datetime.now().year
-    trending = _load_trending_context()
+    trending = _load_trending_context(niche=niche, channel_topics=channel_topics)
     avoid = ""
     if used_titles:
         last_10 = used_titles[-10:]
         avoid = "\n\nKESINLIKLE BUNLARI TEKRAR ONERME (zaten yapildi):\n" + "\n".join(f"- {t}" for t in last_10)
 
-    return f"""Para Pusulasi kanalı icin {count} adet viral video konusu oner.
+    normalized_niche = (niche or "").strip().lower()
+    if _is_market_sensitive_niche(normalized_niche):
+        return f"""{channel_name} kanalı icin {count} adet viral video konusu oner.
 
 KRITERLER:
 - {year} Turkiye finans gundemiyle alakali
@@ -218,9 +280,25 @@ GUNCEL GUNDEM:
 
 {count} konu:"""
 
+    niche_label = normalized_niche or "genel"
+    return f"""{channel_name} kanalı icin {count} adet viral video konusu oner.
 
-def _load_trending_context() -> str:
-    trends = _get_trending_topics()
+KRITERLER:
+- Konular kanalın ana nişi olan '{niche_label}' ile doğrudan ilgili olsun
+- Finansal piyasa, BIST, hisse, dolar kuru, Bitcoin, altın, faiz ve enflasyon iddialarını kendiliğinden ekleme
+- Clickbait ama yaniltici olmayan, egitici konular üret
+- Gerekmedikçe somut piyasa rakamı, hedef fiyat, yüzde oran veya tarih içeren başlık kurma
+- Her satira sadece konu yaz, baska hicbir sey ekleme
+
+NIS ODAKLARI:
+{trending}
+{avoid}
+
+{count} konu:"""
+
+
+def _load_trending_context(niche: str | None = None, channel_topics: list[str] | None = None) -> str:
+    trends = _get_trending_topics(niche=niche, channel_topics=channel_topics)
     selected = random.sample(trends, min(4, len(trends)))
     return "\n".join(f"- {t}" for t in selected)
 
@@ -231,9 +309,11 @@ def _build_content_prompt(
     next_topic_hint: str,
     content_type: str = "semi_evergreen",
     additional_guidance: str | None = None,
+    niche: str | None = None,
 ) -> str:
     year = datetime.now().year
     strict_fact_mode = bool(additional_guidance and "FACT-CHECK SAFE MODE" in additional_guidance)
+    market_sensitive_niche = _is_market_sensitive_niche(niche)
 
     # SONSUZ ÇEŞİTLİLİK: Sabit şablon değil, parametrik sistem
     # Her parametre bağımsız rastgele → 10×8×6×5×4 = 9,600 benzersiz kombinasyon
@@ -304,9 +384,10 @@ def _build_content_prompt(
     extra_guidance = f"\nEK YONLENDIRME: {additional_guidance}\n" if additional_guidance else ""
     title_rule = "60 karakter altı, özgün, viral başlık"
     number_style_rule = "• Rakamları net ver: 'Yani ayda 7.500 TL — yılda 90.000 TL'"
+    real_world_rule = "• Türkiye gerçekliğini yansıt: enflasyon, kira, maaş baskısı"
     strict_mode_block = ""
 
-    if not strict_fact_mode:
+    if market_sensitive_niche and not strict_fact_mode:
         title_rule = f"60 karakter altı, özgün, {year} içeren viral başlık"
     else:
         number_style_rule = "• Canlı piyasa rakamı, hedef fiyat, kesin yüzde veya tarih verme; gerekiyorsa yalnızca açıkça varsayımsal eğitim örneği kullan"
@@ -317,6 +398,8 @@ FACT-CHECK SAFE MODE AKTIF:
 • Konuyu risk yönetimi, temel prensipler, tarihsel dersler ve davranışsal hatalar üzerinden anlat
 • Volatil piyasa örnekleri vereceksen, bunları açıkça tarihsel veya varsayımsal eğitim örneği olarak etiketle
 """
+        if not market_sensitive_niche:
+            real_world_rule = "• Kanalın kendi alanındaki günlük, somut ve pratik örnekleri kullan; alakasız piyasa referansları ekleme"
 
     return f"""Türk finans YouTube kanalı için TAMAMEN ORİJİNAL, YAPAY HİSSETTİRMEYEN senaryo yaz.
 
@@ -351,7 +434,7 @@ DOĞAL TÜRK FİNANS YOUTUBER'I TONU:
 • Samimi, konuşma dili ama bilgi dolu
 • "Bak sana şunu söyleyeyim..." "Şimdi düşün bir..." gibi geçişler
 {number_style_rule}
-• Türkiye gerçekliğini yansıt: enflasyon, kira, maaş baskısı
+{real_world_rule}
 • İzleyicinin hayatına dokunan anlar yarat
 
 {strict_mode_block}
@@ -389,7 +472,13 @@ class ContentGenerator:
             self._persona = None
             self._channel_name = "Para Pusulasi"
 
+        self._channel_topics = list(getattr(channel_cfg, "topics", []) or [])
+
         self._channel_dna_overrides = self._extract_channel_dna_overrides(channel_cfg)
+
+    def _system_prompt(self) -> str:
+        base_persona = self._persona or CHANNEL_PERSONA
+        return f"{base_persona.rstrip()}\n{CONTENT_SAFETY_BOUNDARY}"
 
     @staticmethod
     def _extract_channel_dna_overrides(channel_cfg) -> dict:
@@ -429,13 +518,19 @@ class ContentGenerator:
         if trending_from_web:
             trend_hint = f"\n\nSU AN TRENDDE OLAN KONULAR (bunlara benzer konular oner):\n" + "\n".join(f"- {t}" for t in trending_from_web)
 
-        prompt = _build_topic_prompt(count, used) + trend_hint + avoid
+        prompt = _build_topic_prompt(
+            count,
+            used,
+            niche=self.niche,
+            channel_name=self._channel_name,
+            channel_topics=self._channel_topics,
+        ) + trend_hint + avoid
         logger.info(f"'{self.niche}' icin {count} konu uretiliyor...")
 
         response = self.client.messages.create(
             model=self.model,
             max_tokens=1024,
-            system=CHANNEL_PERSONA,
+            system=self._system_prompt(),
             messages=[{"role": "user", "content": prompt}],
         )
         raw = response.content[0].text
@@ -464,6 +559,7 @@ class ContentGenerator:
             next_hint,
             getattr(self, '_last_content_type', 'semi_evergreen'),
             additional_guidance=additional_guidance,
+            niche=self.niche,
         )
         logger.info("Icerik uretiliyor: " + topic)
 
@@ -482,7 +578,7 @@ class ContentGenerator:
         response = self.client.messages.create(
             model=self.model,
             max_tokens=8192,
-            system=CHANNEL_PERSONA,
+            system=self._system_prompt(),
             messages=[{"role": "user", "content": prompt}],
             temperature=1,  # Maksimum yaraticilik
         )

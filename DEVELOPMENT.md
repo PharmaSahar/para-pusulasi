@@ -43,6 +43,13 @@ This document captures the current development and operations model for the repo
 - The retry path remains fail-closed: if the second fact-check still fails, the pipeline aborts rather than publishing unverifiable content.
 - Regression coverage for this path lives in `tests/test_factual_freshness.py`.
 
+## Fact-check Failure Audit
+
+- Use `python -m src.run_fact_check_audit --pretty` from the repository root to summarize failed fact-check events from `logs/production_scheduler.out`.
+- The audit groups failures by failure kind, claim type, and channel.
+- Current primary categories are stale FX claims and unverifiable volatile claims.
+- Treat this audit output as the starting point for prompt-level prevention work, not as a reason to weaken fail-closed behavior.
+
 ## Operational Rules
 
 - Keep a single canonical repository root for development and production operations.

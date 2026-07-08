@@ -10,6 +10,8 @@ from pathlib import Path
 from .config import config as _default_config
 from .content_generator import ContentGenerator, VideoContent
 from .editor_review import build_editor_review_metadata
+from .fact_sources import build_default_fact_provider
+from .factual_freshness import FactCheckFailed, validate_script_factual_freshness
 from .image_fetcher import ImageFetcher
 from .analytics_join import build_analytics_join_metadata
 from .render_metrics import build_render_metrics
@@ -87,6 +89,70 @@ def run_full_pipeline(
         except Exception:
             # Telemetry must be fail-open and never affect production flow.
             pass
+
+    fact_provider = build_default_fact_provider()
+    fact_check_metadata: dict | None = None
+
+    def _telegram_fact_check_alert(message: str):
+        try:
+            from .scheduler_utils import send_telegram
+
+            send_telegram(message)
+        except Exception:
+            pass
+
+    def _run_fact_check_guard(before_stage: str, script: str):
+        nonlocal fact_check_metadata
+        _emit("fact_check", "stage_started", {"before_stage": before_stage})
+        try:
+            metadata = validate_script_factual_freshness(script, fact_provider)
+            fact_check_metadata = metadata
+            result["fact_check"] = metadata
+            result["fact_check_metadata"] = metadata
+            try:
+                setattr(content, "fact_check_metadata", metadata)
+            except Exception:
+                pass
+            result["job_status"] = "fact_check_passed"
+            _emit(
+                "fact_check",
+                "stage_completed",
+                {
+                    "before_stage": before_stage,
+                    "fact_check_status": metadata.get("fact_check_status"),
+                    "sources": metadata.get("sources", []),
+                    "volatile_claims_checked": metadata.get("volatile_claims_checked", []),
+                    "checked_at": metadata.get("checked_at"),
+                },
+            )
+        except FactCheckFailed as e:
+            reason = str(e)
+            failed_metadata = {
+                "fact_check_status": "failed",
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+                "sources": (e.metadata or {}).get("sources", []),
+                "volatile_claims_checked": (e.metadata or {}).get("volatile_claims_checked", []),
+                "failure_reason": reason,
+            }
+            fact_check_metadata = failed_metadata
+            result["fact_check"] = failed_metadata
+            result["fact_check_metadata"] = failed_metadata
+            result["job_status"] = "failed_fact_check"
+            _emit(
+                "fact_check",
+                "stage_failed",
+                {
+                    "before_stage": before_stage,
+                    "error": reason[:300],
+                },
+            )
+            _telegram_fact_check_alert(
+                "🚫 <b>Fact Check FAIL</b>\n"
+                f"📺 Kanal: {result.get('channel', 'default')}\n"
+                f"⛔ Aşama öncesi: {before_stage}\n"
+                f"🧾 Sebep: {reason[:250]}"
+            )
+            raise RuntimeError(f"failed_fact_check: {reason}") from e
 
     @contextmanager
     def _stage(stage: str, start_payload: dict | None = None, complete_payload_fn=None):
@@ -190,6 +256,8 @@ def run_full_pipeline(
         logger.info("Sadece icerik uretme modu.")
         return result
 
+    _run_fact_check_guard("tts", content.script)
+
     # ─── ADIM 2: Sesli Anlatiom ────────────────────────────────────────────────
     logger.info("=" * 60)
     logger.info(f"ADIM 2/4 - Edge TTS [{result['channel']}]")
@@ -248,6 +316,7 @@ def run_full_pipeline(
             logger.warning(f"Grafik oluşturulamadı: {e}")
 
     # ─── ADIM 3: Video Montaji ────────────────────────────────────────────────
+    _run_fact_check_guard("render", content.script)
     logger.info("=" * 60)
     logger.info(f"ADIM 3/4 - Video Montaji [{result['channel']}]")
     logger.info("=" * 60)
@@ -349,6 +418,7 @@ def run_full_pipeline(
             _emit("shorts_render", "stage_failed", {"error": "short_not_created"})
 
     # ─── ADIM 4: YouTube Yukleme ──────────────────────────────────────────────
+    _run_fact_check_guard("upload", content.script)
     logger.info("=" * 60)
     logger.info(f"ADIM 4/4 - YouTube [{result['channel']}]")
     logger.info("=" * 60)

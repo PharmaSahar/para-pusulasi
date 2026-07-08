@@ -49,11 +49,13 @@ def _invoke_fact_bundle_pipeline_adapter(cfg, result: dict) -> None:
     This integration is fail-open to avoid changing production behavior.
     """
     if not _is_fact_bundle_pipeline_adapter_enabled(cfg):
+        logger.info("Fact Bundle pipeline adapter skipped: feature flag disabled")
         return
 
     try:
         from .fact_bundle_pipeline_adapter import build_fact_bundle_pipeline_adapter
 
+        logger.info("Fact Bundle pipeline adapter invoked: feature flag enabled")
         adapter = build_fact_bundle_pipeline_adapter(enabled=True)
         adapter_result = adapter.run()
         orchestration_result = adapter_result.orchestration_result
@@ -64,8 +66,16 @@ def _invoke_fact_bundle_pipeline_adapter(cfg, result: dict) -> None:
             "provider_count": int(orchestration_result.provider_count) if orchestration_result else 0,
             "provider_names": list(orchestration_result.provider_names) if orchestration_result else [],
         }
+        logger.info(
+            "Fact Bundle pipeline adapter success: applied=%s provider_count=%s",
+            bool(adapter_result.applied),
+            int(orchestration_result.provider_count) if orchestration_result else 0,
+        )
     except Exception as e:
-        logger.warning("Fact Bundle pipeline adapter skipped due to error: %s", e)
+        logger.warning(
+            "Fact Bundle pipeline adapter failed: error_type=%s",
+            e.__class__.__name__,
+        )
 
 
 def _resolve_posting_slot(publish_at: str | None) -> str:

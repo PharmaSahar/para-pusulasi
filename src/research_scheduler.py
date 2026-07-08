@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .github_trends_collector import GitHubTrendsCollector
 from .google_trends_collector import GoogleTrendsCollector
 from .research_db import DEFAULT_RESEARCH_ROOT
 
@@ -23,6 +24,7 @@ def build_registered_collectors(*, research_root: Path | str = DEFAULT_RESEARCH_
     """
     return {
         "google_trends": GoogleTrendsCollector(research_root=research_root),
+        "github_trends": GitHubTrendsCollector(research_root=research_root),
     }
 
 

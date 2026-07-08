@@ -28,6 +28,46 @@ from .youtube_uploader import YouTubeUploader
 logger = logging.getLogger(__name__)
 
 
+def _is_enabled(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _is_fact_bundle_pipeline_adapter_enabled(cfg) -> bool:
+    cfg_value = getattr(cfg, "fact_bundle_pipeline_adapter_enabled", None)
+    if cfg_value is not None:
+        return _is_enabled(cfg_value)
+    return _is_enabled(os.getenv("FACT_BUNDLE_PIPELINE_ADAPTER_ENABLED", "false"))
+
+
+def _invoke_fact_bundle_pipeline_adapter(cfg, result: dict) -> None:
+    """Invoke Fact Bundle adapter only when explicitly enabled.
+
+    This integration is fail-open to avoid changing production behavior.
+    """
+    if not _is_fact_bundle_pipeline_adapter_enabled(cfg):
+        return
+
+    try:
+        from .fact_bundle_pipeline_adapter import build_fact_bundle_pipeline_adapter
+
+        adapter = build_fact_bundle_pipeline_adapter(enabled=True)
+        adapter_result = adapter.run()
+        orchestration_result = adapter_result.orchestration_result
+        result["fact_bundle_pipeline_adapter"] = {
+            "enabled": bool(adapter_result.enabled),
+            "applied": bool(adapter_result.applied),
+            "reason": str(adapter_result.reason),
+            "provider_count": int(orchestration_result.provider_count) if orchestration_result else 0,
+            "provider_names": list(orchestration_result.provider_names) if orchestration_result else [],
+        }
+    except Exception as e:
+        logger.warning("Fact Bundle pipeline adapter skipped due to error: %s", e)
+
+
 def _resolve_posting_slot(publish_at: str | None) -> str:
     """Infer morning/evening slot from scheduled publish time."""
     if publish_at:
@@ -57,6 +97,7 @@ def run_full_pipeline(
     result["slot"] = slot
     result["content_id"] = generate_content_id()
     result["run_id"] = generate_run_id()
+    _invoke_fact_bundle_pipeline_adapter(cfg, result)
 
     telemetry_metadata = {
         "experiment_id": os.getenv("EXPERIMENT_ID"),

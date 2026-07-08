@@ -1,7 +1,7 @@
 # Single-root operations
 
 ## Canonical root
-- Canonical repository root: /Users/klara/Downloads/adsız klasör
+- Canonical repository root: the repository root
 - Active working branch: feature/regeneration-on-planning
 - Canonical live scheduler log: logs/production_scheduler.out
 - Canonical live scheduler pid record: logs/production_scheduler.pid
@@ -12,8 +12,8 @@
 
 ## Worktree rule
 - Auxiliary worktrees are temporary only.
-- Keep /Users/klara/Downloads/para-pusulasi-production until post-cutover monitoring is satisfactory.
-- Keep /Users/klara/Downloads/para-pusulasi-merge-regeneration until integration cleanup is explicitly approved.
+- Keep any auxiliary production worktree until post-cutover monitoring is satisfactory.
+- Keep any auxiliary merge or integration worktree until cleanup is explicitly approved.
 
 ## Cutover script
 - Persistent cutover script: deploy/single_root_cutover.sh
@@ -24,9 +24,9 @@
 Remove auxiliary worktrees only after all checks below are true.
 
 ### Canonical root
-- Canonical root is /Users/klara/Downloads/adsız klasör.
+- Canonical root is the repository root.
 - Active branch is feature/regeneration-on-planning.
-- Main scheduler process cwd resolves to /Users/klara/Downloads/adsız klasör.
+- Main scheduler process cwd resolves to the repository root.
 
 ### Runtime health
 - Scheduler health check passes from the canonical root.
@@ -35,7 +35,7 @@ Remove auxiliary worktrees only after all checks below are true.
 - At least one real render continues successfully after cutover.
 
 ### Production safety
-- No live scheduler process cwd resolves to /Users/klara/Downloads/para-pusulasi-production.
+- No live scheduler process cwd resolves to an auxiliary worktree.
 - Old production worktree is no longer receiving new production log lines.
 - The current queue and upload flow remain healthy after cutover.
 

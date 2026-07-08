@@ -27,6 +27,10 @@ class FactBundleValidationError(ValueError):
         super().__init__(message)
 
 
+class DuplicateFactValidationError(FactBundleValidationError):
+    """Raised when a bundle contains duplicate canonical facts."""
+
+
 _ALLOWED_SOURCE_STATUSES = {"healthy", "degraded", "unavailable", "unknown"}
 
 
@@ -42,6 +46,10 @@ def _ensure_aware(dt: datetime, field_name: str, issues: list[str]) -> None:
         return
     if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
         issues.append(f"{field_name} must be timezone-aware")
+
+
+def _canonical_fact_key(key: str) -> str:
+    return key.strip().lower()
 
 
 def _validate_fact_record(fact: FactRecord, issues: list[str], index: int) -> None:
@@ -67,6 +75,35 @@ def _validate_fact_record(fact: FactRecord, issues: list[str], index: int) -> No
         issues.append(f"{prefix}.historical_current must be one of: historical, current")
     if not isinstance(fact.ttl, int) or fact.ttl <= 0:
         issues.append(f"{prefix}.ttl must be a positive integer")
+
+
+def _validate_duplicate_facts(bundle: FactBundle, issues: list[str]) -> list[str]:
+    seen: dict[tuple[str, str], int] = {}
+    duplicates: list[str] = []
+
+    for index, fact in enumerate(bundle.facts):
+        if not isinstance(fact, FactRecord) or not isinstance(fact.key, str):
+            continue
+        if not hasattr(fact, "historical_current"):
+            continue
+
+        canonical_key = _canonical_fact_key(fact.key)
+        try:
+            context = _coerce_enum(FactTemporalScope, fact.historical_current).value
+        except ValueError:
+            continue
+
+        dedupe_key = (canonical_key, context)
+        if dedupe_key in seen:
+            duplicates.append(
+                f"facts[{seen[dedupe_key]}] and facts[{index}] duplicate canonical fact: key={canonical_key}, historical_current={context}"
+            )
+        else:
+            seen[dedupe_key] = index
+
+    if duplicates:
+        issues.extend(duplicates)
+    return duplicates
 
 
 def validate_fact_bundle(bundle: FactBundle) -> FactBundle:
@@ -104,6 +141,9 @@ def validate_fact_bundle(bundle: FactBundle) -> FactBundle:
         if not isinstance(bundle.source_status.fallback_providers, tuple):
             issues.append("source_status.fallback_providers must be a tuple of provider names")
 
+        if bundle.source_status.checked_at is not None:
+            _ensure_aware(bundle.source_status.checked_at, "source_status.checked_at", issues)
+
     if not isinstance(bundle.facts, tuple):
         issues.append("facts must be stored as a tuple")
     elif not bundle.facts:
@@ -114,6 +154,9 @@ def validate_fact_bundle(bundle: FactBundle) -> FactBundle:
                 issues.append(f"facts[{index}] must be a FactRecord instance")
                 continue
             _validate_fact_record(fact, issues, index)
+        duplicate_issues = _validate_duplicate_facts(bundle, issues)
+        if duplicate_issues:
+            raise DuplicateFactValidationError(duplicate_issues, bundle_id=bundle.bundle_id if isinstance(bundle.bundle_id, str) else None)
 
     try:
         _coerce_enum(FactValidationStatus, bundle.validation_status)
@@ -126,4 +169,4 @@ def validate_fact_bundle(bundle: FactBundle) -> FactBundle:
     return replace(bundle, validation_status=FactValidationStatus.VALIDATED)
 
 
-__all__ = ["FactBundleValidationError", "validate_fact_bundle"]
+__all__ = ["DuplicateFactValidationError", "FactBundleValidationError", "validate_fact_bundle"]

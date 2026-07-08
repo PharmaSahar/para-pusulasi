@@ -55,6 +55,15 @@ KISALTMALAR:
 - Yuzde degerleri somut goster: "Her ay 7.500 TL ayirarak..."
 """
 
+CONTENT_SAFETY_BOUNDARY = """
+
+KANAL UYUMLULUK VE FACT-CHECK SINIRI:
+- Kanalin ana konusu finans veya piyasa degilse, BIST, hisse, dolar kuru, Bitcoin, altin, faiz ve enflasyon gibi piyasa referanslarini kendiliginden ekleme.
+- Bu tur piyasa referanslarini ancak konu dogrudan bunun uzerineyse ve dogrulanabilir bicimde ele aliniyorsa kullan.
+- Dogrulanamayan fiyat hedefi, endeks seviyesi, yuzde oran veya tarih iddiasi uretme.
+- Egitim, saglik, teknoloji, kariyer ve girisim konularinda gereksiz finansal iddialar yerine alanin kendi temel prensiplerine odaklan.
+"""
+
 TOPIC_CATEGORIES = {
     "kisisel_finans": [
         "BIST'te en cok temettü veren hisseler",
@@ -391,6 +400,10 @@ class ContentGenerator:
 
         self._channel_dna_overrides = self._extract_channel_dna_overrides(channel_cfg)
 
+    def _system_prompt(self) -> str:
+        base_persona = self._persona or CHANNEL_PERSONA
+        return f"{base_persona.rstrip()}\n{CONTENT_SAFETY_BOUNDARY}"
+
     @staticmethod
     def _extract_channel_dna_overrides(channel_cfg) -> dict:
         if not channel_cfg:
@@ -435,7 +448,7 @@ class ContentGenerator:
         response = self.client.messages.create(
             model=self.model,
             max_tokens=1024,
-            system=CHANNEL_PERSONA,
+            system=self._system_prompt(),
             messages=[{"role": "user", "content": prompt}],
         )
         raw = response.content[0].text
@@ -482,7 +495,7 @@ class ContentGenerator:
         response = self.client.messages.create(
             model=self.model,
             max_tokens=8192,
-            system=CHANNEL_PERSONA,
+            system=self._system_prompt(),
             messages=[{"role": "user", "content": prompt}],
             temperature=1,  # Maksimum yaraticilik
         )

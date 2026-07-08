@@ -9,6 +9,7 @@ from src.google_trends_collector import GoogleTrendsCollector
 
 def test_validate_raw_observation_accepts_valid_shape():
     observation = {
+        "schema_version": 1,
         "source": "google_trends",
         "observed_at": "2026-07-08T12:00:00+00:00",
         "raw": {"topic": "bitcoin wallet"},
@@ -19,11 +20,13 @@ def test_validate_raw_observation_accepts_valid_shape():
 
 def test_validate_raw_observation_rejects_invalid_fields():
     observation = {
+        "schema_version": 2,
         "source": "   ",
         "observed_at": "not-an-iso-date",
         "raw": "not-a-dict",
     }
     errors = validate_raw_observation(observation)
+    assert "invalid_schema_version" in errors
     assert "invalid_source" in errors
     assert "invalid_observed_at" in errors
     assert "invalid_raw" in errors
@@ -38,5 +41,6 @@ def test_google_trends_collector_emits_contract_shape(tmp_path):
 
     assert len(emitted) == 1
     assert is_valid_raw_observation(emitted[0]) is True
+    assert emitted[0]["schema_version"] == 1
     assert emitted[0]["source"] == "google_trends"
     assert emitted[0]["raw"]["topic"] == "bitcoin wallet"

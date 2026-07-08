@@ -89,6 +89,7 @@ class RedditTrendsCollector:
                 }
 
                 observation = {
+                    "schema_version": 1,
                     "source": "reddit_trends",
                     "observed_at": observed_at,
                     "raw": raw_payload,

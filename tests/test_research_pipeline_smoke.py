@@ -37,5 +37,6 @@ def test_passive_research_pipeline_smoke_with_static_input(tmp_path):
     first_event = json.loads(lines[0])
     assert first_event["event_type"] == "raw_observation"
     assert isinstance(first_event["payload"], dict)
+    assert first_event["payload"]["schema_version"] == 1
     assert isinstance(first_event["payload"].get("raw"), dict)
     assert first_event["payload"]["raw"]["topic"] == "bitcoin wallet"

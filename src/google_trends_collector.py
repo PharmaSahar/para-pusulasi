@@ -106,6 +106,7 @@ class GoogleTrendsCollector:
                     },
                 }
                 raw_observation = {
+                    "schema_version": 1,
                     "source": "google_trends",
                     "observed_at": observed_at,
                     "raw": raw_payload,

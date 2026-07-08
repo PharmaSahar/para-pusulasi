@@ -86,6 +86,7 @@ class GitHubTrendsCollector:
                 }
 
                 observation = {
+                    "schema_version": 1,
                     "source": "github_trends",
                     "observed_at": observed_at,
                     "raw": raw_payload,

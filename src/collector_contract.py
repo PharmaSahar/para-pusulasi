@@ -24,9 +24,13 @@ def validate_raw_observation(observation: dict[str, Any]) -> list[str]:
     """Return validation errors for collector raw observation payload."""
     errors: list[str] = []
 
-    for field in ("source", "observed_at", "raw"):
+    for field in ("schema_version", "source", "observed_at", "raw"):
         if field not in observation:
             errors.append(f"missing_required_field:{field}")
+
+    schema_version = observation.get("schema_version")
+    if "schema_version" in observation and schema_version != 1:
+        errors.append("invalid_schema_version")
 
     source = observation.get("source")
     if "source" in observation and (not isinstance(source, str) or not source.strip()):

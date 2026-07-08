@@ -22,6 +22,7 @@ def test_collect_persists_raw_observations_with_mock_fetcher(tmp_path):
     emitted = collector.collect(["bitcoin"], observed_at_utc="2026-07-08T12:00:00+00:00")
 
     assert len(emitted) == 2
+    assert emitted[0]["schema_version"] == 1
     assert emitted[0]["source"] == "google_trends"
     assert emitted[0]["observed_at"] == "2026-07-08T12:00:00+00:00"
     assert emitted[0]["raw"]["topic"] == "bitcoin wallet"
@@ -35,6 +36,7 @@ def test_collect_persists_raw_observations_with_mock_fetcher(tmp_path):
     assert len(lines) == 2
     first_event = json.loads(lines[0])
     assert first_event["event_type"] == "raw_observation"
+    assert first_event["payload"]["schema_version"] == 1
     assert first_event["payload"]["source"] == "google_trends"
     assert first_event["payload"]["raw"]["raw_context"]["collector"] == "google_trends_v0"
 

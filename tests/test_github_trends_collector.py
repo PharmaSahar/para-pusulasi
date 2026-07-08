@@ -34,6 +34,7 @@ def test_collect_emits_contract_shape_and_persists_raw_events(tmp_path):
 
     assert len(emitted) == 2
     assert all(is_valid_raw_observation(item) for item in emitted)
+    assert emitted[0]["schema_version"] == 1
     assert emitted[0]["source"] == "github_trends"
     assert emitted[0]["raw"]["topic"] == "repo:fastapi"
     assert emitted[1]["raw"]["raw_context"]["collector"] == "github_trends_v0"
@@ -45,6 +46,7 @@ def test_collect_emits_contract_shape_and_persists_raw_events(tmp_path):
 
     first_event = json.loads(lines[0])
     assert first_event["event_type"] == "raw_observation"
+    assert first_event["payload"]["schema_version"] == 1
     assert first_event["payload"]["source"] == "github_trends"
     assert first_event["payload"]["raw"]["raw_context"]["repo_name"] == "fastapi"
 

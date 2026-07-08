@@ -251,9 +251,10 @@ def render_and_schedule(channel_id: str):
                 last_error = e
                 error_str = str(e).lower()
                 # Kesinlikle retry yapma
-                if any(x in error_str for x in ["credit balance", "quota", "invalid_request", "invalidtags", "authentication"]):
+                if any(x in error_str for x in ["failed_fact_check", "credit balance", "quota", "invalid_request", "invalidtags", "authentication"]):
                     logger.error(f"[{cfg.name}] Fatal hata (retry yok): {e}")
-                    notify_error(cfg.name, str(e)[:150])
+                    if "failed_fact_check" not in error_str:
+                        notify_error(cfg.name, str(e)[:150])
                     raise
                 if attempt < 3:
                     wait = 30 * attempt
@@ -303,6 +304,8 @@ def render_and_schedule(channel_id: str):
     except Exception as e:
         logger.error(f"[{channel_id}] Render hatası: {e}", exc_info=True)
         try:
+            if "failed_fact_check" in str(e).lower():
+                return
             from src.channel_manager import get_channel
             cfg = get_channel(channel_id)
             from src.scheduler_utils import notify_error

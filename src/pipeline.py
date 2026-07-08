@@ -3,6 +3,7 @@ Tam Otomasyon Pipeline - Tek ve Cok Kanalli Mod
 """
 import logging
 import os
+import re
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,10 +29,22 @@ from .youtube_uploader import YouTubeUploader
 logger = logging.getLogger(__name__)
 
 _FACT_CHECK_RETRY_GUIDANCE = (
-    "Yalnizca dogrulanabilir, kaynaklanabilir ve tarihsel baglami net olan veriler kullan. "
-    "Dogrudan anlik fiyat, endeks, enflasyon, faiz veya volatil piyasa seviyesi veriyorsan "
-    "bunlari kesin rakam gibi sunma; bunun yerine tarihli, veri-temelli, ihtiyatli ve dogrulanabilir ifade et."
+    "FACT-CHECK SAFE MODE: Yalnizca dogrulanabilir, kaynaklanabilir ve tarihsel baglami net olan veriler kullan. "
+    "Baslikta, hook'ta, scriptte, thumbnail_prompt'ta ve aciklamada kesin fiyat hedefi, anlik kur seviyesi, endeks seviyesi, "
+    "yuzde oran, son tarih, onay tarihi veya spekulatif piyasa tahmini kullanma. "
+    "Volatil piyasa konularini yalnizca risk yonetimi, temel prensipler, tarihsel dersler ve senaryo okuma cercevesinde anlat. "
+    "Canli veri izlenimi veren iddialari cikar; gerekli tum sayisal ornekleri acikca varsayimsal egitim ornegi olarak etiketle."
 )
+
+_RETRY_TOPIC_BY_CLAIM_TYPE = {
+    "crypto": "Kripto piyasasinda fiyat hedefi vermeden risk yonetimi ve volatiliteyi anlama rehberi",
+    "stock": "Borsa ve hisse yorumlarinda fiyat hedefi vermeden risk yonetimi rehberi",
+    "commodity": "Emtia oynakligini kesin seviye vermeden yorumlama rehberi",
+    "fx_usd_try": "Dolar/TL oynakliginda kesin kur seviyesi vermeden portfoy koruma rehberi",
+    "inflation": "Enflasyon ortami icin kesin oran vermeden butce ve portfoy dayanıkliligi rehberi",
+    "interest": "Faiz ortami icin kesin oran vermeden nakit ve portfoy planlama rehberi",
+    "date_deadline": "Tarih ve son tarih iddialari olmadan surec ve kontrol listesi rehberi",
+}
 
 
 def _is_enabled(value: object) -> bool:
@@ -86,6 +99,44 @@ def _invoke_fact_bundle_pipeline_adapter(cfg, result: dict) -> None:
 
 def _is_unverifiable_claim_failure(reason: str) -> bool:
     return "unverifiable_volatile_claim" in reason
+
+
+def _extract_unverifiable_claim_type(reason: str) -> str | None:
+    match = re.search(r"\(([^()]+)\)\s*$", reason)
+    if not match:
+        return None
+    return match.group(1).strip().lower()
+
+
+def _build_retry_guidance(reason: str) -> str:
+    claim_type = _extract_unverifiable_claim_type(reason)
+    claim_specific_rules = {
+        "crypto": "Kripto fiyat hedefi, ETF tarih iddiasi, yil sonu hedefi veya belirli seviye yazma.",
+        "stock": "Endeks seviyesi, hisse hedef fiyati veya kisa vadeli piyasa seviyesi yazma.",
+        "commodity": "Altin, gumus, petrol gibi varliklar icin kesin seviye ve hedef yazma.",
+        "fx_usd_try": "Dolar/TL icin kesin kur, bant veya hedef seviye yazma.",
+        "inflation": "Kesin enflasyon yuzdesi veya resmi veri gibi sunulan oran yazma.",
+        "interest": "Kesin faiz oranlari veya toplantı sonucu tahmini yazma.",
+        "date_deadline": "Son tarih, takvim, onay tarihi veya kesin zaman iddiasi yazma.",
+    }
+    extra_rule = claim_specific_rules.get(claim_type)
+    if not extra_rule:
+        return _FACT_CHECK_RETRY_GUIDANCE
+    return f"{_FACT_CHECK_RETRY_GUIDANCE} {extra_rule}"
+
+
+def _build_retry_topic(original_topic: str | None, generated_title: str, reason: str) -> str:
+    claim_type = _extract_unverifiable_claim_type(reason)
+    if claim_type in _RETRY_TOPIC_BY_CLAIM_TYPE:
+        return _RETRY_TOPIC_BY_CLAIM_TYPE[claim_type]
+
+    base = (original_topic or generated_title or "Volatil piyasalarda risk yonetimi").strip()
+    sanitized = re.sub(r"\b20\d{2}\b", "", base)
+    sanitized = re.sub(r"\d+[\d.,]*\s*(TL|\$|USD|TRY|BTC|ETH|%)?", "", sanitized, flags=re.IGNORECASE)
+    sanitized = re.sub(r"\s+", " ", sanitized).strip(" -:,.?")
+    if not sanitized:
+        sanitized = "Volatil piyasalarda risk yonetimi"
+    return f"{sanitized} icin fiyat hedefi vermeden risk yonetimi rehberi"
 
 
 def _resolve_posting_slot(publish_at: str | None) -> str:
@@ -336,7 +387,14 @@ def run_full_pipeline(
         if _is_unverifiable_claim_failure(reason):
             logger.warning("Fact check unverifiable claim detected; regenerating content once with stricter guidance")
             result["fact_check_regeneration_attempted"] = True
-            _generate_content(generator, generation_topic=topic or content.title, additional_guidance=_FACT_CHECK_RETRY_GUIDANCE)
+            retry_topic = _build_retry_topic(topic, content.title, reason)
+            retry_guidance = _build_retry_guidance(reason)
+            result["fact_check_regeneration_topic"] = retry_topic
+            _generate_content(
+                generator,
+                generation_topic=retry_topic,
+                additional_guidance=retry_guidance,
+            )
             _run_fact_check_guard("tts", content.script)
         else:
             raise

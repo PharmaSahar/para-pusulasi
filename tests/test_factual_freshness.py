@@ -320,11 +320,34 @@ def test_pipeline_retries_once_for_unverifiable_claim_and_continues(monkeypatch,
     assert result["video_id"] == "video-id"
     assert result["fact_check_regeneration_attempted"] is True
     assert result["title"] == "Retry title"
+    assert result["fact_check_regeneration_topic"] == "Borsa ve hisse yorumlarinda fiyat hedefi vermeden risk yonetimi rehberi"
     assert validation_calls["count"] >= 2
     assert len(generator_instances) == 1
     assert len(generator_instances[0].calls) == 2
+    assert generator_instances[0].calls[1][0] == "Borsa ve hisse yorumlarinda fiyat hedefi vermeden risk yonetimi rehberi"
     assert generator_instances[0].calls[1][1] is not None
+    assert "FACT-CHECK SAFE MODE" in generator_instances[0].calls[1][1]
+    assert "fiyat hedefi" in generator_instances[0].calls[1][1]
     assert alerts == []
+
+
+def test_retry_topic_for_crypto_claim_becomes_risk_management_focused():
+    retry_topic = pipeline._build_retry_topic(
+        "Bitcoin 2026 sonu hedef fiyat",
+        "Bitcoin 150.000$ Hedefi: 2026'da Tuzak mı Fırsat mı?",
+        "failed_fact_check: unverifiable_volatile_claim: 'Bitcoin 150.000' (crypto)",
+    )
+
+    assert retry_topic == "Kripto piyasasinda fiyat hedefi vermeden risk yonetimi ve volatiliteyi anlama rehberi"
+
+
+def test_retry_guidance_for_crypto_claim_bans_price_targets():
+    guidance = pipeline._build_retry_guidance(
+        "failed_fact_check: unverifiable_volatile_claim: 'Bitcoin 150.000' (crypto)"
+    )
+
+    assert "FACT-CHECK SAFE MODE" in guidance
+    assert "Kripto fiyat hedefi" in guidance
 
 
 def test_pipeline_keeps_fail_closed_when_unverifiable_retry_also_fails(monkeypatch, tmp_path):

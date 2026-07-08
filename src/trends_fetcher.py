@@ -7,6 +7,22 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+MARKET_KEYWORDS = (
+    "bist",
+    "hisse",
+    "dolar",
+    "usd",
+    "try",
+    "bitcoin",
+    "ethereum",
+    "btc",
+    "eth",
+    "kripto",
+    "altin",
+    "faiz",
+    "enflasyon",
+)
+
 # Niş bazlı arama terimleri
 NICHE_SEED_KEYWORDS = {
     "kisisel_finans": ["borsa", "dolar", "enflasyon", "yatirim", "faiz", "altın"],
@@ -70,6 +86,41 @@ def get_trending_topics(niche: str = "kisisel_finans", count: int = 5) -> list[s
             f"Bitcoin {year} sonu hedef fiyat",
             f"Ethereum guncel analiz {year}",
             f"Hangi altcoin alınır {year}",
+        ],
+        "saglik": [
+            "Saglikli beslenme icin gunluk rutinler",
+            "Uyku duzenini guclendirme yollari",
+            "Stres yonetimi ve zihinsel denge",
+        ],
+        "teknoloji": [
+            "Yapay zeka araclariyla verimlilik",
+            "Yazilim ogrenme rotasi",
+            "Teknoloji kariyerinde one gecme yollari",
+        ],
+        "egitim": [
+            "Daha hizli ogrenme teknikleri",
+            "Calisma disiplini kurma yolları",
+            "Sinav ve beceri odakli gelisim planı",
+        ],
+        "kariyer": [
+            "Maas pazarligi stratejileri",
+            "Remote is duzeni kurma",
+            "LinkedIn profilini guclendirme",
+        ],
+        "girisimcilik": [
+            "Startup fikrini dogrulama",
+            "Ilk musteriye ulasma",
+            "E-ticaret baslangic adimlari",
+        ],
+        "psikoloji": [
+            "Stresle basa cikma yontemleri",
+            "Ozguven gelistirme aliskanliklari",
+            "Iliski ve duygu duzenleme becerileri",
+        ],
+        "gayrimenkul": [
+            f"{year}'da konut aliminda dikkat edilmesi gerekenler",
+            "Kira pazari dinamikleri",
+            "Yatirimlik konut secim kriterleri",
         ],
     }
     return fallback_topics.get(niche, fallback_topics["kisisel_finans"])[:count]

@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import random
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -119,6 +120,40 @@ MARKET_SENSITIVE_NICHES = {"kisisel_finans", "borsa", "kripto", "gayrimenkul"}
 
 def _is_market_sensitive_niche(niche: str | None) -> bool:
     return (niche or "").strip().lower() in MARKET_SENSITIVE_NICHES
+
+
+MARKET_TOPIC_RE = re.compile(
+    r"\b(bist\w*|hisse\w*|dolar\w*|usd\w*|try\w*|bitcoin\w*|ethereum\w*|btc\w*|eth\w*|kripto\w*|altin\w*|faiz\w*|enflasyon\w*|yatirim\w*)\b",
+    re.IGNORECASE,
+)
+
+
+def _filter_trending_topics_for_niche(
+    topics: list[str],
+    *,
+    niche: str | None,
+    channel_topics: list[str] | None = None,
+) -> list[str]:
+    if _is_market_sensitive_niche(niche):
+        return topics
+
+    filtered: list[str] = []
+    seen: set[str] = set()
+    normalized_channel_topics = [topic.lower() for topic in (channel_topics or [])]
+
+    for topic in topics:
+        lowered = topic.strip().lower()
+        if not lowered or lowered in seen:
+            continue
+        seen.add(lowered)
+
+        has_market_keyword = bool(MARKET_TOPIC_RE.search(topic))
+        mentions_channel_topic = any(token in lowered for token in normalized_channel_topics)
+        if has_market_keyword and not mentions_channel_topic:
+            continue
+        filtered.append(topic)
+
+    return filtered
 
 
 def _get_trending_topics(niche: str | None = None, channel_topics: list[str] | None = None) -> list[str]:
@@ -505,6 +540,11 @@ class ContentGenerator:
             trending_from_web = get_trending_topics(self.niche, count=4)
             seasonal = get_seasonal_boost_topics(self.niche)
             trending_from_web = (seasonal + trending_from_web)[:4]
+            trending_from_web = _filter_trending_topics_for_niche(
+                trending_from_web,
+                niche=self.niche,
+                channel_topics=self._channel_topics,
+            )
             logger.info(f"Google Trends: {trending_from_web[:2]}")
         except Exception:
             pass

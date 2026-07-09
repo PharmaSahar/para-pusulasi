@@ -266,3 +266,134 @@ def test_pipeline_thumbnail_validator_fail_open_writes_standard_fields(monkeypat
     assert "validation_warning" in result
     assert result["validation_warning"]["code"] == "thumbnail_validator_failed"
     assert "Validation fail-open" in caplog.text
+
+
+def test_pipeline_thumbnail_experiment_binding_success_writes_variant_metadata(monkeypatch, tmp_path):
+    cfg = _FakeConfig(tmp_path)
+
+    monkeypatch.setattr(pipeline, "ContentGenerator", _FakeGenerator)
+    monkeypatch.setattr(pipeline, "TTSEngine", _FakeTTS)
+    monkeypatch.setattr(pipeline, "ImageFetcher", _FakeFetcher)
+    monkeypatch.setattr(pipeline, "VideoCreator", _FakeCreator)
+    monkeypatch.setattr(pipeline, "YouTubeUploader", _FakeUploader)
+    monkeypatch.setattr(pipeline, "build_default_fact_provider", lambda: object())
+    monkeypatch.setattr(pipeline, "validate_script_factual_freshness", _fact_check_ok)
+    monkeypatch.setattr(pipeline, "emit_event", lambda *args, **kwargs: None)
+
+    from src.thumbnail_experiment import create_thumbnail_variant
+
+    fake_candidates = [
+        create_thumbnail_variant(
+            experiment_id="exp_keep",
+            variant_id="var_0001",
+            variant_label="A",
+            channel_id="test_channel",
+            content_id="content_1",
+            thumbnail_path="/tmp/a.jpg",
+            prompt="a",
+            strategy="default_ab",
+        ),
+        create_thumbnail_variant(
+            experiment_id="exp_keep",
+            variant_id="var_0002",
+            variant_label="B",
+            channel_id="test_channel",
+            content_id="content_1",
+            thumbnail_path="/tmp/a.jpg",
+            prompt="b",
+            strategy="default_ab",
+        ),
+    ]
+
+    monkeypatch.setattr(pipeline, "generate_thumbnail_candidates", lambda **kwargs: fake_candidates)
+    monkeypatch.setattr(
+        pipeline,
+        "register_thumbnail_variant_bindings",
+        lambda **kwargs: [{"event_type": "thumbnail_variant_registered", "variant_id": "var_0001"}],
+    )
+
+    import src.shorts_creator as shorts_creator_module
+
+    monkeypatch.setattr(shorts_creator_module, "ShortsCreator", _FakeShortsCreator)
+
+    result = pipeline.run_full_pipeline(topic="x", generate_only=False, channel_cfg=cfg, experiment_id="exp_keep")
+
+    assert "thumbnail_variants" in result
+    assert len(result["thumbnail_variants"]) == 2
+    assert result["thumbnail_variants"][0]["variant_id"] == "var_0001"
+    assert "thumbnail_variant_registry_events" in result
+    assert result["thumbnail_variant_registry_events"][0]["event_type"] == "thumbnail_variant_registered"
+
+
+def test_pipeline_thumbnail_experiment_binding_fail_open_continues(monkeypatch, tmp_path, caplog):
+    cfg = _FakeConfig(tmp_path)
+
+    monkeypatch.setattr(pipeline, "ContentGenerator", _FakeGenerator)
+    monkeypatch.setattr(pipeline, "TTSEngine", _FakeTTS)
+    monkeypatch.setattr(pipeline, "ImageFetcher", _FakeFetcher)
+    monkeypatch.setattr(pipeline, "VideoCreator", _FakeCreator)
+    monkeypatch.setattr(pipeline, "YouTubeUploader", _FakeUploader)
+    monkeypatch.setattr(pipeline, "build_default_fact_provider", lambda: object())
+    monkeypatch.setattr(pipeline, "validate_script_factual_freshness", _fact_check_ok)
+    monkeypatch.setattr(pipeline, "emit_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        pipeline,
+        "generate_thumbnail_candidates",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("candidate generator down")),
+    )
+
+    import src.shorts_creator as shorts_creator_module
+
+    monkeypatch.setattr(shorts_creator_module, "ShortsCreator", _FakeShortsCreator)
+
+    with caplog.at_level("WARNING"):
+        result = pipeline.run_full_pipeline(topic="x", generate_only=False, channel_cfg=cfg, experiment_id="exp_keep")
+
+    assert result.get("video_id")
+    assert "thumbnail_experiment_warning" in result
+    assert result["thumbnail_experiment_warning"]["code"] == "thumbnail_experiment_binding_failed"
+    assert "Thumbnail experiment fail-open" in caplog.text
+
+
+def test_pipeline_thumbnail_experiment_binding_preserves_existing_experiment_id(monkeypatch, tmp_path):
+    cfg = _FakeConfig(tmp_path)
+
+    monkeypatch.setattr(pipeline, "ContentGenerator", _FakeGenerator)
+    monkeypatch.setattr(pipeline, "TTSEngine", _FakeTTS)
+    monkeypatch.setattr(pipeline, "ImageFetcher", _FakeFetcher)
+    monkeypatch.setattr(pipeline, "VideoCreator", _FakeCreator)
+    monkeypatch.setattr(pipeline, "YouTubeUploader", _FakeUploader)
+    monkeypatch.setattr(pipeline, "build_default_fact_provider", lambda: object())
+    monkeypatch.setattr(pipeline, "validate_script_factual_freshness", _fact_check_ok)
+    monkeypatch.setattr(pipeline, "emit_event", lambda *args, **kwargs: None)
+
+    captured = {}
+
+    from src.thumbnail_experiment import create_thumbnail_variant
+
+    def _fake_generate_thumbnail_candidates(**kwargs):
+        captured["experiment_id"] = kwargs.get("experiment_id")
+        return [
+            create_thumbnail_variant(
+                experiment_id=str(kwargs.get("experiment_id")),
+                variant_id="var_0001",
+                variant_label="A",
+                channel_id="test_channel",
+                content_id="content_1",
+                thumbnail_path="/tmp/a.jpg",
+                prompt="a",
+                strategy="default_ab",
+            )
+        ]
+
+    monkeypatch.setattr(pipeline, "generate_thumbnail_candidates", _fake_generate_thumbnail_candidates)
+    monkeypatch.setattr(pipeline, "register_thumbnail_variant_bindings", lambda **kwargs: [])
+
+    import src.shorts_creator as shorts_creator_module
+
+    monkeypatch.setattr(shorts_creator_module, "ShortsCreator", _FakeShortsCreator)
+
+    result = pipeline.run_full_pipeline(topic="x", generate_only=False, channel_cfg=cfg, experiment_id="exp_custom_001")
+
+    assert result["experiment_id"] == "exp_custom_001"
+    assert captured.get("experiment_id") == "exp_custom_001"

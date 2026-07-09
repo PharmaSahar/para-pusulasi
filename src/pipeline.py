@@ -6,6 +6,7 @@ import os
 import re
 import json
 from contextlib import contextmanager
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -31,6 +32,8 @@ from .thumbnail_intelligence_validator import (
     normalize_rejection_reasons,
     validate_thumbnail_metadata_contract,
 )
+from .thumbnail_candidate_generator import generate_thumbnail_candidates
+from .thumbnail_experiment_registry_binding import register_thumbnail_variant_bindings
 from .tts_engine import TTSEngine
 from .video_creator_pro import VideoCreator
 from .youtube_uploader import YouTubeUploader
@@ -443,6 +446,45 @@ def run_full_pipeline(
                 warning.get("count"),
             )
 
+    def _attach_thumbnail_experiment_binding_metadata(*, thumbnail_path: str):
+        try:
+            base_prompt = str(getattr(content, "thumbnail_prompt", "") or getattr(content, "title", "") or "").strip()
+            fallback_prompt = str(getattr(content, "title", "") or "thumbnail variant").strip()
+            prompt_a = base_prompt or fallback_prompt
+            prompt_b = (prompt_a + " | alt").strip()
+
+            candidates = generate_thumbnail_candidates(
+                experiment_id=resolved_experiment_id,
+                channel_id=str(result.get("channel", "default")),
+                content_id=str(result.get("content_id", "")),
+                strategy="default_ab",
+                candidates=[
+                    {"thumbnail_path": thumbnail_path, "prompt": prompt_a},
+                    {"thumbnail_path": thumbnail_path, "prompt": prompt_b},
+                ],
+                count=2,
+            )
+            events = register_thumbnail_variant_bindings(
+                experiment_id=resolved_experiment_id,
+                candidates=candidates,
+            )
+
+            result["thumbnail_variants"] = [asdict(item) for item in candidates]
+            result["thumbnail_variant_registry_events"] = events
+        except Exception as e:
+            warning = _record_warning(
+                "thumbnail_experiment_warning",
+                code="thumbnail_experiment_binding_failed",
+                message="Thumbnail experiment binding failed; pipeline continued.",
+                extra={"error_type": e.__class__.__name__},
+            )
+            logger.warning(
+                "Thumbnail experiment fail-open: code=%s error_type=%s count=%s",
+                warning.get("code"),
+                warning.get("error_type"),
+                warning.get("count"),
+            )
+
     fact_provider = build_default_fact_provider()
     fact_check_metadata: dict | None = None
 
@@ -807,6 +849,7 @@ def run_full_pipeline(
         thumbnail_path = creator.create_thumbnail(content.title, image_path=thumb_bg)
         result["video_path"] = video_path
         result["thumbnail_path"] = thumbnail_path
+        _attach_thumbnail_experiment_binding_metadata(thumbnail_path=thumbnail_path)
         _attach_thumbnail_validation_metadata(
             content_type="video",
             thumbnail_path=thumbnail_path,

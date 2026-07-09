@@ -17,6 +17,8 @@ from .fact_sources import build_default_fact_provider
 from .factual_freshness import FactCheckFailed, validate_script_factual_freshness
 from .image_fetcher import ImageFetcher
 from .analytics_join import build_analytics_join_metadata
+from .audio_metadata_contract import AUDIO_METADATA_SCHEMA_VERSION
+from .audio_metadata_validator import validate_audio_metadata_contract
 from .channel_performance import append_performance_snapshot, build_performance_snapshot
 from .performance_optimizer import build_optimization_guidance, load_channel_optimization_state
 from .render_metrics import build_render_metrics
@@ -349,6 +351,57 @@ def run_full_pipeline(
                 warning.get("code"),
                 warning.get("stage"),
                 warning.get("event_type"),
+                warning.get("error_type"),
+                warning.get("count"),
+            )
+
+    def _standardize_audio_mix_metadata(*, mix: object, scope: str):
+        if not isinstance(mix, dict) or not mix:
+            return
+
+        try:
+            track_id = str(mix.get("music_track_id") or mix.get("track_id") or "").strip()
+            ducking_applied = mix.get("ducking_applied")
+            loudness_target = mix.get("loudness_target")
+            if loudness_target is None:
+                loudness_target = mix.get("loudness_target_lufs")
+
+            payload = {
+                "schema_version": AUDIO_METADATA_SCHEMA_VERSION,
+                "audio_mix_metadata": mix,
+                "music_track_id": track_id,
+                "ducking_applied": ducking_applied,
+                "loudness_target": loudness_target,
+            }
+            warning_payload = mix.get("audio_warning")
+            if isinstance(warning_payload, dict):
+                payload["audio_warning"] = warning_payload
+
+            errors = validate_audio_metadata_contract(payload)
+            if errors:
+                raise ValueError(errors[0])
+
+            if scope == "video":
+                result["audio_mix_metadata"] = payload
+                result["music_track_id"] = payload["music_track_id"]
+                result["ducking_applied"] = payload["ducking_applied"]
+                result["loudness_target"] = payload["loudness_target"]
+            else:
+                result["short_audio_mix_metadata"] = payload
+        except Exception as e:
+            warning = _record_warning(
+                "audio_warning",
+                code="audio_metadata_validation_failed",
+                message="Audio metadata validation failed; pipeline continued.",
+                extra={
+                    "scope": scope,
+                    "error_type": e.__class__.__name__,
+                },
+            )
+            logger.warning(
+                "Audio metadata fail-open: code=%s scope=%s error_type=%s count=%s",
+                warning.get("code"),
+                warning.get("scope"),
                 warning.get("error_type"),
                 warning.get("count"),
             )
@@ -854,6 +907,7 @@ def run_full_pipeline(
             script=content.script,
         )
         _attach_audio_mix_metadata(result, creator)
+        _standardize_audio_mix_metadata(mix=result.get("audio_mix"), scope="video")
         # Thumbnail için konuya özel ayrı fotoğraf çek (video klipten farklı)
         try:
             thumb_bg = None
@@ -950,6 +1004,7 @@ def run_full_pipeline(
             short_mix = getattr(sc, "last_audio_mix_metadata", None)
             if isinstance(short_mix, dict) and short_mix:
                 result["short_audio_mix"] = short_mix
+                _standardize_audio_mix_metadata(mix=short_mix, scope="short")
             logger.info(f"Short hazır: {short_path}")
             break
         except Exception as e:

@@ -602,3 +602,73 @@ def test_pipeline_thumbnail_selection_does_not_change_upload_or_thumbnail_paths(
     expected_thumb = str(Path(cfg.videos_dir) / "fake_thumb.jpg")
     assert result["video_path"] == expected_video
     assert result["thumbnail_path"] == expected_thumb
+
+
+def test_pipeline_audio_metadata_standardization_writes_fields(monkeypatch, tmp_path):
+    cfg = _FakeConfig(tmp_path)
+
+    class _CreatorWithValidAudioMix(_FakeCreator):
+        def __init__(self, channel_cfg=None):
+            super().__init__(channel_cfg=channel_cfg)
+            self.last_audio_mix_metadata = {
+                "music_track_id": "track_001",
+                "ducking_applied": True,
+                "loudness_target": -16.0,
+                "mix_applied": True,
+            }
+
+    monkeypatch.setattr(pipeline, "ContentGenerator", _FakeGenerator)
+    monkeypatch.setattr(pipeline, "TTSEngine", _FakeTTS)
+    monkeypatch.setattr(pipeline, "ImageFetcher", _FakeFetcher)
+    monkeypatch.setattr(pipeline, "VideoCreator", _CreatorWithValidAudioMix)
+    monkeypatch.setattr(pipeline, "YouTubeUploader", _FakeUploader)
+    monkeypatch.setattr(pipeline, "build_default_fact_provider", lambda: object())
+    monkeypatch.setattr(pipeline, "validate_script_factual_freshness", _fact_check_ok)
+    monkeypatch.setattr(pipeline, "emit_event", lambda *args, **kwargs: None)
+
+    import src.shorts_creator as shorts_creator_module
+
+    monkeypatch.setattr(shorts_creator_module, "ShortsCreator", _FakeShortsCreator)
+
+    result = pipeline.run_full_pipeline(topic="x", generate_only=False, channel_cfg=cfg)
+
+    assert "audio_mix_metadata" in result
+    assert result["audio_mix_metadata"]["schema_version"] == "1.0"
+    assert result["music_track_id"] == "track_001"
+    assert result["ducking_applied"] is True
+    assert result["loudness_target"] == -16.0
+    assert "audio_warning" not in result
+
+
+def test_pipeline_audio_metadata_validation_fail_open_sets_warning(monkeypatch, tmp_path, caplog):
+    cfg = _FakeConfig(tmp_path)
+
+    class _CreatorWithInvalidAudioMix(_FakeCreator):
+        def __init__(self, channel_cfg=None):
+            super().__init__(channel_cfg=channel_cfg)
+            self.last_audio_mix_metadata = {
+                "music_track_id": "",
+                "ducking_applied": "yes",
+                "loudness_target": "-16",
+            }
+
+    monkeypatch.setattr(pipeline, "ContentGenerator", _FakeGenerator)
+    monkeypatch.setattr(pipeline, "TTSEngine", _FakeTTS)
+    monkeypatch.setattr(pipeline, "ImageFetcher", _FakeFetcher)
+    monkeypatch.setattr(pipeline, "VideoCreator", _CreatorWithInvalidAudioMix)
+    monkeypatch.setattr(pipeline, "YouTubeUploader", _FakeUploader)
+    monkeypatch.setattr(pipeline, "build_default_fact_provider", lambda: object())
+    monkeypatch.setattr(pipeline, "validate_script_factual_freshness", _fact_check_ok)
+    monkeypatch.setattr(pipeline, "emit_event", lambda *args, **kwargs: None)
+
+    import src.shorts_creator as shorts_creator_module
+
+    monkeypatch.setattr(shorts_creator_module, "ShortsCreator", _FakeShortsCreator)
+
+    with caplog.at_level("WARNING"):
+        result = pipeline.run_full_pipeline(topic="x", generate_only=False, channel_cfg=cfg)
+
+    assert result.get("video_id")
+    assert "audio_warning" in result
+    assert result["audio_warning"]["code"] == "audio_metadata_validation_failed"
+    assert "Audio metadata fail-open" in caplog.text

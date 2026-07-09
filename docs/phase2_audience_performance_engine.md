@@ -12,6 +12,8 @@ Phase 2 is executed in four ordered workstreams. No workstream is considered com
 3. Audio Intelligence
 4. Analytics Intelligence
 
+Thumbnail Intelligence başlangıç kontratı: [docs/thumbnail_intelligence_contract.md](docs/thumbnail_intelligence_contract.md)
+
 ## Scope
 - Experiment registry and experiment lifecycle controls.
 - Experiment ID, randomization policy, exposure tracking, winner selection, and rollback rules.

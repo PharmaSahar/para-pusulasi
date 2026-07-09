@@ -623,6 +623,10 @@ def _run_startup_health_check(*, create_missing_directories: bool, require_teleg
         "Fact Bundle pipeline adapter is %s",
         "enabled" if result.fact_bundle_enabled else "disabled",
     )
+    logger.info(
+        "YouTube DNS resolution: %s",
+        ", ".join(result.youtube_dns_ips) if result.youtube_dns_ips else "unresolved",
+    )
     logger.info("Health check result: %s", "PASS" if result.ok else "FAIL")
     return result
 

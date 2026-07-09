@@ -86,11 +86,11 @@ TOPIC_CATEGORIES = {
         "AI araclarla verimlilik",
     ],
     "egitim": [
-        "Borsa nasil ogrenilir sifirdan",
-        "Teknik analiz temelleri",
-        "Temel analiz nedir nasil yapilir",
-        "Risk yonetimi prensipleri",
-        "Yatirim psikolojisi ve hatalar",
+        "Calisma disiplini kurma yollari",
+        "Not alma ve ozetleme teknikleri",
+        "Daha hizli ogrenme yontemleri",
+        "Online kurs secme rehberi",
+        "Sinav hazirlik rutini",
     ],
     "saglik": [
         "Saglikli beslenme aliskanliklari",
@@ -123,7 +123,7 @@ def _is_market_sensitive_niche(niche: str | None) -> bool:
 
 
 MARKET_TOPIC_RE = re.compile(
-    r"\b(bist\w*|hisse\w*|dolar\w*|usd\w*|try\w*|bitcoin\w*|ethereum\w*|btc\w*|eth\w*|kripto\w*|altin\w*|faiz\w*|enflasyon\w*|yatirim\w*)\b",
+    r"\b(bist\w*|borsa\w*|hisse\w*|dolar\w*|usd\w*|try\w*|bitcoin\w*|ethereum\w*|btc\w*|eth\w*|kripto\w*|altin\w*|faiz\w*|enflasyon\w*|yatirim\w*|temettu\w*|portfoy\w*|teknik\s+analiz|temel\s+analiz|risk\s+yonetimi)\b",
     re.IGNORECASE,
 )
 
@@ -194,7 +194,11 @@ def _get_trending_topics(niche: str | None = None, channel_topics: list[str] | N
             continue
         seen.add(lowered)
         deduped.append(topic)
-    return deduped
+    return _filter_trending_topics_for_niche(
+        deduped,
+        niche=niche,
+        channel_topics=channel_topics,
+    )
 
 
 def _load_used_titles() -> list[str]:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import socket
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,6 +17,7 @@ class ProductionHealthCheckResult:
     missing_api_keys: tuple[str, ...]
     telegram_configured: bool
     fact_bundle_enabled: bool
+    youtube_dns_ips: tuple[str, ...]
     errors: tuple[str, ...]
 
     @property
@@ -52,6 +54,22 @@ def _required_directories(config) -> tuple[str, ...]:
     )
 
 
+def _resolve_dns_ips(host: str) -> tuple[str, ...]:
+    try:
+        infos = socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as e:
+        raise RuntimeError(f"Unable to resolve {host}: {e}") from e
+
+    ips: list[str] = []
+    seen: set[str] = set()
+    for info in infos:
+        ip = info[4][0]
+        if ip not in seen:
+            seen.add(ip)
+            ips.append(ip)
+    return tuple(ips)
+
+
 def run_production_health_check(
     config,
     *,
@@ -85,6 +103,12 @@ def run_production_health_check(
             "Missing Telegram configuration. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env."
         )
 
+    youtube_dns_ips: tuple[str, ...] = ()
+    try:
+        youtube_dns_ips = _resolve_dns_ips("youtube.googleapis.com")
+    except Exception as e:
+        errors.append(str(e))
+
     return ProductionHealthCheckResult(
         config_loaded=config is not None,
         required_directories_ok=not missing_dirs,
@@ -93,6 +117,7 @@ def run_production_health_check(
         missing_api_keys=missing_api_keys,
         telegram_configured=telegram_configured,
         fact_bundle_enabled=fact_bundle_enabled,
+        youtube_dns_ips=youtube_dns_ips,
         errors=tuple(errors),
     )
 
@@ -104,5 +129,6 @@ def format_health_check_summary(result: ProductionHealthCheckResult) -> list[str
         f"required_api_keys_ok={result.required_api_keys_ok}",
         f"telegram_configured={result.telegram_configured}",
         f"fact_bundle_enabled={result.fact_bundle_enabled}",
+        f"youtube_dns_ips={','.join(result.youtube_dns_ips) if result.youtube_dns_ips else 'unresolved'}",
         f"health_check_ok={result.ok}",
     ]

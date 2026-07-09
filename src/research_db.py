@@ -95,13 +95,20 @@ def append_jsonl(path: Path, payload: dict[str, Any]) -> bool:
 
 def append_raw_observation(raw_observation: dict[str, Any], *, root: Path = DEFAULT_RESEARCH_ROOT, observed_at_utc: str | None = None) -> bool:
     ensure_layout(root=root)
+    observed_at = observed_at_utc or _iso_utc_now()
+    try:
+        observed_dt = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+        if observed_dt.tzinfo is None:
+            observed_dt = observed_dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        observed_dt = datetime.now(timezone.utc)
     event = {
         "event_type": "raw_observation",
         "schema_version": "raw_v1",
-        "observed_at": observed_at_utc or _iso_utc_now(),
+        "observed_at": observed_at,
         "payload": raw_observation,
     }
-    return append_jsonl(raw_day_path(root=root), event)
+    return append_jsonl(raw_day_path(root=root, now_utc=observed_dt), event)
 
 
 def load_latest_opportunities(*, root: Path = DEFAULT_RESEARCH_ROOT) -> dict[str, dict[str, Any]]:

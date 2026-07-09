@@ -609,30 +609,38 @@ def run_full_pipeline(
     logger.info("=" * 60)
     logger.info(f"ADIM 4/4 - YouTube [{result['channel']}]")
     logger.info("=" * 60)
-    with _stage(
-        "upload",
-        start_payload={"privacy": privacy, "publish_at": publish_at},
-        complete_payload_fn=lambda: {"video_id": str(result.get("video_id", ""))},
-    ):
-        uploader = YouTubeUploader(channel_cfg=cfg)
-        video_id = uploader.upload_video(
-            video_path=video_path,
-            content=content,
-            thumbnail_path=thumbnail_path,
-            privacy=privacy,
-            publish_at=publish_at,
-        )
-        result["video_id"] = video_id
-        result["youtube_url"] = f"https://youtube.com/watch?v={video_id}"
-        try:
-            result["youtube_channel_stats"] = uploader.get_channel_stats()
-        except Exception:
-            result["youtube_channel_stats"] = {}
+    uploader = YouTubeUploader(channel_cfg=cfg)
+    upload_error = None
+    try:
+        with _stage(
+            "upload",
+            start_payload={"privacy": privacy, "publish_at": publish_at},
+            complete_payload_fn=lambda: {"video_id": str(result.get("video_id", ""))},
+        ):
+            video_id = uploader.upload_video(
+                video_path=video_path,
+                content=content,
+                thumbnail_path=thumbnail_path,
+                privacy=privacy,
+                publish_at=publish_at,
+            )
+            result["video_id"] = video_id
+            result["youtube_url"] = f"https://youtube.com/watch?v={video_id}"
+            try:
+                result["youtube_channel_stats"] = uploader.get_channel_stats()
+            except Exception:
+                result["youtube_channel_stats"] = {}
+    except Exception as e:
+        upload_error = e
+        result["upload_error"] = str(e)
+        logger.error(f"Upload başarısız, snapshot yine kaydedilecek: {e}")
 
     # ─── ADIM 4.5: Short Yukle ────────────────────────────────────────────────
     _emit("shorts_upload", "stage_started")
     shorts_upload_error = None
-    if result.get("short_path"):
+    if upload_error:
+        _emit("shorts_upload", "stage_completed", {"short_uploaded": False, "skipped": True, "reason": "main_upload_failed"})
+    elif result.get("short_path"):
         try:
             from .content_generator import VideoContent as VC
             from .thumbnail_history import append_thumbnail_history, load_recent_thumbnail_history
@@ -772,7 +780,7 @@ def run_full_pipeline(
         result["performance_snapshot"] = {}
 
     logger.info("=" * 60)
-    logger.info(f"✅ TAMAMLANDI! Video: {result['youtube_url']}")
+    logger.info(f"✅ TAMAMLANDI! Video: {result.get('youtube_url')}")
     if result.get("short_url"):
         logger.info(f"✅ Short: {result['short_url']}")
     logger.info("=" * 60)

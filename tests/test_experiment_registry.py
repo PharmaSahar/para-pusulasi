@@ -60,7 +60,9 @@ def test_create_experiment_appends_one_jsonl_line_and_can_list(tmp_path):
     assert event["event_type"] == "experiment_created"
     assert event["payload"]["status"] == "draft"
     assert event["payload"]["schema_version"] == "1.0"
+    assert event["payload"]["registry_version"] == "1.0"
     assert event["payload"]["created_by"] == "pipeline"
+    assert event["registry_version"] == "1.0"
 
     listed = list_experiments(registry_path=registry_path)
     assert len(listed) == 1
@@ -90,6 +92,8 @@ def test_status_transition_and_append_only_history(tmp_path):
     registry_path = tmp_path / "experiments.jsonl"
     created = create_experiment(_base_metadata(), registry_path=registry_path)
 
+    first_line_before = registry_path.read_text(encoding="utf-8").splitlines()[0]
+
     update_experiment_status(created["experiment_id"], "active", registry_path=registry_path)
     completed = update_experiment_status(
         created["experiment_id"],
@@ -102,6 +106,7 @@ def test_status_transition_and_append_only_history(tmp_path):
 
     lines = registry_path.read_text(encoding="utf-8").strip().splitlines()
     assert len(lines) == 3
+    assert lines[0] == first_line_before
 
     events = [json.loads(line) for line in lines]
     assert [item["payload"]["status"] for item in events] == ["draft", "active", "completed"]
@@ -158,3 +163,27 @@ def test_create_requires_non_empty_schema_version_and_created_by(tmp_path):
 
     with pytest.raises(ValueError):
         create_experiment(_base_metadata(), registry_path=registry_path, created_by="")
+
+    with pytest.raises(ValueError):
+        create_experiment(_base_metadata(), registry_path=registry_path, registry_version="")
+
+
+def test_update_requires_non_empty_schema_and_registry_versions(tmp_path):
+    registry_path = tmp_path / "experiments.jsonl"
+    created = create_experiment(_base_metadata(), registry_path=registry_path)
+
+    with pytest.raises(ValueError):
+        update_experiment_status(created["experiment_id"], "active", registry_path=registry_path, schema_version="")
+
+    with pytest.raises(ValueError):
+        update_experiment_status(created["experiment_id"], "active", registry_path=registry_path, registry_version="")
+
+
+def test_duplicate_experiment_id_raises_clear_error(tmp_path):
+    registry_path = tmp_path / "experiments.jsonl"
+    fixed_id = "fixed-id-001"
+
+    create_experiment(_base_metadata(), registry_path=registry_path, experiment_id=fixed_id)
+
+    with pytest.raises(ValueError, match="already exists"):
+        create_experiment(_base_metadata(), registry_path=registry_path, experiment_id=fixed_id)

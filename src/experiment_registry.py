@@ -15,6 +15,7 @@ import uuid
 
 DEFAULT_REGISTRY_PATH = Path("output/telemetry/experiments.jsonl")
 DEFAULT_SCHEMA_VERSION = "1.0"
+DEFAULT_REGISTRY_VERSION = "1.0"
 
 EXPERIMENT_STATUSES = {
     "draft",
@@ -139,6 +140,7 @@ def create_experiment(
     experiment_id: str | None = None,
     created_by: str = "pipeline",
     schema_version: str = DEFAULT_SCHEMA_VERSION,
+    registry_version: str = DEFAULT_REGISTRY_VERSION,
     occurred_at: str | None = None,
 ) -> dict[str, Any]:
     """Create a draft experiment and append one event line."""
@@ -160,12 +162,17 @@ def create_experiment(
     if not version:
         raise ValueError("schema_version must be non-empty")
 
+    registry_ver = str(registry_version or "").strip()
+    if not registry_ver:
+        raise ValueError("registry_version must be non-empty")
+
     payload = dict(metadata)
     payload["experiment_id"] = resolved_experiment_id
     payload["status"] = "draft"
     payload["winner"] = _validate_winner(str(payload.get("winner", "pending")))
     payload["rollback_status"] = _validate_rollback_status(str(payload.get("rollback_status", "none")))
     payload["schema_version"] = version
+    payload["registry_version"] = registry_ver
     payload["created_by"] = creator
 
     event = {
@@ -173,6 +180,7 @@ def create_experiment(
         "occurred_at": occurred_at or _utcnow_iso(),
         "experiment_id": resolved_experiment_id,
         "schema_version": version,
+        "registry_version": registry_ver,
         "created_by": creator,
         "payload": payload,
     }
@@ -189,6 +197,7 @@ def update_experiment_status(
     rollback_status: str | None = None,
     created_by: str = "pipeline",
     schema_version: str = DEFAULT_SCHEMA_VERSION,
+    registry_version: str = DEFAULT_REGISTRY_VERSION,
     occurred_at: str | None = None,
 ) -> dict[str, Any]:
     """Apply a status transition by appending a new snapshot event."""
@@ -209,10 +218,15 @@ def update_experiment_status(
     if not version:
         raise ValueError("schema_version must be non-empty")
 
+    registry_ver = str(registry_version or "").strip()
+    if not registry_ver:
+        raise ValueError("registry_version must be non-empty")
+
     updated = dict(current)
     updated["status"] = normalized_target
     updated["created_by"] = creator
     updated["schema_version"] = version
+    updated["registry_version"] = registry_ver
 
     if winner is not None:
         if normalized_target != "completed":
@@ -242,6 +256,7 @@ def update_experiment_status(
         "occurred_at": occurred_at or _utcnow_iso(),
         "experiment_id": str(experiment_id),
         "schema_version": version,
+        "registry_version": registry_ver,
         "created_by": creator,
         "payload": updated,
     }

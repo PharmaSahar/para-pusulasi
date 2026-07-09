@@ -233,3 +233,36 @@ def test_pipeline_snapshot_validation_guard_skips_invalid_row(monkeypatch, tmp_p
     assert "analytics_warning" in result
     assert result["analytics_warning"]["code"] == "performance_snapshot_validation_failed"
     assert "Analytics fail-open" in caplog.text
+
+
+def test_pipeline_thumbnail_validator_fail_open_writes_standard_fields(monkeypatch, tmp_path, caplog):
+    cfg = _FakeConfig(tmp_path)
+
+    monkeypatch.setattr(pipeline, "ContentGenerator", _FakeGenerator)
+    monkeypatch.setattr(pipeline, "TTSEngine", _FakeTTS)
+    monkeypatch.setattr(pipeline, "ImageFetcher", _FakeFetcher)
+    monkeypatch.setattr(pipeline, "VideoCreator", _FakeCreator)
+    monkeypatch.setattr(pipeline, "YouTubeUploader", _FakeUploader)
+    monkeypatch.setattr(pipeline, "build_default_fact_provider", lambda: object())
+    monkeypatch.setattr(pipeline, "validate_script_factual_freshness", _fact_check_ok)
+    monkeypatch.setattr(pipeline, "emit_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        pipeline,
+        "validate_thumbnail_metadata_contract",
+        lambda _payload: (_ for _ in ()).throw(RuntimeError("validator down")),
+    )
+
+    import src.shorts_creator as shorts_creator_module
+
+    monkeypatch.setattr(shorts_creator_module, "ShortsCreator", _FakeShortsCreator)
+
+    with caplog.at_level("WARNING"):
+        result = pipeline.run_full_pipeline(topic="x", generate_only=False, channel_cfg=cfg)
+
+    assert "thumbnail_metadata" in result
+    assert "video" in result["thumbnail_metadata"]
+    assert "rejection_reasons" in result
+    assert isinstance(result["rejection_reasons"], list)
+    assert "validation_warning" in result
+    assert result["validation_warning"]["code"] == "thumbnail_validator_failed"
+    assert "Validation fail-open" in caplog.text

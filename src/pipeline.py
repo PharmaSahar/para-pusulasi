@@ -26,6 +26,11 @@ from .telemetry import (
     generate_content_id,
     generate_run_id,
 )
+from .thumbnail_intelligence_validator import (
+    THUMBNAIL_INTELLIGENCE_SCHEMA_VERSION,
+    normalize_rejection_reasons,
+    validate_thumbnail_metadata_contract,
+)
 from .tts_engine import TTSEngine
 from .video_creator_pro import VideoCreator
 from .youtube_uploader import YouTubeUploader
@@ -270,6 +275,8 @@ def run_full_pipeline(
     cfg = channel_cfg if channel_cfg else _default_config
     cfg.ensure_directories()
     result = {"channel": getattr(cfg, "channel_id", "default")}
+    result["thumbnail_metadata"] = {}
+    result["rejection_reasons"] = []
     slot = posting_slot or _resolve_posting_slot(publish_at)
     result["slot"] = slot
     result["content_id"] = generate_content_id()
@@ -338,6 +345,100 @@ def run_full_pipeline(
                 warning.get("code"),
                 warning.get("stage"),
                 warning.get("event_type"),
+                warning.get("error_type"),
+                warning.get("count"),
+            )
+
+    def _extract_diversity_rejection_reasons(rejected_attempts: list | None) -> list[str]:
+        reasons: list[str] = []
+        for item in rejected_attempts or []:
+            if not isinstance(item, dict):
+                continue
+            raw = item.get("reasons")
+            if isinstance(raw, list):
+                reasons.extend(str(x) for x in raw if str(x).strip())
+        return reasons
+
+    def _attach_thumbnail_validation_metadata(
+        *,
+        content_type: str,
+        thumbnail_path: str,
+        variant_id: str,
+        rejected_attempts: list | None,
+    ):
+        raw_reasons = _extract_diversity_rejection_reasons(rejected_attempts)
+        rejection_reasons = normalize_rejection_reasons(raw_reasons)
+
+        quality = {
+            "safe_area_pass": "SAFE_AREA_VIOLATION" not in rejection_reasons,
+            "text_density_ratio": 0.0,
+            "text_density_pass": "TEXT_DENSITY_EXCEEDED" not in rejection_reasons,
+            "subject_clarity_pass": "SUBJECT_CLARITY_LOW" not in rejection_reasons,
+            "brand_consistency_pass": "BRAND_INCONSISTENT" not in rejection_reasons,
+            "diversity_pass": "DUPLICATE_OR_LOW_DIVERSITY" not in rejection_reasons,
+            "contrast_pass": "LOW_CONTRAST" not in rejection_reasons,
+            "overall_pass": len(rejection_reasons) == 0,
+        }
+
+        metadata = {
+            "schema_version": THUMBNAIL_INTELLIGENCE_SCHEMA_VERSION,
+            "channel_id": str(result.get("channel", "default")),
+            "content_id": str(result.get("content_id", "")),
+            "thumbnail_path": str(thumbnail_path),
+            "variant_id": str(variant_id),
+            "evaluated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "quality": quality,
+            "rejection_reasons": rejection_reasons,
+            "diversity": {
+                "window_size": 30,
+                "similarity_score": 0.0,
+                "similarity_threshold": 0.78,
+            },
+            "brand_profile_version": "v1",
+        }
+
+        try:
+            result.setdefault("thumbnail_metadata", {})[content_type] = metadata
+            merged_reasons = list(result.get("rejection_reasons") or [])
+            for reason in rejection_reasons:
+                if reason not in merged_reasons:
+                    merged_reasons.append(reason)
+            result["rejection_reasons"] = merged_reasons
+
+            errors = validate_thumbnail_metadata_contract(metadata)
+            if errors:
+                result.setdefault("thumbnail_validation_errors", {})[content_type] = errors
+                warning = _record_warning(
+                    "validation_warning",
+                    code="thumbnail_metadata_validation_failed",
+                    message="Thumbnail metadata validation failed; pipeline continued.",
+                    extra={
+                        "content_type": content_type,
+                        "error_count": len(errors),
+                        "first_error": errors[0],
+                    },
+                )
+                logger.warning(
+                    "Validation fail-open: code=%s content_type=%s error_count=%s count=%s",
+                    warning.get("code"),
+                    warning.get("content_type"),
+                    warning.get("error_count"),
+                    warning.get("count"),
+                )
+        except Exception as e:
+            warning = _record_warning(
+                "validation_warning",
+                code="thumbnail_validator_failed",
+                message="Thumbnail validator execution failed; pipeline continued.",
+                extra={
+                    "content_type": content_type,
+                    "error_type": e.__class__.__name__,
+                },
+            )
+            logger.warning(
+                "Validation fail-open: code=%s content_type=%s error_type=%s count=%s",
+                warning.get("code"),
+                warning.get("content_type"),
                 warning.get("error_type"),
                 warning.get("count"),
             )
@@ -706,6 +807,12 @@ def run_full_pipeline(
         thumbnail_path = creator.create_thumbnail(content.title, image_path=thumb_bg)
         result["video_path"] = video_path
         result["thumbnail_path"] = thumbnail_path
+        _attach_thumbnail_validation_metadata(
+            content_type="video",
+            thumbnail_path=thumbnail_path,
+            variant_id=str(thumbnail_experiments.get("selected_variant_id") or "video_default"),
+            rejected_attempts=((result.get("thumbnail_diversity") or {}).get("video", {}).get("rejected_attempts") or []),
+        )
 
     try:
         from .thumbnail_history import append_thumbnail_history
@@ -895,6 +1002,13 @@ def run_full_pipeline(
                 short_thumbnail_path = creator.create_thumbnail(short_title, image_path=short_thumb_bg)
             except Exception:
                 short_thumbnail_path = thumbnail_path
+
+            _attach_thumbnail_validation_metadata(
+                content_type="short",
+                thumbnail_path=short_thumbnail_path,
+                variant_id="short_default",
+                rejected_attempts=((result.get("thumbnail_diversity") or {}).get("short", {}).get("rejected_attempts") or []),
+            )
 
             short_content = VC(
                 title=short_title,

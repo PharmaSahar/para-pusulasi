@@ -15,6 +15,8 @@ from .fact_sources import build_default_fact_provider
 from .factual_freshness import FactCheckFailed, validate_script_factual_freshness
 from .image_fetcher import ImageFetcher
 from .analytics_join import build_analytics_join_metadata
+from .channel_performance import append_performance_snapshot, build_performance_snapshot
+from .performance_optimizer import build_optimization_guidance, load_channel_optimization_state
 from .render_metrics import build_render_metrics
 from .telemetry import (
     build_event_envelope,
@@ -308,13 +310,29 @@ def run_full_pipeline(
         generator = ContentGenerator(channel_cfg=cfg)
         telemetry_metadata["model_version"] = telemetry_metadata.get("model_version") or getattr(generator, "model", None)
         content: VideoContent
-        _generate_content(generator, generation_topic=topic)
+        live_optimization_state = {}
+        try:
+            live_optimization_state = load_channel_optimization_state(str(result.get("channel", "default")))
+            if live_optimization_state:
+                result["optimization_state"] = live_optimization_state
+                result["optimization_guidance"] = build_optimization_guidance(live_optimization_state)
+        except Exception:
+            live_optimization_state = {}
+
+        optimization_guidance = result.get("optimization_guidance") or ""
+        _generate_content(
+            generator,
+            generation_topic=topic,
+            additional_guidance=optimization_guidance or None,
+        )
 
     diversity_video_record = None
+    thumbnail_experiments = {}
     diversity_short_record = None
     try:
         from .channel_visual_profiles import get_channel_visual_profile
         from .thumbnail_history import load_recent_thumbnail_history
+        from .thumbnail_experiments import build_thumbnail_experiment_bundle
         from .visual_diversity import enforce_thumbnail_diversity
 
         visual_profile = get_channel_visual_profile(
@@ -335,6 +353,18 @@ def run_full_pipeline(
         )
         diversity_video_record = dict(video_guard.get("record") or {})
         content.thumbnail_prompt = diversity_video_record.get("thumbnail_prompt") or content.thumbnail_prompt
+        thumbnail_experiments = build_thumbnail_experiment_bundle(
+            channel_id=str(result.get("channel", "default")),
+            content_type="video",
+            slot=slot,
+            topic=content.title,
+            title=content.title,
+            thumbnail_prompt=getattr(content, "thumbnail_prompt", "") or content.title,
+            profile=visual_profile,
+            recent_history=recent_history,
+            publish_at=publish_at,
+        )
+        content.thumbnail_prompt = thumbnail_experiments.get("selected_prompt") or content.thumbnail_prompt
         result["thumbnail_diversity"] = {
             "video": {
                 "accepted": bool(video_guard.get("accepted")),
@@ -342,6 +372,21 @@ def run_full_pipeline(
                 "attempts": int(video_guard.get("attempts") or 0),
                 "rejected_attempts": video_guard.get("rejected_attempts") or [],
             }
+        }
+        result["thumbnail_experiments"] = {
+            "selected_variant_id": thumbnail_experiments.get("selected_variant_id"),
+            "selected_prompt": thumbnail_experiments.get("selected_prompt"),
+            "variants": [
+                {
+                    "variant_id": item.get("variant_id"),
+                    "thumbnail_prompt": item.get("thumbnail_prompt"),
+                    "thumbnail_attention_score": item.get("thumbnail_attention_score"),
+                    "accepted": item.get("accepted"),
+                    "regenerated": item.get("regenerated"),
+                    "attempts": item.get("attempts"),
+                }
+                for item in thumbnail_experiments.get("variants", [])
+            ],
         }
     except Exception:
         # Diversity guard is fail-open and must never block production runs.
@@ -352,6 +397,7 @@ def run_full_pipeline(
             "attempts": 0,
             "rejected_attempts": [],
         }
+        result.setdefault("thumbnail_experiments", {})
 
     try:
         result["analytics_join_metadata"] = build_analytics_join_metadata(
@@ -578,6 +624,10 @@ def run_full_pipeline(
         )
         result["video_id"] = video_id
         result["youtube_url"] = f"https://youtube.com/watch?v={video_id}"
+        try:
+            result["youtube_channel_stats"] = uploader.get_channel_stats()
+        except Exception:
+            result["youtube_channel_stats"] = {}
 
     # ─── ADIM 4.5: Short Yukle ────────────────────────────────────────────────
     _emit("shorts_upload", "stage_started")
@@ -696,6 +746,30 @@ def run_full_pipeline(
             )
     else:
         _emit("shorts_upload", "stage_completed", {"short_uploaded": False, "skipped": True})
+
+    try:
+        performance_snapshot = build_performance_snapshot(
+            channel_id=str(result.get("channel", "default")),
+            content_id=result["content_id"],
+            run_id=result["run_id"],
+            title=getattr(content, "title", ""),
+            youtube_url=result.get("youtube_url"),
+            short_url=result.get("short_url"),
+            video_id=result.get("video_id"),
+            short_video_id=result.get("short_video_id"),
+            publish_at=publish_at,
+            thumbnail_path=result.get("thumbnail_path"),
+            thumbnail_strategy=telemetry_metadata.get("thumbnail_strategy"),
+            render_metrics=result.get("render_metrics"),
+            analytics_join_metadata=result.get("analytics_join_metadata"),
+            quality_score_metadata=getattr(content, "quality_score_metadata", None),
+            youtube_stats=result.get("youtube_channel_stats"),
+            youtube_analytics=result.get("youtube_analytics", {}),
+        )
+        result["performance_snapshot"] = performance_snapshot
+        append_performance_snapshot(performance_snapshot)
+    except Exception:
+        result["performance_snapshot"] = {}
 
     logger.info("=" * 60)
     logger.info(f"✅ TAMAMLANDI! Video: {result['youtube_url']}")

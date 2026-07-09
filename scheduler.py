@@ -505,6 +505,62 @@ def maintenance_job():
     )
 
 
+def refresh_live_analytics_job():
+    """Canlı YouTube Analytics verisini al ve optimization state'i yenile."""
+    try:
+        from src.channel_manager import get_channel
+        from src.channel_performance import append_performance_snapshot, load_recent_performance_snapshots
+        from src.performance_optimizer import refresh_channel_optimization_state
+        from src.youtube_analytics import fetch_recent_video_analytics
+
+        snapshots = load_recent_performance_snapshots(lookback_days=14, max_items=400)
+        by_channel: dict[str, list[dict]] = {}
+        for row in snapshots:
+            channel_id = str(row.get("channel_id") or "default")
+            by_channel.setdefault(channel_id, []).append(row)
+
+        for channel_id, rows in by_channel.items():
+            try:
+                cfg = get_channel(channel_id)
+            except Exception as e:
+                logger.warning("[%s] Optimization refresh skipped: %s", channel_id, e)
+                continue
+
+            latest_by_video = {}
+            for row in rows:
+                video_id = str(row.get("video_id") or "").strip()
+                if not video_id:
+                    continue
+                if video_id not in latest_by_video:
+                    latest_by_video[video_id] = row
+
+            video_ids = list(latest_by_video.keys())[:5]
+            if not video_ids:
+                continue
+
+            reports = fetch_recent_video_analytics(video_ids=video_ids, channel_cfg=cfg, lookback_days=14)
+            reports_by_video = {str(report.get("video_id")): report for report in reports if report.get("video_id")}
+
+            for video_id, base_row in latest_by_video.items():
+                analytics = reports_by_video.get(video_id)
+                if not analytics:
+                    continue
+                enriched = dict(base_row)
+                enriched["youtube_analytics"] = analytics
+                enriched["analytics_synced_at"] = datetime.now(TZ).isoformat()
+                append_performance_snapshot(enriched)
+
+            state = refresh_channel_optimization_state(channel_id)
+            logger.info(
+                "[%s] Live analytics synced: focus=%s mode=%s",
+                channel_id,
+                ",".join(state.get("focus", [])),
+                state.get("mode"),
+            )
+    except Exception as e:
+        logger.warning("Live analytics refresh failed: %s", e)
+
+
 def process_likes_job():
     """Her 30 dk’da bir: zamanı gelen beğenileri işle."""
     logger.info("Cross-channel auto-like devre dışı (safe mode).")
@@ -713,6 +769,9 @@ def main():
 
     # Her saatte boş kuyruğu olan kanalları doldur (restart güvencesi)
     schedule.every(1).hour.do(fill_empty_queues_job)
+
+    # Canlı YouTube Analytics senkronu ve optimizasyon döngüsü
+    schedule.every(6).hours.do(refresh_live_analytics_job)
 
     # Ön render başlat (arka planda)
     threading.Thread(target=initial_fill, daemon=True, name="initial-fill").start()

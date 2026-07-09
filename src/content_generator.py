@@ -497,7 +497,7 @@ Sadece JSON döndür:
   "tags": ["minimum 20 Türkçe/İngilizce etiket"],
   "script": "TAM SENARYO (2000+ kelime) — seçilen parametrelere göre ÖZGÜN yapı. Klişe bölüm başlıkları KULLANMA.",
   "next_video_teaser": "Bir cümle merak bırak: '{next_topic_hint}'",
-  "thumbnail_prompt": "Konuya ÖZGÜN İngilizce görsel: [spesifik, canlı, dramatik sahne] — 'business finance' gibi genel terimler KULLANMA",
+    "thumbnail_prompt": "Konuya ÖZGÜN İngilizce görsel: tek ana fikir, yüksek kontrast, mobilde okunur boş alan, net duygu, sinematik ışık, 1 odak nesne veya yüz ifadesi — 'business finance' gibi genel terimler KULLANMA",
   "pexels_search": "Bu videonun KONUSUNA ÖZGÜ 3-5 kelimelik İngilizce Pexels arama terimi (örn: 'crypto trader phone night city' veya 'retirement couple beach sunset happy')",
   "chart_data": "Varsa bu videoda gösterilebilecek 1 finansal veri seti (JSON formatında): {{'type': 'bar|line|pie', 'title': 'Grafik başlığı', 'data': {{'labels': [...], 'values': [...]}}}}, yoksa null",
   "category_id": "27"
@@ -666,6 +666,7 @@ class ContentGenerator:
                 description=data.get("description", ""),
                 script=data.get("script", ""),
                 tags=data.get("tags", []),
+                thumbnail_prompt=data.get("thumbnail_prompt", ""),
             )
         except Exception:
             # Scoring is metadata-only and must never block generation.

@@ -40,6 +40,8 @@ def test_build_quality_scores_contains_required_keys_and_ranges():
         "humanity_score",
         "promise_to_payoff_score",
         "seo_score",
+        "thumbnail_attention_score",
+        "retention_signal_score",
         "overall_quality_score",
     }
 
@@ -66,6 +68,27 @@ def test_build_quality_scores_changes_with_input_variation():
     )
 
     assert low != high
+
+
+def test_build_quality_scores_rewards_specific_thumbnail_prompts():
+    from src.quality_scoring import build_quality_scores
+
+    generic = build_quality_scores(
+        title="2026 finans analizi nedir?",
+        description="",
+        script="Giris\nNeden\nSonuc",
+        tags=[],
+        thumbnail_prompt="business finance concept",
+    )
+    specific = build_quality_scores(
+        title="2026'da 50.000 TL ile yatirim stratejisi nedir?",
+        description="",
+        script="Giris\nNeden\nAdim 1\nAdim 2\nSonuc",
+        tags=[],
+        thumbnail_prompt="close-up of worried investor holding printed bills at red-lit desk, dramatic split lighting, cinematic contrast",
+    )
+
+    assert specific["thumbnail_attention_score"] > generic["thumbnail_attention_score"]
 
 
 def test_content_generator_attaches_quality_score_metadata(monkeypatch):

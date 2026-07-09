@@ -23,12 +23,64 @@ def _safe_div(a: float, b: float) -> float:
     return a / b
 
 
+def _thumbnail_attention_score(title: str, thumbnail_prompt: str | None) -> int:
+    title_n = _normalize_text(title).lower()
+    prompt_n = _normalize_text(thumbnail_prompt).lower()
+
+    score = 35
+    attention_words = ["şok", "sok", "neden", "nasıl", "gerçek", "hata", "tuzağı", "yanlış", "sakın", "dur", "bak", "işte"]
+    score += sum(6 for word in attention_words if word in title_n)
+    if any(ch.isdigit() for ch in title_n):
+        score += 8
+    if "?" in title_n or "!" in title_n:
+        score += 8
+    if 28 <= len(title_n) <= 72:
+        score += 8
+
+    specificity_terms = [
+        "close-up",
+        "split",
+        "dramatic",
+        "contrast",
+        "hands",
+        "face",
+        "portrait",
+        "chart",
+        "desk",
+        "night",
+        "red",
+        "blue",
+        "gold",
+        "neon",
+        "studio",
+        "screen",
+        "action",
+        "cinematic",
+    ]
+    score += sum(3 for term in specificity_terms if term in prompt_n)
+
+    generic_terms = ["business finance", "generic", "stock photo", "abstract"]
+    score -= sum(8 for term in generic_terms if term in prompt_n)
+
+    return _clamp(score)
+
+
+def _retention_signal_score(hook_score: int, structure_score: int, information_density_score: int, promise_to_payoff_score: int) -> int:
+    return _clamp(
+        (hook_score * 0.3)
+        + (structure_score * 0.25)
+        + (information_density_score * 0.15)
+        + (promise_to_payoff_score * 0.3)
+    )
+
+
 def build_quality_scores(
     *,
     title: str,
     description: str,
     script: str,
     tags: list[str] | None = None,
+    thumbnail_prompt: str | None = None,
 ) -> dict:
     title_n = _normalize_text(title)
     description_n = _normalize_text(description)
@@ -73,6 +125,14 @@ def build_quality_scores(
     payoff_hits = sum(1 for marker in payoff_markers if marker in script_n.lower())
     promise_to_payoff_score = _clamp(35 + min(30, promise_hits * 10) + min(35, payoff_hits * 7))
 
+    thumbnail_attention_score = _thumbnail_attention_score(title_n, thumbnail_prompt)
+    retention_signal_score = _retention_signal_score(
+        hook_score,
+        structure_score,
+        information_density_score,
+        promise_to_payoff_score,
+    )
+
     title_set = set(title_tokens)
     desc_set = set(desc_tokens)
     tag_set = set(_tokens(" ".join(tags_n)))
@@ -95,8 +155,10 @@ def build_quality_scores(
             + humanity_score
             + promise_to_payoff_score
             + seo_score
+            + thumbnail_attention_score
+            + retention_signal_score
         )
-        / 7
+        / 9
     )
 
     return {
@@ -107,5 +169,7 @@ def build_quality_scores(
         "humanity_score": humanity_score,
         "promise_to_payoff_score": promise_to_payoff_score,
         "seo_score": seo_score,
+        "thumbnail_attention_score": thumbnail_attention_score,
+        "retention_signal_score": retention_signal_score,
         "overall_quality_score": overall_quality_score,
     }

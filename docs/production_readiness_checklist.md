@@ -75,6 +75,12 @@ Single release gate for go/no-go decisions before production rollout.
 
 Decision note:
 
+## Gate-6 Status (Metadata Observability)
+- [x] Scheduler cutover: PASS.
+- [ ] Metadata visibility verification: PENDING.
+- Reason: no new pipeline telemetry event observed after scheduler restart/cutover.
+- Required closure: re-run Gate-6 checks on first new natural pipeline run and verify `experiment_id`, `thumbnail_variants`, `selected_thumbnail_variant`, audio metadata (`loudness_target`, `ducking_applied`, `music_track_id`) and `audio_warning` visibility.
+
 ## Post-Release Verification (First 30-60 Minutes)
 - [ ] First scheduled run completed.
 - [ ] Upload success ratio within expected range.

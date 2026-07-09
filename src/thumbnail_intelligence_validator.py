@@ -5,7 +5,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-THUMBNAIL_INTELLIGENCE_SCHEMA_VERSION = "thumbnail_intelligence_v1"
+from .thumbnail_metadata_contract import THUMBNAIL_METADATA_SCHEMA_VERSION
+
+# Backward-compatible alias retained for existing imports.
+THUMBNAIL_INTELLIGENCE_SCHEMA_VERSION = THUMBNAIL_METADATA_SCHEMA_VERSION
 
 REJECTION_REASON_CODES = {
     "SAFE_AREA_VIOLATION",
@@ -109,7 +112,7 @@ def validate_thumbnail_metadata_contract(metadata: dict[str, Any]) -> list[str]:
     if errors:
         return errors
 
-    if metadata.get("schema_version") != THUMBNAIL_INTELLIGENCE_SCHEMA_VERSION:
+    if metadata.get("schema_version") != THUMBNAIL_METADATA_SCHEMA_VERSION:
         errors.append("invalid_schema_version")
 
     for text_field in ("channel_id", "content_id", "thumbnail_path", "variant_id", "brand_profile_version"):

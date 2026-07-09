@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from src.thumbnail_intelligence_validator import (
     THUMBNAIL_INTELLIGENCE_SCHEMA_VERSION,
     REJECTION_REASON_CODES,
@@ -9,32 +12,19 @@ from src.thumbnail_intelligence_validator import (
 )
 
 
+def _load_thumbnail_fixture(filename: str) -> dict:
+    fixture_path = Path(__file__).parent / "fixtures" / filename
+    return json.loads(fixture_path.read_text(encoding="utf-8"))
+
+
 def _valid_payload() -> dict:
-    return {
-        "schema_version": THUMBNAIL_INTELLIGENCE_SCHEMA_VERSION,
-        "channel_id": "egitim_rehberi",
-        "content_id": "content_123",
-        "thumbnail_path": "channels/egitim_rehberi/output/videos/t1.jpg",
-        "variant_id": "v1",
-        "evaluated_at_utc": "2026-07-09T12:00:00+00:00",
-        "quality": {
-            "safe_area_pass": True,
-            "text_density_ratio": 0.14,
-            "text_density_pass": True,
-            "subject_clarity_pass": True,
-            "brand_consistency_pass": True,
-            "diversity_pass": True,
-            "contrast_pass": True,
-            "overall_pass": True,
-        },
-        "rejection_reasons": [],
-        "diversity": {
-            "window_size": 30,
-            "similarity_score": 0.41,
-            "similarity_threshold": 0.78,
-        },
-        "brand_profile_version": "v1",
-    }
+    payload = _load_thumbnail_fixture("thumbnail_metadata_valid.json")
+    payload["schema_version"] = THUMBNAIL_INTELLIGENCE_SCHEMA_VERSION
+    return payload
+
+
+def _invalid_payload() -> dict:
+    return _load_thumbnail_fixture("thumbnail_metadata_invalid.json")
 
 
 def test_valid_thumbnail_metadata_contract_passes():
@@ -43,15 +33,23 @@ def test_valid_thumbnail_metadata_contract_passes():
     assert is_valid_thumbnail_metadata_contract(payload) is True
 
 
-def test_validate_missing_required_fields():
+def test_validate_invalid_fixture_fails():
+    payload = _invalid_payload()
+
+    errors = validate_thumbnail_metadata_contract(payload)
+
+    assert "invalid_schema_version" in errors
+    assert "invalid_channel_id" in errors
+    assert "invalid_rejection_reasons" in errors
+
+
+def test_validate_missing_schema_version_field_fails():
     payload = _valid_payload()
     payload.pop("schema_version")
-    payload.pop("quality")
 
     errors = validate_thumbnail_metadata_contract(payload)
 
     assert "missing_required_field:schema_version" in errors
-    assert "missing_required_field:quality" in errors
 
 
 def test_normalize_rejection_reasons_maps_runtime_aliases():

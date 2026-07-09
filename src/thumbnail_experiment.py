@@ -7,7 +7,9 @@ from datetime import datetime, timezone
 import re
 from typing import Iterable
 
-THUMBNAIL_EXPERIMENT_SCHEMA_VERSION = "1.0"
+from .thumbnail_metadata_contract import THUMBNAIL_METADATA_SCHEMA_VERSION
+
+THUMBNAIL_EXPERIMENT_SCHEMA_VERSION = THUMBNAIL_METADATA_SCHEMA_VERSION
 ALLOWED_VARIANT_LABELS = tuple(chr(code) for code in range(ord("A"), ord("Z") + 1))
 VARIANT_ID_PATTERN = re.compile(r"^var_[0-9]{4}$")
 

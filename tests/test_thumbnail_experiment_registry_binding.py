@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from src.thumbnail_experiment import create_thumbnail_variant
+from src.thumbnail_metadata_contract import THUMBNAIL_METADATA_SCHEMA_VERSION
 from src.thumbnail_experiment_registry_binding import (
     THUMBNAIL_BINDING_EVENT_TYPE,
     register_thumbnail_variant_bindings,
@@ -59,7 +60,7 @@ def test_candidate_set_written_to_registry(tmp_path):
     assert first["channel_id"] == "egitim_rehberi"
     assert first["content_id"] == "content_123"
     assert first["thumbnail_path"].endswith("var_0001.jpg")
-    assert first["schema_version"] == "1.0"
+    assert first["schema_version"] == THUMBNAIL_METADATA_SCHEMA_VERSION
     assert first["registry_version"] == "1.0"
 
 
@@ -75,7 +76,7 @@ def test_binding_event_has_distinct_registry_version(tmp_path):
     )
 
     assert len(events) == 1
-    assert events[0]["schema_version"] == "1.0"
+    assert events[0]["schema_version"] == THUMBNAIL_METADATA_SCHEMA_VERSION
     assert events[0]["registry_version"] == "2.1"
 
 

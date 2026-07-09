@@ -28,10 +28,10 @@ from .telemetry import (
     generate_run_id,
 )
 from .thumbnail_intelligence_validator import (
-    THUMBNAIL_INTELLIGENCE_SCHEMA_VERSION,
     normalize_rejection_reasons,
     validate_thumbnail_metadata_contract,
 )
+from .thumbnail_metadata_contract import THUMBNAIL_METADATA_SCHEMA_VERSION
 from .thumbnail_candidate_generator import generate_thumbnail_candidates
 from .thumbnail_experiment_registry_binding import register_thumbnail_variant_bindings
 from .tts_engine import TTSEngine
@@ -384,7 +384,7 @@ def run_full_pipeline(
         }
 
         metadata = {
-            "schema_version": THUMBNAIL_INTELLIGENCE_SCHEMA_VERSION,
+            "schema_version": THUMBNAIL_METADATA_SCHEMA_VERSION,
             "channel_id": str(result.get("channel", "default")),
             "content_id": str(result.get("content_id", "")),
             "thumbnail_path": str(thumbnail_path),

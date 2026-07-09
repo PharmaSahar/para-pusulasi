@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 
 import src.pipeline as pipeline
+
+
+def _load_thumbnail_fixture(filename: str) -> dict:
+    fixture_path = Path(__file__).parent / "fixtures" / filename
+    return json.loads(fixture_path.read_text(encoding="utf-8"))
 
 
 @dataclass
@@ -259,8 +265,16 @@ def test_pipeline_thumbnail_validator_fail_open_writes_standard_fields(monkeypat
     with caplog.at_level("WARNING"):
         result = pipeline.run_full_pipeline(topic="x", generate_only=False, channel_cfg=cfg)
 
+    expected_contract = _load_thumbnail_fixture("thumbnail_metadata_valid.json")
+    produced = result.get("thumbnail_metadata", {}).get("video", {})
+
     assert "thumbnail_metadata" in result
     assert "video" in result["thumbnail_metadata"]
+    assert set(produced.keys()) == set(expected_contract.keys())
+    assert isinstance(produced.get("quality"), dict)
+    assert set(produced.get("quality", {}).keys()) == set(expected_contract.get("quality", {}).keys())
+    assert isinstance(produced.get("diversity"), dict)
+    assert set(produced.get("diversity", {}).keys()) == set(expected_contract.get("diversity", {}).keys())
     assert "rejection_reasons" in result
     assert isinstance(result["rejection_reasons"], list)
     assert "validation_warning" in result

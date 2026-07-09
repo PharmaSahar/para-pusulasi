@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Iterable
 
 from .experiment_registry import DEFAULT_REGISTRY_PATH, DEFAULT_REGISTRY_VERSION
+from .thumbnail_metadata_contract import THUMBNAIL_METADATA_SCHEMA_VERSION
 from .thumbnail_experiment import ThumbnailVariant, validate_thumbnail_variant, validate_unique_variant_ids
 
 
@@ -98,6 +99,9 @@ def register_thumbnail_variant_bindings(
         if candidate.experiment_id != expected_experiment_id:
             raise ValueError("candidate_experiment_id_mismatch")
 
+        if candidate.schema_version != THUMBNAIL_METADATA_SCHEMA_VERSION:
+            raise ValueError("invalid_schema_version")
+
         if not ((candidate.content_id and candidate.content_id.strip()) or (candidate.video_id and candidate.video_id.strip())):
             raise ValueError("missing_required_field:content_id_or_video_id")
 
@@ -116,7 +120,7 @@ def register_thumbnail_variant_bindings(
             "thumbnail_path": candidate.thumbnail_path,
             "strategy": candidate.strategy,
             "created_at": candidate.created_at,
-            "schema_version": candidate.schema_version,
+            "schema_version": THUMBNAIL_METADATA_SCHEMA_VERSION,
             "registry_version": resolved_registry_version,
             "occurred_at": _utcnow_iso(),
             "created_by": creator,

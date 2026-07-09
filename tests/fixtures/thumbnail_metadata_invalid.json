@@ -1,0 +1,24 @@
+{
+  "schema_version": "0.9",
+  "channel_id": "",
+  "content_id": "",
+  "thumbnail_path": "",
+  "variant_id": "",
+  "evaluated_at_utc": "not-a-date",
+  "quality": {
+    "safe_area_pass": "yes",
+    "text_density_ratio": 1.5,
+    "text_density_pass": "yes",
+    "subject_clarity_pass": "yes",
+    "brand_consistency_pass": "yes",
+    "diversity_pass": "yes",
+    "contrast_pass": "yes",
+    "overall_pass": "yes"
+  },
+  "rejection_reasons": "LOW_CONTRAST",
+  "diversity": {
+    "window_size": 0,
+    "similarity_score": "high"
+  },
+  "brand_profile_version": ""
+}

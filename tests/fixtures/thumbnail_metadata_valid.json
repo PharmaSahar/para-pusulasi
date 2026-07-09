@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0",
+  "channel_id": "egitim_rehberi",
+  "content_id": "content_123",
+  "thumbnail_path": "channels/egitim_rehberi/output/videos/t1.jpg",
+  "variant_id": "v1",
+  "evaluated_at_utc": "2026-07-09T12:00:00+00:00",
+  "quality": {
+    "safe_area_pass": true,
+    "text_density_ratio": 0.14,
+    "text_density_pass": true,
+    "subject_clarity_pass": true,
+    "brand_consistency_pass": true,
+    "diversity_pass": true,
+    "contrast_pass": true,
+    "overall_pass": true
+  },
+  "rejection_reasons": [],
+  "diversity": {
+    "window_size": 30,
+    "similarity_score": 0.41,
+    "similarity_threshold": 0.78
+  },
+  "brand_profile_version": "v1"
+}

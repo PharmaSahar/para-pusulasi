@@ -34,6 +34,7 @@ from .thumbnail_intelligence_validator import (
 from .thumbnail_metadata_contract import THUMBNAIL_METADATA_SCHEMA_VERSION
 from .thumbnail_candidate_generator import generate_thumbnail_candidates
 from .thumbnail_experiment_registry_binding import register_thumbnail_variant_bindings
+from .thumbnail_selection_policy import select_thumbnail_candidate
 from .tts_engine import TTSEngine
 from .video_creator_pro import VideoCreator
 from .youtube_uploader import YouTubeUploader
@@ -471,6 +472,30 @@ def run_full_pipeline(
 
             result["thumbnail_variants"] = [asdict(item) for item in candidates]
             result["thumbnail_variant_registry_events"] = events
+
+            try:
+                selection_policy = str(getattr(cfg, "thumbnail_selection_policy", "") or "first").strip().lower() or "first"
+                selected_variant = select_thumbnail_candidate(
+                    candidates=result.get("thumbnail_variants") or [],
+                    policy=selection_policy,
+                    content_id=str(result.get("content_id", "")) or None,
+                    video_id=str(result.get("video_id", "")) or None,
+                )
+                result["thumbnail_selection_policy"] = selection_policy
+                result["selected_thumbnail_variant"] = selected_variant
+            except Exception as e:
+                warning = _record_warning(
+                    "thumbnail_selection_warning",
+                    code="thumbnail_selection_failed",
+                    message="Thumbnail selection failed; pipeline continued.",
+                    extra={"error_type": e.__class__.__name__},
+                )
+                logger.warning(
+                    "Thumbnail selection fail-open: code=%s error_type=%s count=%s",
+                    warning.get("code"),
+                    warning.get("error_type"),
+                    warning.get("count"),
+                )
         except Exception as e:
             warning = _record_warning(
                 "thumbnail_experiment_warning",

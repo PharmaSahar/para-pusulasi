@@ -201,6 +201,12 @@ Default operating mode is free-first until KPI thresholds are met (revenue/reten
 - Add stronger cross-channel allocation and scheduling intelligence.
 - Expand safety automation and canary publish strategy.
 
+### Phase 2: Audience Performance Engine
+- Execution plan reference: [docs/phase2_audience_performance_engine.md](docs/phase2_audience_performance_engine.md)
+- KPI contract reference: [docs/kpi_contract_phase2.md](docs/kpi_contract_phase2.md)
+- Experiment registry schema reference: [docs/experiment_registry_schema.md](docs/experiment_registry_schema.md)
+- Delivery rule: optimization work must run through experiment framework first, then thumbnail/audio/analytics intelligence workstreams.
+
 ### v1.0
 - Full operating-system posture:
   - deterministic production + deterministic research replay
@@ -250,6 +256,9 @@ Resmi dokümantasyon kaynakları:
 3. ADR Decision Log klasörü: [docs/adr](docs/adr)
 4. ADR indeksi: [docs/adr/README.md](docs/adr/README.md)
 5. Production Readiness Checklist: [docs/production_readiness_checklist.md](docs/production_readiness_checklist.md)
+6. Phase 2 Execution Plan: [docs/phase2_audience_performance_engine.md](docs/phase2_audience_performance_engine.md)
+7. Phase 2 KPI Contract: [docs/kpi_contract_phase2.md](docs/kpi_contract_phase2.md)
+8. Experiment Registry Schema: [docs/experiment_registry_schema.md](docs/experiment_registry_schema.md)
 
 Tek yönetim modeli (zorunlu akış):
 1. Blueprint: sistem tanımı, kapsam ve guardrail çerçevesi.

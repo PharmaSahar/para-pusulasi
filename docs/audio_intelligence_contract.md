@@ -96,6 +96,21 @@ Tek video, upload olmadan doğrulama:
 4. loudness_target_lufs alanı mevcut olur.
 5. Warning oluşursa standart warning kodlarıyla yazılır.
 
+### A4 Smoke Test Komutu
+`PYTHONPATH=. .venv-2/bin/python -m pytest -q tests/test_pipeline_telemetry_fail_open.py -k "audio_metadata_standardization_writes_fields or audio_metadata_validation_fail_open_sets_warning"`
+
+### Beklenen Sonuç
+- Test koşusu başarılı olmalı.
+- Upload yapılmamalı (dry-run test yaklaşımı).
+- Aşağıdaki alanlar doğrulanmalı:
+	- loudness_target
+	- ducking_applied
+	- music_track_id
+	- audio_warning
+
+### Son Koşu Sonucu
+- 2 passed, 11 deselected
+
 ## 10. Acceptance Criteria
 - Bu sözleşme dosyası Phase 2 dokümanından referanslanmış olmalı.
 - A2 validator implementation bu şemaları doğrulamalı.

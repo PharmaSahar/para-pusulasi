@@ -101,7 +101,7 @@ def test_build_analytics_join_metadata_uses_existing_canonical_values():
         },
         prompt_metadata={"prompt_id": "pr_123", "prompt_version": "prompt-v1"},
         channel_dna_metadata={"channel_dna_id": "cd_123", "channel_dna_version": "dna-v2"},
-        quality_score_metadata={"overall_quality_score": 91, "hook_score": 77},
+        quality_score_metadata={"overall_quality_score": 91, "hook_score": 77, "thumbnail_attention_score": 66, "retention_signal_score": 72},
     )
 
     assert metadata["join_schema_version"] == "v1"
@@ -117,6 +117,8 @@ def test_build_analytics_join_metadata_uses_existing_canonical_values():
     assert metadata["prompt_version"] == "prompt-v1"
     assert metadata["channel_dna_id"] == "cd_123"
     assert metadata["channel_dna_version"] == "dna-v2"
+    assert metadata["thumbnail_attention_score"] == 66
+    assert metadata["retention_signal_score"] == 72
     assert metadata["overall_quality_score"] == 91
 
 
@@ -139,6 +141,8 @@ def test_build_analytics_join_metadata_handles_partial_inputs():
     assert metadata["prompt_version"] is None
     assert metadata["channel_dna_id"] is None
     assert metadata["channel_dna_version"] is None
+    assert metadata["thumbnail_attention_score"] is None
+    assert metadata["retention_signal_score"] is None
     assert metadata["overall_quality_score"] is None
 
 

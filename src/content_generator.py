@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import random
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -55,6 +56,15 @@ KISALTMALAR:
 - Yuzde degerleri somut goster: "Her ay 7.500 TL ayirarak..."
 """
 
+CONTENT_SAFETY_BOUNDARY = """
+
+KANAL UYUMLULUK VE FACT-CHECK SINIRI:
+- Kanalin ana konusu finans veya piyasa degilse, BIST, hisse, dolar kuru, Bitcoin, altin, faiz ve enflasyon gibi piyasa referanslarini kendiliginden ekleme.
+- Bu tur piyasa referanslarini ancak konu dogrudan bunun uzerineyse ve dogrulanabilir bicimde ele aliniyorsa kullan.
+- Dogrulanamayan fiyat hedefi, endeks seviyesi, yuzde oran veya tarih iddiasi uretme.
+- Egitim, saglik, teknoloji, kariyer ve girisim konularinda gereksiz finansal iddialar yerine alanin kendi temel prensiplerine odaklan.
+"""
+
 TOPIC_CATEGORIES = {
     "kisisel_finans": [
         "BIST'te en cok temettü veren hisseler",
@@ -76,27 +86,119 @@ TOPIC_CATEGORIES = {
         "AI araclarla verimlilik",
     ],
     "egitim": [
-        "Borsa nasil ogrenilir sifirdan",
-        "Teknik analiz temelleri",
-        "Temel analiz nedir nasil yapilir",
-        "Risk yonetimi prensipleri",
-        "Yatirim psikolojisi ve hatalar",
+        "Calisma disiplini kurma yollari",
+        "Not alma ve ozetleme teknikleri",
+        "Daha hizli ogrenme yontemleri",
+        "Online kurs secme rehberi",
+        "Sinav hazirlik rutini",
+    ],
+    "saglik": [
+        "Saglikli beslenme aliskanliklari",
+        "Uyku kalitesini artirma yollari",
+        "Stres yonetimi ve nefes teknikleri",
+        "Evde uygulanabilir egzersiz rutinleri",
+        "Uzun omur ve gunluk saglik aliskanliklari",
+    ],
+    "kariyer": [
+        "Maas pazarligi yaparken dikkat edilmesi gerekenler",
+        "Remote calisma duzeni kurma",
+        "LinkedIn profilini guclendirme",
+        "Freelance kariyer baslangici",
+        "Is gorusmesi hazirlik sistemi",
+    ],
+    "girisimcilik": [
+        "Startup fikrini test etme",
+        "E-ticaret baslangic adimlari",
+        "Pazarlama kanali secimi",
+        "Pasif gelir modelleri",
+        "Ilk musteri bulma yontemleri",
     ],
 }
 
+MARKET_SENSITIVE_NICHES = {"kisisel_finans", "borsa", "kripto", "gayrimenkul"}
 
-def _get_trending_topics() -> list[str]:
-    """2026 guncel finans gundemi konulari."""
-    return [
-        "Merkez Bankasi faiz kararinin portfoya etkisi",
-        "2026 BIST 100 tahminleri ve firsat hisseleri",
-        "Dolar/TL volatilitesinde portfoy koruma",
-        "Kripto piyasasindaki son gelismeler ve etkileri",
-        "Enflasyona karsi en iyi 5 yatirim araci",
-        "Borsa yeni baslayanlarin en cok yaptigi 7 hata",
-        "BES emeklilik sisteminde degisiklikler ne anlama geliyor",
-        "2026'da gayrimenkul yatirimi mantikli mi",
-    ]
+
+def _is_market_sensitive_niche(niche: str | None) -> bool:
+    return (niche or "").strip().lower() in MARKET_SENSITIVE_NICHES
+
+
+MARKET_TOPIC_RE = re.compile(
+    r"\b(bist\w*|borsa\w*|hisse\w*|dolar\w*|usd\w*|try\w*|bitcoin\w*|ethereum\w*|btc\w*|eth\w*|kripto\w*|altin\w*|faiz\w*|enflasyon\w*|yatirim\w*|temettu\w*|portfoy\w*|teknik\s+analiz|temel\s+analiz|risk\s+yonetimi)\b",
+    re.IGNORECASE,
+)
+
+
+def _filter_trending_topics_for_niche(
+    topics: list[str],
+    *,
+    niche: str | None,
+    channel_topics: list[str] | None = None,
+) -> list[str]:
+    if _is_market_sensitive_niche(niche):
+        return topics
+
+    filtered: list[str] = []
+    seen: set[str] = set()
+    normalized_channel_topics = [topic.lower() for topic in (channel_topics or [])]
+
+    for topic in topics:
+        lowered = topic.strip().lower()
+        if not lowered or lowered in seen:
+            continue
+        seen.add(lowered)
+
+        has_market_keyword = bool(MARKET_TOPIC_RE.search(topic))
+        mentions_channel_topic = any(token in lowered for token in normalized_channel_topics)
+        if has_market_keyword and not mentions_channel_topic:
+            continue
+        filtered.append(topic)
+
+    return filtered
+
+
+def _fallback_topics_for_niche(niche: str | None, channel_topics: list[str] | None = None) -> list[str]:
+    fallback = list(channel_topics or [])
+    fallback.extend(TOPIC_CATEGORIES.get((niche or "").strip().lower(), []))
+    return _filter_trending_topics_for_niche(
+        fallback,
+        niche=niche,
+        channel_topics=channel_topics,
+    )
+
+
+def _get_trending_topics(niche: str | None = None, channel_topics: list[str] | None = None) -> list[str]:
+    """Return niche-aware trending seeds for topic generation."""
+    normalized_niche = (niche or "").strip().lower()
+
+    if _is_market_sensitive_niche(normalized_niche):
+        return [
+            "Merkez Bankasi faiz kararinin portfoya etkisi",
+            "2026 BIST 100 tahminleri ve firsat hisseleri",
+            "Dolar/TL volatilitesinde portfoy koruma",
+            "Kripto piyasasindaki son gelismeler ve etkileri",
+            "Enflasyona karsi en iyi 5 yatirim araci",
+            "Borsa yeni baslayanlarin en cok yaptigi 7 hata",
+            "BES emeklilik sisteminde degisiklikler ne anlama geliyor",
+            "2026'da gayrimenkul yatirimi mantikli mi",
+        ]
+
+    niche_topics = list(TOPIC_CATEGORIES.get(normalized_niche, []))
+    if channel_topics:
+        niche_topics.extend(channel_topics)
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for topic in niche_topics:
+        lowered = topic.strip().lower()
+        if not lowered or lowered in seen:
+            continue
+        seen.add(lowered)
+        deduped.append(topic)
+    return _filter_trending_topics_for_niche(
+        deduped,
+        niche=niche,
+        channel_topics=channel_topics,
+    )
 
 
 def _load_used_titles() -> list[str]:
@@ -195,15 +297,24 @@ class VideoContent:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-def _build_topic_prompt(count: int, used_titles: list[str]) -> str:
+def _build_topic_prompt(
+    count: int,
+    used_titles: list[str],
+    *,
+    niche: str | None = None,
+    channel_name: str = "Para Pusulasi",
+    channel_topics: list[str] | None = None,
+) -> str:
     year = datetime.now().year
-    trending = _load_trending_context()
+    trending = _load_trending_context(niche=niche, channel_topics=channel_topics)
     avoid = ""
     if used_titles:
         last_10 = used_titles[-10:]
         avoid = "\n\nKESINLIKLE BUNLARI TEKRAR ONERME (zaten yapildi):\n" + "\n".join(f"- {t}" for t in last_10)
 
-    return f"""Para Pusulasi kanalı icin {count} adet viral video konusu oner.
+    normalized_niche = (niche or "").strip().lower()
+    if _is_market_sensitive_niche(normalized_niche):
+        return f"""{channel_name} kanalı icin {count} adet viral video konusu oner.
 
 KRITERLER:
 - {year} Turkiye finans gundemiyle alakali
@@ -218,15 +329,40 @@ GUNCEL GUNDEM:
 
 {count} konu:"""
 
+    niche_label = normalized_niche or "genel"
+    return f"""{channel_name} kanalı icin {count} adet viral video konusu oner.
 
-def _load_trending_context() -> str:
-    trends = _get_trending_topics()
+KRITERLER:
+- Konular kanalın ana nişi olan '{niche_label}' ile doğrudan ilgili olsun
+- Finansal piyasa, BIST, hisse, dolar kuru, Bitcoin, altın, faiz ve enflasyon iddialarını kendiliğinden ekleme
+- Clickbait ama yaniltici olmayan, egitici konular üret
+- Gerekmedikçe somut piyasa rakamı, hedef fiyat, yüzde oran veya tarih içeren başlık kurma
+- Her satira sadece konu yaz, baska hicbir sey ekleme
+
+NIS ODAKLARI:
+{trending}
+{avoid}
+
+{count} konu:"""
+
+
+def _load_trending_context(niche: str | None = None, channel_topics: list[str] | None = None) -> str:
+    trends = _get_trending_topics(niche=niche, channel_topics=channel_topics)
     selected = random.sample(trends, min(4, len(trends)))
     return "\n".join(f"- {t}" for t in selected)
 
 
-def _build_content_prompt(topic: str, prev_title: str | None, next_topic_hint: str, content_type: str = "semi_evergreen") -> str:
+def _build_content_prompt(
+    topic: str,
+    prev_title: str | None,
+    next_topic_hint: str,
+    content_type: str = "semi_evergreen",
+    additional_guidance: str | None = None,
+    niche: str | None = None,
+) -> str:
     year = datetime.now().year
+    strict_fact_mode = bool(additional_guidance and "FACT-CHECK SAFE MODE" in additional_guidance)
+    market_sensitive_niche = _is_market_sensitive_niche(niche)
 
     # SONSUZ ÇEŞİTLİLİK: Sabit şablon değil, parametrik sistem
     # Her parametre bağımsız rastgele → 10×8×6×5×4 = 9,600 benzersiz kombinasyon
@@ -290,15 +426,36 @@ def _build_content_prompt(topic: str, prev_title: str | None, next_topic_hint: s
 
     type_instruction = {
         "evergreen": "Tarih veya geçici rakam KULLANMA — video 2-3 yıl boyunca değerini korusun.",
-        "semi_evergreen": f"2026 verilerini kullan ama temel bilgiler zamansız olsun.",
+        "semi_evergreen": f"{year} verilerini kullan ama temel bilgiler zamansız olsun.",
         "trending": f"Bu hafta gündemde olan meseleyi yorumla — hız ve güncellik öncelikli.",
     }.get(content_type, "")
+
+    extra_guidance = f"\nEK YONLENDIRME: {additional_guidance}\n" if additional_guidance else ""
+    title_rule = "60 karakter altı, özgün, viral başlık"
+    number_style_rule = "• Rakamları net ver: 'Yani ayda 7.500 TL — yılda 90.000 TL'"
+    real_world_rule = "• Türkiye gerçekliğini yansıt: enflasyon, kira, maaş baskısı"
+    strict_mode_block = ""
+
+    if market_sensitive_niche and not strict_fact_mode:
+        title_rule = f"60 karakter altı, özgün, {year} içeren viral başlık"
+    else:
+        number_style_rule = "• Canlı piyasa rakamı, hedef fiyat, kesin yüzde veya tarih verme; gerekiyorsa yalnızca açıkça varsayımsal eğitim örneği kullan"
+        strict_mode_block = """
+FACT-CHECK SAFE MODE AKTIF:
+• Başlıkta, hook'ta ve scriptte kesin fiyat hedefi, endeks seviyesi, yıl sonu tahmini, ETF/onay tarihi veya son tarih yazma
+• 'X olacak', 'Y seviyesine gelir', 'şu tarihte kesin olur' gibi ifadeleri kullanma
+• Konuyu risk yönetimi, temel prensipler, tarihsel dersler ve davranışsal hatalar üzerinden anlat
+• Volatil piyasa örnekleri vereceksen, bunları açıkça tarihsel veya varsayımsal eğitim örneği olarak etiketle
+"""
+        if not market_sensitive_niche:
+            real_world_rule = "• Kanalın kendi alanındaki günlük, somut ve pratik örnekleri kullan; alakasız piyasa referansları ekleme"
 
     return f"""Türk finans YouTube kanalı için TAMAMEN ORİJİNAL, YAPAY HİSSETTİRMEYEN senaryo yaz.
 
 KONU: {topic}
 YIL: {year}
 İÇERİK TÜRÜ: {type_instruction}
+{extra_guidance}
 
 BU VİDEO İÇİN SEÇILEN YARATICI PARAMETRELER:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -325,20 +482,22 @@ KESİNLİKLE YASAKLANAN İFADELER:
 DOĞAL TÜRK FİNANS YOUTUBER'I TONU:
 • Samimi, konuşma dili ama bilgi dolu
 • "Bak sana şunu söyleyeyim..." "Şimdi düşün bir..." gibi geçişler
-• Rakamları net ver: "Yani ayda 7.500 TL — yılda 90.000 TL"
-• Türkiye gerçekliğini yansıt: enflasyon, kira, maaş baskısı
+{number_style_rule}
+{real_world_rule}
 • İzleyicinin hayatına dokunan anlar yarat
+
+{strict_mode_block}
 
 Sadece JSON döndür:
 
 {{
-  "title": "60 karakter altı, özgün, {year} içeren viral başlık",
+    "title": "{title_rule}",
   "hook": "İlk 30 saniye — seçilen açılış stiline göre özgün, şaşırtıcı (görsel referans YASAK)",
   "description": "SEO açıklaması: 5 paragraf, 300+ kelime, başlık keywordlerini içersin",
   "tags": ["minimum 20 Türkçe/İngilizce etiket"],
   "script": "TAM SENARYO (2000+ kelime) — seçilen parametrelere göre ÖZGÜN yapı. Klişe bölüm başlıkları KULLANMA.",
   "next_video_teaser": "Bir cümle merak bırak: '{next_topic_hint}'",
-  "thumbnail_prompt": "Konuya ÖZGÜN İngilizce görsel: [spesifik, canlı, dramatik sahne] — 'business finance' gibi genel terimler KULLANMA",
+    "thumbnail_prompt": "Konuya ÖZGÜN İngilizce görsel: tek ana fikir, yüksek kontrast, mobilde okunur boş alan, net duygu, sinematik ışık, 1 odak nesne veya yüz ifadesi — 'business finance' gibi genel terimler KULLANMA",
   "pexels_search": "Bu videonun KONUSUNA ÖZGÜ 3-5 kelimelik İngilizce Pexels arama terimi (örn: 'crypto trader phone night city' veya 'retirement couple beach sunset happy')",
   "chart_data": "Varsa bu videoda gösterilebilecek 1 finansal veri seti (JSON formatında): {{'type': 'bar|line|pie', 'title': 'Grafik başlığı', 'data': {{'labels': [...], 'values': [...]}}}}, yoksa null",
   "category_id": "27"
@@ -362,7 +521,13 @@ class ContentGenerator:
             self._persona = None
             self._channel_name = "Para Pusulasi"
 
+        self._channel_topics = list(getattr(channel_cfg, "topics", []) or [])
+
         self._channel_dna_overrides = self._extract_channel_dna_overrides(channel_cfg)
+
+    def _system_prompt(self) -> str:
+        base_persona = self._persona or CHANNEL_PERSONA
+        return f"{base_persona.rstrip()}\n{CONTENT_SAFETY_BOUNDARY}"
 
     @staticmethod
     def _extract_channel_dna_overrides(channel_cfg) -> dict:
@@ -389,6 +554,11 @@ class ContentGenerator:
             trending_from_web = get_trending_topics(self.niche, count=4)
             seasonal = get_seasonal_boost_topics(self.niche)
             trending_from_web = (seasonal + trending_from_web)[:4]
+            trending_from_web = _filter_trending_topics_for_niche(
+                trending_from_web,
+                niche=self.niche,
+                channel_topics=self._channel_topics,
+            )
             logger.info(f"Google Trends: {trending_from_web[:2]}")
         except Exception:
             pass
@@ -402,13 +572,19 @@ class ContentGenerator:
         if trending_from_web:
             trend_hint = f"\n\nSU AN TRENDDE OLAN KONULAR (bunlara benzer konular oner):\n" + "\n".join(f"- {t}" for t in trending_from_web)
 
-        prompt = _build_topic_prompt(count, used) + trend_hint + avoid
+        prompt = _build_topic_prompt(
+            count,
+            used,
+            niche=self.niche,
+            channel_name=self._channel_name,
+            channel_topics=self._channel_topics,
+        ) + trend_hint + avoid
         logger.info(f"'{self.niche}' icin {count} konu uretiliyor...")
 
         response = self.client.messages.create(
             model=self.model,
             max_tokens=1024,
-            system=CHANNEL_PERSONA,
+            system=self._system_prompt(),
             messages=[{"role": "user", "content": prompt}],
         )
         raw = response.content[0].text
@@ -418,15 +594,34 @@ class ContentGenerator:
             if line.strip() and not line.strip().startswith("#")
         ]
         combined = trending_from_web[:2] + [t for t in ai_topics if t not in trending_from_web]
+        combined = _filter_trending_topics_for_niche(
+            combined,
+            niche=self.niche,
+            channel_topics=self._channel_topics,
+        )
+        if not combined:
+            combined = _fallback_topics_for_niche(self.niche, self._channel_topics)
         logger.info(f"{len(combined[:count])} konu hazir.")
         return combined[:count]
 
-    def generate_video_content(self, topic: str, prev_title: str | None = None) -> VideoContent:
+    def generate_video_content(
+        self,
+        topic: str,
+        prev_title: str | None = None,
+        additional_guidance: str | None = None,
+    ) -> VideoContent:
         # Bir sonraki video ipucu
         topics = self.generate_topic_ideas(count=3)
         next_hint = topics[-1] if topics else "Yatirim hatalarından nasil kacinilir"
 
-        prompt = _build_content_prompt(topic, prev_title, next_hint, getattr(self, '_last_content_type', 'semi_evergreen'))
+        prompt = _build_content_prompt(
+            topic,
+            prev_title,
+            next_hint,
+            getattr(self, '_last_content_type', 'semi_evergreen'),
+            additional_guidance=additional_guidance,
+            niche=self.niche,
+        )
         logger.info("Icerik uretiliyor: " + topic)
 
         try:
@@ -444,7 +639,7 @@ class ContentGenerator:
         response = self.client.messages.create(
             model=self.model,
             max_tokens=8192,
-            system=CHANNEL_PERSONA,
+            system=self._system_prompt(),
             messages=[{"role": "user", "content": prompt}],
             temperature=1,  # Maksimum yaraticilik
         )
@@ -471,6 +666,7 @@ class ContentGenerator:
                 description=data.get("description", ""),
                 script=data.get("script", ""),
                 tags=data.get("tags", []),
+                thumbnail_prompt=data.get("thumbnail_prompt", ""),
             )
         except Exception:
             # Scoring is metadata-only and must never block generation.
@@ -495,7 +691,11 @@ class ContentGenerator:
         logger.info("Icerik hazir: " + content.title)
         return content
 
-    def generate_and_save(self, topic: str | None = None) -> VideoContent:
+    def generate_and_save(
+        self,
+        topic: str | None = None,
+        additional_guidance: str | None = None,
+    ) -> VideoContent:
         from pathlib import Path as _Path
         from .content_pyramid import (
             get_content_type_for_next_video,
@@ -525,7 +725,7 @@ class ContentGenerator:
                 logger.info("Secilen konu: " + topic)
 
         prev_title = self._get_last_title()
-        content = self.generate_video_content(topic, prev_title)
+        content = self.generate_video_content(topic, prev_title, additional_guidance=additional_guidance)
         path = content.save()
 
         # Content type'ı kaydet

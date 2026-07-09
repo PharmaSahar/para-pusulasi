@@ -17,6 +17,7 @@ class Config:
     youtube_client_id: str = field(default_factory=lambda: os.getenv("YOUTUBE_CLIENT_ID", ""))
     youtube_client_secret: str = field(default_factory=lambda: os.getenv("YOUTUBE_CLIENT_SECRET", ""))
     youtube_redirect_uri: str = field(default_factory=lambda: os.getenv("YOUTUBE_REDIRECT_URI", "http://localhost:8080/callback"))
+    youtube_analytics_token_path: str = field(default_factory=lambda: os.getenv("YOUTUBE_ANALYTICS_TOKEN_PATH", "youtube_analytics_token.pickle"))
     elevenlabs_api_key: str = field(default_factory=lambda: os.getenv("ELEVENLABS_API_KEY", ""))
     elevenlabs_voice_id: str = field(default_factory=lambda: os.getenv("ELEVENLABS_VOICE_ID", ""))
 
@@ -75,6 +76,15 @@ class Config:
     def upload_days(self) -> List[str]:
         days = os.getenv("UPLOAD_DAYS", "Monday,Wednesday,Friday")
         return [d.strip() for d in days.split(",")]
+
+    @property
+    def niche(self) -> str:
+        """Backward-compatible alias expected by legacy pipeline paths."""
+        return self.channel_niche
+
+    @niche.setter
+    def niche(self, value: str) -> None:
+        self.channel_niche = value
 
 
 # Tek örnek (singleton)

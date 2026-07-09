@@ -4,11 +4,13 @@ YouTube Data API v3 ile video ve thumbnail yükler.
 """
 import logging
 import os
+import socket
 import time
 from pathlib import Path
 
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
+from httplib2 import ServerNotFoundError
 
 from .config import config
 from .content_generator import VideoContent
@@ -18,7 +20,8 @@ logger = logging.getLogger(__name__)
 
 # YouTube API yeniden deneme ayarları
 MAX_RETRIES = 3
-RETRY_EXCEPTIONS = (IOError, HttpError)
+RETRY_EXCEPTIONS = (IOError, HttpError, ServerNotFoundError)
+YOUTUBE_API_HOST = "youtube.googleapis.com"
 
 
 class YouTubeUploader:
@@ -51,6 +54,8 @@ class YouTubeUploader:
         if file_size < 100_000:
             raise ValueError(f"Video dosyası çok küçük ({file_size} bytes) - bozuk render: {video_path}")
         logger.info(f"YouTube'a yukleniyor: '{content.title}' ({file_size // 1024 // 1024:.1f} MB)")
+        self._log_dns_resolution(YOUTUBE_API_HOST)
+        self._ensure_dns_resolution(YOUTUBE_API_HOST)
 
         status = {"selfDeclaredMadeForKids": False}
         if publish_at:
@@ -175,6 +180,15 @@ class YouTubeUploader:
                     time.sleep(wait)
                 else:
                     raise
+            except ServerNotFoundError as e:
+                if retry < MAX_RETRIES:
+                    retry += 1
+                    wait = 2 ** retry
+                    self._log_dns_resolution(YOUTUBE_API_HOST)
+                    logger.warning(f"DNS/ağ hatası, {wait}s sonra yeniden denenecek ({retry}/{MAX_RETRIES}): {e}")
+                    time.sleep(wait)
+                else:
+                    raise
             except RETRY_EXCEPTIONS:
                 if retry < MAX_RETRIES:
                     retry += 1
@@ -185,6 +199,27 @@ class YouTubeUploader:
                     raise
 
         return response["id"]
+
+    def _ensure_dns_resolution(self, host: str) -> None:
+        try:
+            socket.getaddrinfo(host, 443)
+        except socket.gaierror as e:
+            raise ServerNotFoundError(str(e)) from e
+
+    def _log_dns_resolution(self, host: str) -> None:
+        try:
+            infos = socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
+            ips = []
+            seen = set()
+            for info in infos:
+                ip = info[4][0]
+                if ip not in seen:
+                    seen.add(ip)
+                    ips.append(ip)
+            if ips:
+                logger.info("DNS resolution for %s -> %s", host, ", ".join(ips))
+        except socket.gaierror as e:
+            logger.warning("DNS resolution failed for %s: %s", host, e)
 
     def _upload_thumbnail(self, video_id: str, thumbnail_path: str):
         """Video thumbnail'ini yükle."""

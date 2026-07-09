@@ -33,6 +33,7 @@ class ChannelConfig:
     anthropic_api_key: str = ""
     youtube_client_id: str = ""
     youtube_client_secret: str = ""
+    youtube_analytics_token_path: str = ""
     pexels_api_key: str = ""
     elevenlabs_api_key: str = ""
     elevenlabs_voice_id: str = ""  # Her kanala özel ses — boşsa global .env'den alınır
@@ -70,6 +71,7 @@ class ChannelConfig:
         self.anthropic_api_key = env.get("ANTHROPIC_API_KEY", os.getenv("ANTHROPIC_API_KEY", ""))
         self.youtube_client_id = env.get("YOUTUBE_CLIENT_ID", os.getenv("YOUTUBE_CLIENT_ID", ""))
         self.youtube_client_secret = env.get("YOUTUBE_CLIENT_SECRET", os.getenv("YOUTUBE_CLIENT_SECRET", ""))
+        self.youtube_analytics_token_path = env.get("YOUTUBE_ANALYTICS_TOKEN_PATH", os.getenv("YOUTUBE_ANALYTICS_TOKEN_PATH", ""))
         self.pexels_api_key = env.get("PEXELS_API_KEY", os.getenv("PEXELS_API_KEY", ""))
         self.elevenlabs_api_key = env.get("ELEVENLABS_API_KEY", os.getenv("ELEVENLABS_API_KEY", ""))
         self.elevenlabs_voice_id = env.get("ELEVENLABS_VOICE_ID", os.getenv("ELEVENLABS_VOICE_ID", ""))

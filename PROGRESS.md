@@ -1,48 +1,27 @@
 # PROGRESS — Para Pusulası YouTube Otomasyon
 
-> Bu dosya scheduler tarafından otomatik güncellenir. Elle de güncellenebilir.
+> Bu dosya scheduler tarafından otomatik güncellenir.
 
 ---
 
 ## Son Güncelleme
-**Tarih:** 2026-07-07  
-**Claude Session:** bc24b73d-8e07-42aa-80a9-b6c4cdd8a516  
+**Tarih:** 2026-07-09 03:00 (Istanbul)
 
 ## Son Tamamlanan Görev
-- VPS deploy + servis restart tamamlandı (parapusulasi: active/running)
-- content_generator.py line 367 syntax hatası kalıcı düzeltildi
-- Storyblocks entegrasyonu aktif edildi (public/private key + user_id/project_id)
-- Storyblocks medya tipi düzeltildi (video/görsel uzantısı Content-Type'a göre)
-- Azure TTS ağ kopmalarına karşı retry + Edge fallback eklendi
-- Shorts tarafında hardcoded Arial kaldırıldı (font fallback aktifleştirildi)
-- DALL-E çağrısı env flag ile kontrollü kapatıldı (OPENAI_IMAGE_ENABLED=false)
-- YouTube 403 (thumbnail/comment) gürültüsü azaltıldı (oturum içi auto-disable)
-- HeyGen iade talebi onayı alındı (refund processed + subscription canceled)
-
-## Yarım Kalan Görev
-- YouTube API quota artışı onayı bekleniyor
-- Bazı kanallarda YouTube custom thumbnail/comment yetkisi yok (403)
-- OpenAI image erişimi doğrulanmadığı için DALL-E kapalı tutuluyor
+Günlük bakım tamamlandı
 
 ## Bir Sonraki Adım
-- 30-60 dk canlı izleme: yeni ERROR satırı var mı kontrol et
-- YouTube tarafında thumbnail/comment permission'ı olan kanalları ayrı işaretle
-- Quota onayı sonrası kanal başı upload throughput artırımı yap
+Scheduler çalışıyor — videoları otomatik yüklüyor
 
-## Aktif Kanallar (9/9)
-| Kanal | Durum | Bugün Yayın |
+## Kanal Kuyruk Durumu
+| Kanal | Durum | Yayın Zamanı |
 |---|---|---|
-| Para Pusulası | ✅ | 20:00 |
-| Borsa Akademi | ✅ | 20:30 |
-| Kripto Rehber | ✅ | 21:00 |
-| Kariyer Pusulası | ✅ | 21:30 |
-| Girişim Okulu | ✅ | 22:00 |
-| Sağlık Pusulası | ✅ Render aktif | — |
-| Teknoloji Pusulası | ✅ Render aktif | — |
-| Eğitim Rehberi | ✅ Render aktif | — |
-| Gayrimenkul TV | ✅ | 12:00 |
-
-## Notlar (Operasyonel)
-- Şu an kritik çökme yok; scheduler üretime devam ediyor.
-- Geçmiş Telegram hata mesajları eski log denemelerinden gelebilir.
-- DALL-E yeniden açılacaksa önce hesap/model erişimi doğrulanmalı, sonra OPENAI_IMAGE_ENABLED=true yapılmalı.
+| para_pusulasi             | ✅ Kuyrukta | 2026-07-09T08:00 |
+| borsa_akademi             | 🔄 Render bekleniyor | — |
+| kripto_rehber             | ✅ Kuyrukta | 2026-07-09T09:00 |
+| kariyer_pusulasi          | ✅ Kuyrukta | 2026-07-09T09:30 |
+| girisim_okulu             | ✅ Kuyrukta | 2026-07-09T10:00 |
+| saglik_pusulasi           | ✅ Kuyrukta | 2026-07-09T10:30 |
+| teknoloji_pusulasi        | ✅ Kuyrukta | 2026-07-09T11:00 |
+| egitim_rehberi            | ✅ Kuyrukta | 2026-07-09T11:30 |
+| gayrimenkul_tv            | ✅ Kuyrukta | 2026-07-09T12:00 |

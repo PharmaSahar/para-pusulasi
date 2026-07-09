@@ -50,5 +50,7 @@ def build_analytics_join_metadata(
         "channel_dna_id": _clean(channel_dna_metadata.get("channel_dna_id")),
         "channel_dna_version": _clean(channel_dna_metadata.get("channel_dna_version"))
         or _clean(telemetry_metadata.get("channel_dna_version")),
+        "thumbnail_attention_score": quality_score_metadata.get("thumbnail_attention_score"),
+        "retention_signal_score": quality_score_metadata.get("retention_signal_score"),
         "overall_quality_score": quality_score_metadata.get("overall_quality_score"),
     }

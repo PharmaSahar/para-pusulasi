@@ -3,6 +3,7 @@ Tam Otomasyon Pipeline - Tek ve Cok Kanalli Mod
 """
 import logging
 import os
+import re
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,8 +11,12 @@ from pathlib import Path
 from .config import config as _default_config
 from .content_generator import ContentGenerator, VideoContent
 from .editor_review import build_editor_review_metadata
+from .fact_sources import build_default_fact_provider
+from .factual_freshness import FactCheckFailed, validate_script_factual_freshness
 from .image_fetcher import ImageFetcher
 from .analytics_join import build_analytics_join_metadata
+from .channel_performance import append_performance_snapshot, build_performance_snapshot
+from .performance_optimizer import build_optimization_guidance, load_channel_optimization_state
 from .render_metrics import build_render_metrics
 from .telemetry import (
     build_event_envelope,
@@ -25,6 +30,128 @@ from .youtube_uploader import YouTubeUploader
 
 logger = logging.getLogger(__name__)
 
+_FACT_CHECK_RETRY_GUIDANCE = (
+    "FACT-CHECK SAFE MODE: Yalnizca dogrulanabilir, kaynaklanabilir ve tarihsel baglami net olan veriler kullan. "
+    "Baslikta, hook'ta, scriptte, thumbnail_prompt'ta ve aciklamada kesin fiyat hedefi, anlik kur seviyesi, endeks seviyesi, "
+    "yuzde oran, son tarih, onay tarihi veya spekulatif piyasa tahmini kullanma. "
+    "Volatil piyasa konularini yalnizca risk yonetimi, temel prensipler, tarihsel dersler ve senaryo okuma cercevesinde anlat. "
+    "Canli veri izlenimi veren iddialari cikar; gerekli tum sayisal ornekleri acikca varsayimsal egitim ornegi olarak etiketle."
+)
+
+_RETRY_TOPIC_BY_CLAIM_TYPE = {
+    "crypto": "Kripto piyasasinda fiyat hedefi vermeden risk yonetimi ve volatiliteyi anlama rehberi",
+    "stock": "Borsa piyasasinda fiyat ve endeks seviyesi vermeden risk yonetimi rehberi",
+    "commodity": "Emtia oynakligini kesin seviye vermeden yorumlama rehberi",
+    "fx_usd_try": "Dolar/TL oynakliginda kesin kur seviyesi vermeden portfoy koruma rehberi",
+    "inflation": "Enflasyon ortami icin kesin oran vermeden butce ve portfoy dayanıkliligi rehberi",
+    "interest": "Faiz ortami icin kesin oran vermeden nakit ve portfoy planlama rehberi",
+    "date_deadline": "Tarih ve son tarih iddialari olmadan surec ve kontrol listesi rehberi",
+}
+
+
+def _is_enabled(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _is_fact_bundle_pipeline_adapter_enabled(cfg) -> bool:
+    cfg_value = getattr(cfg, "fact_bundle_pipeline_adapter_enabled", None)
+    if cfg_value is not None:
+        return _is_enabled(cfg_value)
+    return _is_enabled(os.getenv("FACT_BUNDLE_PIPELINE_ADAPTER_ENABLED", "false"))
+
+
+def _invoke_fact_bundle_pipeline_adapter(cfg, result: dict) -> None:
+    """Invoke Fact Bundle adapter only when explicitly enabled.
+
+    This integration is fail-open to avoid changing production behavior.
+    """
+    if not _is_fact_bundle_pipeline_adapter_enabled(cfg):
+        logger.info("Fact Bundle pipeline adapter skipped: feature flag disabled")
+        return
+
+    try:
+        from .fact_bundle_pipeline_adapter import build_fact_bundle_pipeline_adapter
+
+        logger.info("Fact Bundle pipeline adapter invoked: feature flag enabled")
+        adapter = build_fact_bundle_pipeline_adapter(enabled=True)
+        adapter_result = adapter.run()
+        orchestration_result = adapter_result.orchestration_result
+        result["fact_bundle_pipeline_adapter"] = {
+            "enabled": bool(adapter_result.enabled),
+            "applied": bool(adapter_result.applied),
+            "reason": str(adapter_result.reason),
+            "provider_count": int(orchestration_result.provider_count) if orchestration_result else 0,
+            "provider_names": list(orchestration_result.provider_names) if orchestration_result else [],
+        }
+        logger.info(
+            "Fact Bundle pipeline adapter success: applied=%s provider_count=%s",
+            bool(adapter_result.applied),
+            int(orchestration_result.provider_count) if orchestration_result else 0,
+        )
+    except Exception as e:
+        logger.warning(
+            "Fact Bundle pipeline adapter failed: error_type=%s",
+            e.__class__.__name__,
+        )
+
+
+def _is_unverifiable_claim_failure(reason: str) -> bool:
+    return "unverifiable_volatile_claim" in reason
+
+
+def _extract_unverifiable_claim_type(reason: str) -> str | None:
+    match = re.search(r"\(([^()]+)\)\s*$", reason)
+    if not match:
+        return None
+    return match.group(1).strip().lower()
+
+
+def _build_retry_guidance(reason: str) -> str:
+    claim_type = _extract_unverifiable_claim_type(reason)
+    claim_specific_rules = {
+        "crypto": "Kripto fiyat hedefi, ETF tarih iddiasi, yil sonu hedefi veya belirli seviye yazma.",
+        "stock": "Endeks seviyesi, hisse hedef fiyati, kisa vadeli piyasa seviyesi veya sayisal tahmin yazma.",
+        "commodity": "Altin, gumus, petrol gibi varliklar icin kesin seviye ve hedef yazma.",
+        "fx_usd_try": "Dolar/TL icin kesin kur, bant veya hedef seviye yazma.",
+        "inflation": "Kesin enflasyon yuzdesi veya resmi veri gibi sunulan oran yazma.",
+        "interest": "Kesin faiz oranlari veya toplantı sonucu tahmini yazma.",
+        "date_deadline": "Son tarih, takvim, onay tarihi veya kesin zaman iddiasi yazma.",
+    }
+    extra_rule = claim_specific_rules.get(claim_type)
+    if not extra_rule:
+        return _FACT_CHECK_RETRY_GUIDANCE
+    return f"{_FACT_CHECK_RETRY_GUIDANCE} {extra_rule}"
+
+
+def _build_retry_topic(original_topic: str | None, generated_title: str, reason: str) -> str:
+    claim_type = _extract_unverifiable_claim_type(reason)
+    if claim_type in _RETRY_TOPIC_BY_CLAIM_TYPE:
+        return _RETRY_TOPIC_BY_CLAIM_TYPE[claim_type]
+
+    base = (original_topic or generated_title or "Volatil piyasalarda risk yonetimi").strip()
+    sanitized = re.sub(r"\b20\d{2}\b", "", base)
+    sanitized = re.sub(r"\d+[\d.,]*\s*(TL|\$|USD|TRY|BTC|ETH|%)?", "", sanitized, flags=re.IGNORECASE)
+    sanitized = re.sub(r"\s+", " ", sanitized).strip(" -:,.?")
+    if not sanitized:
+        sanitized = "Volatil piyasalarda risk yonetimi"
+    return f"{sanitized} icin fiyat hedefi vermeden risk yonetimi rehberi"
+
+
+def _resolve_posting_slot(publish_at: str | None) -> str:
+    """Infer morning/evening slot from scheduled publish time."""
+    if publish_at:
+        try:
+            dt = datetime.fromisoformat(str(publish_at).replace("Z", "+00:00"))
+            return "morning" if dt.hour < 15 else "evening"
+        except Exception:
+            pass
+    now_local = datetime.now()
+    return "morning" if now_local.hour < 15 else "evening"
+
 
 def run_full_pipeline(
     topic: str | None = None,
@@ -32,14 +159,18 @@ def run_full_pipeline(
     privacy: str = os.getenv("DEFAULT_PRIVACY", "public"),
     channel_cfg=None,
     publish_at: str | None = None,
+    posting_slot: str | None = None,
 ) -> dict:
     """Tam pipeline: icerik -> ses -> video -> YouTube yukle."""
     # Aktif config belirle
     cfg = channel_cfg if channel_cfg else _default_config
     cfg.ensure_directories()
     result = {"channel": getattr(cfg, "channel_id", "default")}
+    slot = posting_slot or _resolve_posting_slot(publish_at)
+    result["slot"] = slot
     result["content_id"] = generate_content_id()
     result["run_id"] = generate_run_id()
+    _invoke_fact_bundle_pipeline_adapter(cfg, result)
 
     telemetry_metadata = {
         "experiment_id": os.getenv("EXPERIMENT_ID"),
@@ -73,6 +204,83 @@ def run_full_pipeline(
             # Telemetry must be fail-open and never affect production flow.
             pass
 
+    fact_provider = build_default_fact_provider()
+    fact_check_metadata: dict | None = None
+
+    def _telegram_fact_check_alert(message: str):
+        try:
+            from .scheduler_utils import send_telegram
+
+            send_telegram(message)
+        except Exception:
+            pass
+
+    def _run_fact_check_guard(before_stage: str, script: str, *, suppress_retryable_alert: bool = False):
+        nonlocal fact_check_metadata
+        _emit("fact_check", "stage_started", {"before_stage": before_stage})
+        try:
+            metadata = validate_script_factual_freshness(script, fact_provider)
+            fact_check_metadata = metadata
+            result["fact_check"] = metadata
+            result["fact_check_metadata"] = metadata
+            try:
+                setattr(content, "fact_check_metadata", metadata)
+            except Exception:
+                pass
+            result["job_status"] = "fact_check_passed"
+            _emit(
+                "fact_check",
+                "stage_completed",
+                {
+                    "before_stage": before_stage,
+                    "fact_check_status": metadata.get("fact_check_status"),
+                    "sources": metadata.get("sources", []),
+                    "volatile_claims_checked": metadata.get("volatile_claims_checked", []),
+                    "checked_at": metadata.get("checked_at"),
+                },
+            )
+        except FactCheckFailed as e:
+            reason = str(e)
+            failed_metadata = {
+                "fact_check_status": "failed",
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+                "sources": (e.metadata or {}).get("sources", []),
+                "volatile_claims_checked": (e.metadata or {}).get("volatile_claims_checked", []),
+                "failure_reason": reason,
+            }
+            fact_check_metadata = failed_metadata
+            result["fact_check"] = failed_metadata
+            result["fact_check_metadata"] = failed_metadata
+            result["job_status"] = "failed_fact_check"
+            _emit(
+                "fact_check",
+                "stage_failed",
+                {
+                    "before_stage": before_stage,
+                    "error": reason[:300],
+                },
+            )
+            if not (suppress_retryable_alert and _is_unverifiable_claim_failure(reason)):
+                _telegram_fact_check_alert(
+                    "🚫 <b>Fact Check FAIL</b>\n"
+                    f"📺 Kanal: {result.get('channel', 'default')}\n"
+                    f"⛔ Aşama öncesi: {before_stage}\n"
+                    f"🧾 Sebep: {reason[:250]}"
+                )
+            raise RuntimeError(f"failed_fact_check: {reason}") from e
+
+    def _generate_content(generator: ContentGenerator, *, generation_topic: str | None, additional_guidance: str | None = None):
+        nonlocal content
+        if additional_guidance is None:
+            content = generator.generate_and_save(generation_topic)
+        else:
+            try:
+                content = generator.generate_and_save(generation_topic, additional_guidance=additional_guidance)
+            except TypeError:
+                content = generator.generate_and_save(generation_topic)
+        result["title"] = content.title
+        result["script_path"] = f"{cfg.scripts_dir}/{content.created_at[:10]}_{content.title[:30]}.json"
+
     @contextmanager
     def _stage(stage: str, start_payload: dict | None = None, complete_payload_fn=None):
         _emit(stage, "stage_started", start_payload)
@@ -101,9 +309,95 @@ def run_full_pipeline(
     ):
         generator = ContentGenerator(channel_cfg=cfg)
         telemetry_metadata["model_version"] = telemetry_metadata.get("model_version") or getattr(generator, "model", None)
-        content: VideoContent = generator.generate_and_save(topic)
-        result["title"] = content.title
-        result["script_path"] = f"{cfg.scripts_dir}/{content.created_at[:10]}_{content.title[:30]}.json"
+        content: VideoContent
+        live_optimization_state = {}
+        try:
+            live_optimization_state = load_channel_optimization_state(str(result.get("channel", "default")))
+            if live_optimization_state:
+                result["optimization_state"] = live_optimization_state
+                result["optimization_guidance"] = build_optimization_guidance(live_optimization_state)
+        except Exception:
+            live_optimization_state = {}
+
+        optimization_guidance = result.get("optimization_guidance") or ""
+        _generate_content(
+            generator,
+            generation_topic=topic,
+            additional_guidance=optimization_guidance or None,
+        )
+
+    diversity_video_record = None
+    thumbnail_experiments = {}
+    diversity_short_record = None
+    try:
+        from .channel_visual_profiles import get_channel_visual_profile
+        from .thumbnail_history import load_recent_thumbnail_history
+        from .thumbnail_experiments import build_thumbnail_experiment_bundle
+        from .visual_diversity import enforce_thumbnail_diversity
+
+        visual_profile = get_channel_visual_profile(
+            str(result.get("channel", "default")),
+            niche=getattr(content, "niche", ""),
+        )
+        recent_history = load_recent_thumbnail_history()
+
+        video_guard = enforce_thumbnail_diversity(
+            channel_id=str(result.get("channel", "default")),
+            content_type="video",
+            slot=slot,
+            topic=content.title,
+            thumbnail_prompt=getattr(content, "thumbnail_prompt", "") or content.title,
+            profile=visual_profile,
+            recent_history=recent_history,
+            publish_at=publish_at,
+        )
+        diversity_video_record = dict(video_guard.get("record") or {})
+        content.thumbnail_prompt = diversity_video_record.get("thumbnail_prompt") or content.thumbnail_prompt
+        thumbnail_experiments = build_thumbnail_experiment_bundle(
+            channel_id=str(result.get("channel", "default")),
+            content_type="video",
+            slot=slot,
+            topic=content.title,
+            title=content.title,
+            thumbnail_prompt=getattr(content, "thumbnail_prompt", "") or content.title,
+            profile=visual_profile,
+            recent_history=recent_history,
+            publish_at=publish_at,
+        )
+        content.thumbnail_prompt = thumbnail_experiments.get("selected_prompt") or content.thumbnail_prompt
+        result["thumbnail_diversity"] = {
+            "video": {
+                "accepted": bool(video_guard.get("accepted")),
+                "regenerated": bool(video_guard.get("regenerated")),
+                "attempts": int(video_guard.get("attempts") or 0),
+                "rejected_attempts": video_guard.get("rejected_attempts") or [],
+            }
+        }
+        result["thumbnail_experiments"] = {
+            "selected_variant_id": thumbnail_experiments.get("selected_variant_id"),
+            "selected_prompt": thumbnail_experiments.get("selected_prompt"),
+            "variants": [
+                {
+                    "variant_id": item.get("variant_id"),
+                    "thumbnail_prompt": item.get("thumbnail_prompt"),
+                    "thumbnail_attention_score": item.get("thumbnail_attention_score"),
+                    "accepted": item.get("accepted"),
+                    "regenerated": item.get("regenerated"),
+                    "attempts": item.get("attempts"),
+                }
+                for item in thumbnail_experiments.get("variants", [])
+            ],
+        }
+    except Exception:
+        # Diversity guard is fail-open and must never block production runs.
+        result.setdefault("thumbnail_diversity", {})
+        result["thumbnail_diversity"]["video"] = {
+            "accepted": False,
+            "regenerated": False,
+            "attempts": 0,
+            "rejected_attempts": [],
+        }
+        result.setdefault("thumbnail_experiments", {})
 
     try:
         result["analytics_join_metadata"] = build_analytics_join_metadata(
@@ -131,6 +425,25 @@ def run_full_pipeline(
     if generate_only:
         logger.info("Sadece icerik uretme modu.")
         return result
+
+    try:
+        _run_fact_check_guard("tts", content.script, suppress_retryable_alert=True)
+    except RuntimeError as error:
+        reason = str(error)
+        if _is_unverifiable_claim_failure(reason):
+            logger.warning("Fact check unverifiable claim detected; regenerating content once with stricter guidance")
+            result["fact_check_regeneration_attempted"] = True
+            retry_topic = _build_retry_topic(topic, content.title, reason)
+            retry_guidance = _build_retry_guidance(reason)
+            result["fact_check_regeneration_topic"] = retry_topic
+            _generate_content(
+                generator,
+                generation_topic=retry_topic,
+                additional_guidance=retry_guidance,
+            )
+            _run_fact_check_guard("tts", content.script)
+        else:
+            raise
 
     # ─── ADIM 2: Sesli Anlatiom ────────────────────────────────────────────────
     logger.info("=" * 60)
@@ -190,6 +503,7 @@ def run_full_pipeline(
             logger.warning(f"Grafik oluşturulamadı: {e}")
 
     # ─── ADIM 3: Video Montaji ────────────────────────────────────────────────
+    _run_fact_check_guard("render", content.script)
     logger.info("=" * 60)
     logger.info(f"ADIM 3/4 - Video Montaji [{result['channel']}]")
     logger.info("=" * 60)
@@ -222,6 +536,30 @@ def run_full_pipeline(
         thumbnail_path = creator.create_thumbnail(content.title, image_path=thumb_bg)
         result["video_path"] = video_path
         result["thumbnail_path"] = thumbnail_path
+
+    try:
+        from .thumbnail_history import append_thumbnail_history
+
+        if diversity_video_record:
+            entry = {
+                "channel_id": str(result.get("channel", "default")),
+                "content_type": "video",
+                "slot": slot,
+                "topic": content.title,
+                "thumbnail_prompt": diversity_video_record.get("thumbnail_prompt", getattr(content, "thumbnail_prompt", "")),
+                "visual_style": diversity_video_record.get("visual_style", ""),
+                "main_subject": diversity_video_record.get("main_subject", ""),
+                "background": diversity_video_record.get("background", ""),
+                "color_palette": diversity_video_record.get("color_palette", ""),
+                "camera_angle": diversity_video_record.get("camera_angle", ""),
+                "mood": diversity_video_record.get("mood", ""),
+                "fingerprint": diversity_video_record.get("fingerprint", ""),
+                "day": diversity_video_record.get("day", datetime.now(timezone.utc).date().isoformat()),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            append_thumbnail_history(entry)
+    except Exception:
+        pass
 
     try:
         render_finished_at = datetime.now(timezone.utc)
@@ -267,49 +605,140 @@ def run_full_pipeline(
             _emit("shorts_render", "stage_failed", {"error": "short_not_created"})
 
     # ─── ADIM 4: YouTube Yukleme ──────────────────────────────────────────────
+    _run_fact_check_guard("upload", content.script)
     logger.info("=" * 60)
     logger.info(f"ADIM 4/4 - YouTube [{result['channel']}]")
     logger.info("=" * 60)
-    with _stage(
-        "upload",
-        start_payload={"privacy": privacy, "publish_at": publish_at},
-        complete_payload_fn=lambda: {"video_id": str(result.get("video_id", ""))},
-    ):
-        uploader = YouTubeUploader(channel_cfg=cfg)
-        video_id = uploader.upload_video(
-            video_path=video_path,
-            content=content,
-            thumbnail_path=thumbnail_path,
-            privacy=privacy,
-            publish_at=publish_at,
-        )
-        result["video_id"] = video_id
-        result["youtube_url"] = f"https://youtube.com/watch?v={video_id}"
+    uploader = YouTubeUploader(channel_cfg=cfg)
+    upload_error = None
+    try:
+        with _stage(
+            "upload",
+            start_payload={"privacy": privacy, "publish_at": publish_at},
+            complete_payload_fn=lambda: {"video_id": str(result.get("video_id", ""))},
+        ):
+            video_id = uploader.upload_video(
+                video_path=video_path,
+                content=content,
+                thumbnail_path=thumbnail_path,
+                privacy=privacy,
+                publish_at=publish_at,
+            )
+            result["video_id"] = video_id
+            result["youtube_url"] = f"https://youtube.com/watch?v={video_id}"
+            try:
+                result["youtube_channel_stats"] = uploader.get_channel_stats()
+            except Exception:
+                result["youtube_channel_stats"] = {}
+    except Exception as e:
+        upload_error = e
+        result["upload_error"] = str(e)
+        logger.error(f"Upload başarısız, snapshot yine kaydedilecek: {e}")
 
     # ─── ADIM 4.5: Short Yukle ────────────────────────────────────────────────
     _emit("shorts_upload", "stage_started")
     shorts_upload_error = None
-    if result.get("short_path"):
+    if upload_error:
+        _emit("shorts_upload", "stage_completed", {"short_uploaded": False, "skipped": True, "reason": "main_upload_failed"})
+    elif result.get("short_path"):
         try:
             from .content_generator import VideoContent as VC
+            from .thumbnail_history import append_thumbnail_history, load_recent_thumbnail_history
+            from .visual_diversity import enforce_thumbnail_diversity
+            from .channel_visual_profiles import get_channel_visual_profile
+
             short_title = (content.title + " #Shorts")[:100]  # BUG FIX: parantez doğru yerde
+            short_slot = slot
+            short_thumbnail_path = thumbnail_path
+
+            try:
+                short_profile = get_channel_visual_profile(
+                    str(result.get("channel", "default")),
+                    niche=getattr(content, "niche", ""),
+                )
+                short_guard = enforce_thumbnail_diversity(
+                    channel_id=str(result.get("channel", "default")),
+                    content_type="short",
+                    slot=short_slot,
+                    topic=short_title,
+                    thumbnail_prompt=getattr(content, "thumbnail_prompt", short_title),
+                    profile=short_profile,
+                    recent_history=load_recent_thumbnail_history(),
+                    publish_at=publish_at,
+                )
+                diversity_short_record = dict(short_guard.get("record") or {})
+                if "thumbnail_diversity" not in result:
+                    result["thumbnail_diversity"] = {}
+                result["thumbnail_diversity"]["short"] = {
+                    "accepted": bool(short_guard.get("accepted")),
+                    "regenerated": bool(short_guard.get("regenerated")),
+                    "attempts": int(short_guard.get("attempts") or 0),
+                    "rejected_attempts": short_guard.get("rejected_attempts") or [],
+                }
+
+                # Build a distinct thumbnail for short to avoid same-day concept overlap.
+                short_thumb_bg = None
+                try:
+                    from .premium_services import has_dalle, generate_dalle_thumbnail
+                    if has_dalle():
+                        short_prompt = diversity_short_record.get("thumbnail_prompt") or short_title
+                        short_dalle_path = f"{cfg.videos_dir}/thumb_short_dalle_{__import__('uuid').uuid4().hex[:8]}.jpg"
+                        short_thumb_bg = generate_dalle_thumbnail(short_prompt, short_dalle_path)
+                except Exception:
+                    short_thumb_bg = None
+
+                if not short_thumb_bg:
+                    if image_paths:
+                        short_thumb_bg = image_paths[-1]
+                    else:
+                        short_thumb_bg = thumb_bg
+
+                short_thumbnail_path = creator.create_thumbnail(short_title, image_path=short_thumb_bg)
+            except Exception:
+                short_thumbnail_path = thumbnail_path
+
             short_content = VC(
                 title=short_title,
                 description=content.seo_description()[:5000],
                 tags=content.tags + ["Shorts", "YouTube Shorts"],
                 script=content.script,
-                thumbnail_prompt=content.thumbnail_prompt,
+                thumbnail_prompt=(
+                    diversity_short_record.get("thumbnail_prompt")
+                    if isinstance(diversity_short_record, dict)
+                    else content.thumbnail_prompt
+                ),
                 category_id=content.category_id,
                 niche=content.niche,
             )
             short_id = uploader.upload_video(
                 video_path=result["short_path"],
                 content=short_content,
-                thumbnail_path=thumbnail_path,
+                thumbnail_path=short_thumbnail_path,
                 privacy="public",
                 publish_at=None,
             )
             result["short_url"] = f"https://youtube.com/shorts/{short_id}"
+            result["short_thumbnail_path"] = short_thumbnail_path
+
+            if diversity_short_record:
+                append_thumbnail_history(
+                    {
+                        "channel_id": str(result.get("channel", "default")),
+                        "content_type": "short",
+                        "slot": short_slot,
+                        "topic": short_title,
+                        "thumbnail_prompt": diversity_short_record.get("thumbnail_prompt", short_content.thumbnail_prompt),
+                        "visual_style": diversity_short_record.get("visual_style", ""),
+                        "main_subject": diversity_short_record.get("main_subject", ""),
+                        "background": diversity_short_record.get("background", ""),
+                        "color_palette": diversity_short_record.get("color_palette", ""),
+                        "camera_angle": diversity_short_record.get("camera_angle", ""),
+                        "mood": diversity_short_record.get("mood", ""),
+                        "fingerprint": diversity_short_record.get("fingerprint", ""),
+                        "day": diversity_short_record.get("day", datetime.now(timezone.utc).date().isoformat()),
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
             logger.info(f"Short yuklendi: {result['short_url']}")
         except Exception as e:
             shorts_upload_error = e
@@ -326,8 +755,32 @@ def run_full_pipeline(
     else:
         _emit("shorts_upload", "stage_completed", {"short_uploaded": False, "skipped": True})
 
+    try:
+        performance_snapshot = build_performance_snapshot(
+            channel_id=str(result.get("channel", "default")),
+            content_id=result["content_id"],
+            run_id=result["run_id"],
+            title=getattr(content, "title", ""),
+            youtube_url=result.get("youtube_url"),
+            short_url=result.get("short_url"),
+            video_id=result.get("video_id"),
+            short_video_id=result.get("short_video_id"),
+            publish_at=publish_at,
+            thumbnail_path=result.get("thumbnail_path"),
+            thumbnail_strategy=telemetry_metadata.get("thumbnail_strategy"),
+            render_metrics=result.get("render_metrics"),
+            analytics_join_metadata=result.get("analytics_join_metadata"),
+            quality_score_metadata=getattr(content, "quality_score_metadata", None),
+            youtube_stats=result.get("youtube_channel_stats"),
+            youtube_analytics=result.get("youtube_analytics", {}),
+        )
+        result["performance_snapshot"] = performance_snapshot
+        append_performance_snapshot(performance_snapshot)
+    except Exception:
+        result["performance_snapshot"] = {}
+
     logger.info("=" * 60)
-    logger.info(f"✅ TAMAMLANDI! Video: {result['youtube_url']}")
+    logger.info(f"✅ TAMAMLANDI! Video: {result.get('youtube_url')}")
     if result.get("short_url"):
         logger.info(f"✅ Short: {result['short_url']}")
     logger.info("=" * 60)

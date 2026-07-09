@@ -251,9 +251,10 @@ def render_and_schedule(channel_id: str):
                 last_error = e
                 error_str = str(e).lower()
                 # Kesinlikle retry yapma
-                if any(x in error_str for x in ["credit balance", "quota", "invalid_request", "invalidtags", "authentication"]):
+                if any(x in error_str for x in ["failed_fact_check", "credit balance", "quota", "invalid_request", "invalidtags", "authentication"]):
                     logger.error(f"[{cfg.name}] Fatal hata (retry yok): {e}")
-                    notify_error(cfg.name, str(e)[:150])
+                    if "failed_fact_check" not in error_str:
+                        notify_error(cfg.name, str(e)[:150])
                     raise
                 if attempt < 3:
                     wait = 30 * attempt
@@ -303,6 +304,8 @@ def render_and_schedule(channel_id: str):
     except Exception as e:
         logger.error(f"[{channel_id}] Render hatası: {e}", exc_info=True)
         try:
+            if "failed_fact_check" in str(e).lower():
+                return
             from src.channel_manager import get_channel
             cfg = get_channel(channel_id)
             from src.scheduler_utils import notify_error
@@ -502,6 +505,62 @@ def maintenance_job():
     )
 
 
+def refresh_live_analytics_job():
+    """Canlı YouTube Analytics verisini al ve optimization state'i yenile."""
+    try:
+        from src.channel_manager import get_channel
+        from src.channel_performance import append_performance_snapshot, load_recent_performance_snapshots
+        from src.performance_optimizer import refresh_channel_optimization_state
+        from src.youtube_analytics import fetch_recent_video_analytics
+
+        snapshots = load_recent_performance_snapshots(lookback_days=14, max_items=400)
+        by_channel: dict[str, list[dict]] = {}
+        for row in snapshots:
+            channel_id = str(row.get("channel_id") or "default")
+            by_channel.setdefault(channel_id, []).append(row)
+
+        for channel_id, rows in by_channel.items():
+            try:
+                cfg = get_channel(channel_id)
+            except Exception as e:
+                logger.warning("[%s] Optimization refresh skipped: %s", channel_id, e)
+                continue
+
+            latest_by_video = {}
+            for row in rows:
+                video_id = str(row.get("video_id") or "").strip()
+                if not video_id:
+                    continue
+                if video_id not in latest_by_video:
+                    latest_by_video[video_id] = row
+
+            video_ids = list(latest_by_video.keys())[:5]
+            if not video_ids:
+                continue
+
+            reports = fetch_recent_video_analytics(video_ids=video_ids, channel_cfg=cfg, lookback_days=14)
+            reports_by_video = {str(report.get("video_id")): report for report in reports if report.get("video_id")}
+
+            for video_id, base_row in latest_by_video.items():
+                analytics = reports_by_video.get(video_id)
+                if not analytics:
+                    continue
+                enriched = dict(base_row)
+                enriched["youtube_analytics"] = analytics
+                enriched["analytics_synced_at"] = datetime.now(TZ).isoformat()
+                append_performance_snapshot(enriched)
+
+            state = refresh_channel_optimization_state(channel_id)
+            logger.info(
+                "[%s] Live analytics synced: focus=%s mode=%s",
+                channel_id,
+                ",".join(state.get("focus", [])),
+                state.get("mode"),
+            )
+    except Exception as e:
+        logger.warning("Live analytics refresh failed: %s", e)
+
+
 def process_likes_job():
     """Her 30 dk’da bir: zamanı gelen beğenileri işle."""
     logger.info("Cross-channel auto-like devre dışı (safe mode).")
@@ -590,8 +649,73 @@ def fill_empty_queues_job():
     except Exception as e:
         logger.warning(f"fill_empty_queues_job genel hatası: {e}")
 
+
+def _print_help() -> None:
+    print("Para Pusulasi Scheduler")
+    print("Kullanim:")
+    print("  python scheduler.py          # Token'i olan tum kanallari calistir")
+    print("  python scheduler.py --list   # Aktif kanallari listele")
+    print("  python scheduler.py --status # Kuyruk durumunu goster")
+    print("  python scheduler.py --health-check # Uretim hazirlik kontrolunu calistir")
+    print("  python scheduler.py --sync-analytics-now # Canli YouTube Analytics sync ve optimizasyonu calistir")
+    print("  python scheduler.py --help   # Bu yardim metnini goster")
+
+
+def _run_startup_health_check(*, create_missing_directories: bool, require_telegram: bool):
+    from src.config import config as runtime_config
+    from src.production_readiness import run_production_health_check
+
+    result = run_production_health_check(
+        runtime_config,
+        require_telegram=require_telegram,
+        create_missing_directories=create_missing_directories,
+    )
+    logger.info(
+        "Configuration loaded: niche=%s language=%s timezone=%s",
+        runtime_config.niche,
+        runtime_config.channel_language,
+        runtime_config.timezone,
+    )
+    logger.info(
+        "Fact Bundle pipeline adapter is %s",
+        "enabled" if result.fact_bundle_enabled else "disabled",
+    )
+    logger.info(
+        "YouTube DNS resolution: %s",
+        ", ".join(result.youtube_dns_ips) if result.youtube_dns_ips else "unresolved",
+    )
+    logger.info("Health check result: %s", "PASS" if result.ok else "FAIL")
+    return result
+
+
+def run_live_analytics_sync_once() -> int:
+    """Canli analytics senkronunu bir kez calistirir."""
+    refresh_live_analytics_job()
+    print("Live analytics sync: PASS")
+    return 0
+
 def main():
     args = sys.argv[1:]
+
+    if "--help" in args or "-h" in args:
+        _print_help()
+        return
+
+    if "--health-check" in args:
+        result = _run_startup_health_check(
+            create_missing_directories=False,
+            require_telegram=True,
+        )
+        if result.ok:
+            print("Health check: PASS")
+            return
+        print("Health check: FAIL")
+        for error in result.errors:
+            print(f"- {error}")
+        sys.exit(1)
+
+    if "--sync-analytics-now" in args:
+        sys.exit(run_live_analytics_sync_once())
 
     if "--list" in args or "--status" in args:
         show_status()
@@ -616,6 +740,16 @@ def main():
     else:
         logger.info("JOB_STORE_MODE=json aktif: JSON production source of truth.")
 
+    startup_health = _run_startup_health_check(
+        create_missing_directories=True,
+        require_telegram=True,
+    )
+    if not startup_health.ok:
+        for error in startup_health.errors:
+            logger.error("Startup validation failed: %s", error)
+            print(f"ERROR: {error}")
+        sys.exit(1)
+
     # scheduler_utils opsiyonel — yoksa basit fallback kullan
     try:
         from src.scheduler_utils import notify_startup, cleanup_old_renders
@@ -629,6 +763,8 @@ def main():
     if not ready:
         console.print("[red]Hiçbir kanalın token'i yok! Önce setup_channel.py çalıştırın.[/red]")
         sys.exit(1)
+
+    logger.info("Scheduler starting")
 
     console.print(f"\n[bold green]Para Pusulası Scheduler v4.0[/bold green]")
     console.print(f"[dim]{len(ready)} kanal aktif | MAX {MAX_PARALLEL_RENDERS} paralel render[/dim]\n")
@@ -644,6 +780,9 @@ def main():
 
     # Her saatte boş kuyruğu olan kanalları doldur (restart güvencesi)
     schedule.every(1).hour.do(fill_empty_queues_job)
+
+    # Canlı YouTube Analytics senkronu ve optimizasyon döngüsü
+    schedule.every(6).hours.do(refresh_live_analytics_job)
 
     # Ön render başlat (arka planda)
     threading.Thread(target=initial_fill, daemon=True, name="initial-fill").start()

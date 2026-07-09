@@ -92,4 +92,5 @@ python -m src.run_replay_once --research-root research --schema-version 1 --pret
 
 - [docs/architecture.md](docs/architecture.md)
 - [docs/collector_contract.md](docs/collector_contract.md)
+- [docs/v0.2.0_planning.md](docs/v0.2.0_planning.md)
 - [CHANGELOG.md](CHANGELOG.md)

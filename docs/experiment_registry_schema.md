@@ -20,6 +20,7 @@ Provide a single source of truth for all performance experiments so decisions re
 12. `rollback_status`
 13. `status`
 14. `schema_version`
+15. `created_by`
 
 ### Field Guidance
 - `experiment_id`: unique immutable identifier (example `EXP-2026-07-001`).
@@ -34,6 +35,7 @@ Provide a single source of truth for all performance experiments so decisions re
 - `rollback_status`: `none`, `triggered`, `completed`.
 - `status`: lifecycle state machine status.
 - `schema_version`: document/model version marker for forward compatibility.
+- `created_by`: source actor for record creation/update (for example `pipeline`, `manual`, `dashboard`).
 
 ## 2. State Machine
 
@@ -133,6 +135,7 @@ Event requirements:
 ```json
 {
   "schema_version": "v1",
+  "created_by": "pipeline",
   "experiment_id": "EXP-2026-07-001",
   "hypothesis": "Thumbnail policy v2 increases CTR by at least 10% vs control.",
   "variant": {

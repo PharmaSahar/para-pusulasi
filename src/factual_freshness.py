@@ -31,9 +31,14 @@ FX_SINGLE_RE = re.compile(
 
 INFLATION_RE = re.compile(r"enflasyon[^\n]{0,25}?%\s*(\d{1,3}(?:[\.,]\d+)?)", re.IGNORECASE)
 INTEREST_RE = re.compile(r"faiz[^\n]{0,25}?%\s*(\d{1,3}(?:[\.,]\d+)?)", re.IGNORECASE)
-CRYPTO_RE = re.compile(r"(bitcoin|btc|ethereum|eth|altcoin)[^\n]{0,30}?(\d{2,8}(?:[\.,]\d+)?)", re.IGNORECASE)
-STOCK_RE = re.compile(r"(bist|nasdaq|s&p|dow|hisse|endeks)[^\n]{0,30}?(\d{2,8}(?:[\.,]\d+)?)", re.IGNORECASE)
-COMMODITY_RE = re.compile(r"(altin|ons|gram altin|gumus|petrol|brent)[^\n]{0,30}?(\d{1,6}(?:[\.,]\d+)?)", re.IGNORECASE)
+CRYPTO_RE = re.compile(r"\b(bitcoin|btc|ethereum|eth|altcoin)\b[^\n]{0,30}?(\d{2,8}(?:[\.,]\d+)?)", re.IGNORECASE)
+STOCK_RE = re.compile(r"\b(bist|nasdaq|s&p|dow|hisse|endeks)\b[^\n]{0,30}?(\d{2,8}(?:[\.,]\d+)?)", re.IGNORECASE)
+COMMODITY_RE = re.compile(
+    r"\b(?:gram\s+altin|ons\s+altin|altin\s+(?:fiyati|fiyatlari|grami)|"
+    r"gumus\s+(?:fiyati|fiyatlari|grami)|petrol\s+(?:fiyati|fiyatlari|varil|fiyat)|"
+    r"brent(?:\s+petrol)?)\b[^\n]{0,30}?(\d{1,6}(?:[\.,]\d+)?)",
+    re.IGNORECASE,
+)
 DATE_RE = re.compile(r"(\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b|\bson\s+tarih\b|\bdeadline\b)", re.IGNORECASE)
 
 

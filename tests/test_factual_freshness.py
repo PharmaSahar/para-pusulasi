@@ -51,6 +51,14 @@ def test_unverifiable_financial_claim_fails():
     assert "unverifiable_volatile_claim" in str(err.value)
 
 
+def test_valuation_threshold_phrase_is_not_misread_as_commodity():
+    script = "Kira carpani icin basit kural: 15'in altindaysa iyi yatirim, 20'nin ustundeyse pahali."
+    metadata = validate_script_factual_freshness(script, MockProvider())
+
+    assert metadata["fact_check_status"] == "passed"
+    assert metadata["volatile_claims_checked"] == []
+
+
 def test_non_volatile_script_passes():
     script = "Bugun yatirim disiplininin uzun vadeli onemini anlatiyoruz."
     metadata = validate_script_factual_freshness(script, MockProvider())

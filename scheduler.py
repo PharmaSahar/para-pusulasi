@@ -22,6 +22,7 @@ KULLANIM:
 import json
 import logging
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -46,6 +47,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger("Scheduler")
 
+
+def _resolve_git_head_short() -> str:
+    try:
+        out = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        return out or "unknown"
+    except Exception:
+        return "unknown"
+
 # Env üzerinden kontrol: default 1
 try:
     MAX_PARALLEL_RENDERS = max(1, int(os.getenv("MAX_PARALLEL_RENDERS", "1")))
@@ -54,6 +67,7 @@ except ValueError:
 
 TZ = pytz.timezone("Europe/Istanbul")
 QUEUE_FILE = "output/queue/channel_queue.json"
+PID_FILE = Path("logs/production_scheduler.pid")
 QUEUE_LOCK = threading.RLock()
 RENDER_LOCKS_LOCK = threading.Lock()
 
@@ -153,6 +167,15 @@ def _get_channel_render_lock(channel_id: str) -> threading.Lock:
             lock = threading.Lock()
             render_locks[channel_id] = lock
         return lock
+
+
+def _write_pid_record() -> None:
+    try:
+        PID_FILE.parent.mkdir(parents=True, exist_ok=True)
+        PID_FILE.write_text(str(os.getpid()), encoding="utf-8")
+        logger.info("Scheduler pid record updated: %s -> %s", PID_FILE, os.getpid())
+    except Exception as e:
+        logger.warning("Scheduler pid record write failed (non-blocking): %s", e)
 
 
 def get_ready_channels() -> list:
@@ -798,6 +821,14 @@ def main():
         sys.exit(1)
 
     logger.info("Scheduler starting")
+    _write_pid_record()
+    logger.info(
+        "BUILD_INFO scheduler git_sha=%s cwd=%s python=%s started_at=%s",
+        _resolve_git_head_short(),
+        os.getcwd(),
+        sys.executable,
+        datetime.now(TZ).isoformat(),
+    )
 
     console.print(f"\n[bold green]Para Pusulası Scheduler v4.0[/bold green]")
     console.print(f"[dim]{len(ready)} kanal aktif | MAX {MAX_PARALLEL_RENDERS} paralel render[/dim]\n")

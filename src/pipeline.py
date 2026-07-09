@@ -40,7 +40,7 @@ _FACT_CHECK_RETRY_GUIDANCE = (
 
 _RETRY_TOPIC_BY_CLAIM_TYPE = {
     "crypto": "Kripto piyasasinda fiyat hedefi vermeden risk yonetimi ve volatiliteyi anlama rehberi",
-    "stock": "Borsa ve hisse yorumlarinda fiyat hedefi vermeden risk yonetimi rehberi",
+    "stock": "Borsa piyasasinda fiyat ve endeks seviyesi vermeden risk yonetimi rehberi",
     "commodity": "Emtia oynakligini kesin seviye vermeden yorumlama rehberi",
     "fx_usd_try": "Dolar/TL oynakliginda kesin kur seviyesi vermeden portfoy koruma rehberi",
     "inflation": "Enflasyon ortami icin kesin oran vermeden butce ve portfoy dayanıkliligi rehberi",
@@ -114,7 +114,7 @@ def _build_retry_guidance(reason: str) -> str:
     claim_type = _extract_unverifiable_claim_type(reason)
     claim_specific_rules = {
         "crypto": "Kripto fiyat hedefi, ETF tarih iddiasi, yil sonu hedefi veya belirli seviye yazma.",
-        "stock": "Endeks seviyesi, hisse hedef fiyati veya kisa vadeli piyasa seviyesi yazma.",
+        "stock": "Endeks seviyesi, hisse hedef fiyati, kisa vadeli piyasa seviyesi veya sayisal tahmin yazma.",
         "commodity": "Altin, gumus, petrol gibi varliklar icin kesin seviye ve hedef yazma.",
         "fx_usd_try": "Dolar/TL icin kesin kur, bant veya hedef seviye yazma.",
         "inflation": "Kesin enflasyon yuzdesi veya resmi veri gibi sunulan oran yazma.",

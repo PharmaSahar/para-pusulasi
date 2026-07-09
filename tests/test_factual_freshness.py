@@ -328,14 +328,14 @@ def test_pipeline_retries_once_for_unverifiable_claim_and_continues(monkeypatch,
     assert result["video_id"] == "video-id"
     assert result["fact_check_regeneration_attempted"] is True
     assert result["title"] == "Retry title"
-    assert result["fact_check_regeneration_topic"] == "Borsa ve hisse yorumlarinda fiyat hedefi vermeden risk yonetimi rehberi"
+    assert result["fact_check_regeneration_topic"] == "Borsa piyasasinda fiyat ve endeks seviyesi vermeden risk yonetimi rehberi"
     assert validation_calls["count"] >= 2
     assert len(generator_instances) == 1
     assert len(generator_instances[0].calls) == 2
-    assert generator_instances[0].calls[1][0] == "Borsa ve hisse yorumlarinda fiyat hedefi vermeden risk yonetimi rehberi"
+    assert generator_instances[0].calls[1][0] == "Borsa piyasasinda fiyat ve endeks seviyesi vermeden risk yonetimi rehberi"
     assert generator_instances[0].calls[1][1] is not None
     assert "FACT-CHECK SAFE MODE" in generator_instances[0].calls[1][1]
-    assert "fiyat hedefi" in generator_instances[0].calls[1][1]
+    assert "endeks seviyesi" in generator_instances[0].calls[1][1]
     assert alerts == []
 
 

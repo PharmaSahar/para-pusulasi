@@ -177,6 +177,25 @@ def _resolve_posting_slot(publish_at: str | None) -> str:
     return "morning" if now_local.hour < 15 else "evening"
 
 
+def _resolve_analytics_live_runtime(cfg) -> tuple[bool, str]:
+    """Resolve analytics-live runtime mode with strict production no-go guard.
+
+    Live collector remains disabled until API-go decision is explicitly enabled.
+    """
+    cfg_flag = getattr(cfg, "live_collector_enabled", None)
+    if cfg_flag is None:
+        cfg_flag = os.getenv("LIVE_COLLECTOR_ENABLED", "false")
+    requested = _is_enabled(cfg_flag)
+    api_go = _is_enabled(os.getenv("YOUTUBE_ANALYTICS_API_GO", "false"))
+
+    if not api_go:
+        return False, "no_go_api_not_enabled"
+    if not requested:
+        return False, "disabled_by_flag"
+    # Keep disabled by policy even if requested, until explicit rollout approval.
+    return False, "disabled_by_policy"
+
+
 def _attach_audio_mix_metadata(result: dict, creator: object) -> None:
     mix = getattr(creator, "last_audio_mix_metadata", None)
     if isinstance(mix, dict) and mix:
@@ -289,6 +308,21 @@ def run_full_pipeline(
     result["run_id"] = generate_run_id()
     resolved_experiment_id = _resolve_experiment_id(explicit_experiment_id=experiment_id, cfg=cfg)
     result["experiment_id"] = resolved_experiment_id
+    live_collector_enabled, analytics_live_status = _resolve_analytics_live_runtime(cfg)
+    result["live_collector_enabled"] = bool(live_collector_enabled)
+    result["analytics_live_status"] = analytics_live_status
+    result["collector_evaluator_path"] = {
+        "mode": "mock_first",
+        "live_collector_enabled": bool(live_collector_enabled),
+        "analytics_live_status": analytics_live_status,
+    }
+    # Keep observability fields present in production result, even before later stages fill them.
+    result["thumbnail_variants"] = []
+    result["selected_thumbnail_variant"] = None
+    result["thumbnail_selection_policy"] = str(getattr(cfg, "thumbnail_selection_policy", "") or "first").strip().lower() or "first"
+    result["audio_metadata"] = {}
+    result["audio_warning"] = None
+    result["analytics_warning"] = None
     _invoke_fact_bundle_pipeline_adapter(cfg, result)
 
     telemetry_metadata = {
@@ -316,15 +350,58 @@ def run_full_pipeline(
         result[field] = warning
         return warning
 
+    if result.get("analytics_live_status") == "no_go_api_not_enabled":
+        _record_warning(
+            "analytics_warning",
+            code="analytics_live_no_go",
+            message="Live analytics collector disabled until YouTube Analytics API go-decision.",
+            extra={"live_collector_enabled": False},
+        )
+
+    def _refresh_observability_fields() -> None:
+        audio_metadata = result.get("audio_mix_metadata")
+        if not isinstance(audio_metadata, dict):
+            audio_metadata = {}
+            if result.get("music_track_id"):
+                audio_metadata["music_track_id"] = result.get("music_track_id")
+            if result.get("ducking_applied") is not None:
+                audio_metadata["ducking_applied"] = result.get("ducking_applied")
+            if result.get("loudness_target") is not None:
+                audio_metadata["loudness_target"] = result.get("loudness_target")
+        result["audio_metadata"] = audio_metadata
+
+        if not isinstance(result.get("thumbnail_variants"), list):
+            result["thumbnail_variants"] = []
+        if "selected_thumbnail_variant" not in result:
+            result["selected_thumbnail_variant"] = None
+        if not result.get("thumbnail_selection_policy"):
+            result["thumbnail_selection_policy"] = "first"
+        if "audio_warning" not in result:
+            result["audio_warning"] = None
+        if "analytics_warning" not in result:
+            result["analytics_warning"] = None
+
     def _emit(stage: str, event_type: str, payload: dict | None = None):
         try:
+            _refresh_observability_fields()
+            merged_payload = dict(payload or {})
+            # Explicitly expose runtime metadata for production observability.
+            merged_payload["experiment_id"] = result.get("experiment_id")
+            merged_payload["thumbnail_variants"] = result.get("thumbnail_variants") or []
+            merged_payload["selected_thumbnail_variant"] = result.get("selected_thumbnail_variant")
+            merged_payload["thumbnail_selection_policy"] = result.get("thumbnail_selection_policy")
+            merged_payload["audio_metadata"] = result.get("audio_metadata") or {}
+            merged_payload["audio_warning"] = result.get("audio_warning")
+            merged_payload["analytics_warning"] = result.get("analytics_warning")
+            merged_payload["analytics_live_status"] = result.get("analytics_live_status")
+            merged_payload["live_collector_enabled"] = bool(result.get("live_collector_enabled", False))
             envelope = build_event_envelope(
                 content_id=result["content_id"],
                 run_id=result["run_id"],
                 channel_id=result.get("channel"),
                 stage=stage,
                 event_type=event_type,
-                payload=payload or {},
+                payload=merged_payload,
                 experiment_id=telemetry_metadata.get("experiment_id"),
                 experiment_group=telemetry_metadata.get("experiment_group"),
                 prompt_version=telemetry_metadata.get("prompt_version"),
@@ -386,6 +463,7 @@ def run_full_pipeline(
                 result["music_track_id"] = payload["music_track_id"]
                 result["ducking_applied"] = payload["ducking_applied"]
                 result["loudness_target"] = payload["loudness_target"]
+                result["audio_metadata"] = payload
             else:
                 result["short_audio_mix_metadata"] = payload
         except Exception as e:
@@ -405,6 +483,8 @@ def run_full_pipeline(
                 warning.get("error_type"),
                 warning.get("count"),
             )
+        finally:
+            _refresh_observability_fields()
 
     def _extract_diversity_rejection_reasons(rejected_attempts: list | None) -> list[str]:
         reasons: list[str] = []
@@ -808,6 +888,7 @@ def run_full_pipeline(
 
     if generate_only:
         logger.info("Sadece icerik uretme modu.")
+        _refresh_observability_fields()
         return result
 
     try:
@@ -1266,4 +1347,5 @@ def run_full_pipeline(
         logger.info(f"✅ Short: {result['short_url']}")
     logger.info("=" * 60)
 
+    _refresh_observability_fields()
     return result

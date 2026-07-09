@@ -48,6 +48,26 @@ logging.basicConfig(
 logger = logging.getLogger("Scheduler")
 
 
+def _is_enabled(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _resolve_live_collector_runtime() -> tuple[bool, str]:
+    requested = _is_enabled(os.getenv("LIVE_COLLECTOR_ENABLED", "false"))
+    api_go = _is_enabled(os.getenv("YOUTUBE_ANALYTICS_API_GO", "false"))
+
+    if not api_go:
+        return False, "no_go_api_not_enabled"
+    if not requested:
+        return False, "disabled_by_flag"
+    # Keep disabled by policy until explicit rollout approval.
+    return False, "disabled_by_policy"
+
+
 def _resolve_git_head_short() -> str:
     try:
         out = subprocess.check_output(
@@ -558,6 +578,14 @@ def maintenance_job():
 
 def refresh_live_analytics_job():
     """Canlı YouTube Analytics verisini al ve optimization state'i yenile."""
+    live_enabled, live_status = _resolve_live_collector_runtime()
+    if not live_enabled:
+        logger.info(
+            "Live analytics refresh skipped: live_collector_enabled=false analytics_live_status=%s",
+            live_status,
+        )
+        return
+
     try:
         from src.channel_manager import get_channel
         from src.channel_performance import append_performance_snapshot, load_recent_performance_snapshots
@@ -747,7 +775,8 @@ def _run_startup_health_check(*, create_missing_directories: bool, require_teleg
 def run_live_analytics_sync_once() -> int:
     """Canli analytics senkronunu bir kez calistirir."""
     refresh_live_analytics_job()
-    print("Live analytics sync: PASS")
+    _, live_status = _resolve_live_collector_runtime()
+    print(f"Live analytics sync: PASS (analytics_live_status={live_status})")
     return 0
 
 def main():
@@ -845,8 +874,15 @@ def main():
     # Her saatte boş kuyruğu olan kanalları doldur (restart güvencesi)
     schedule.every(1).hour.do(fill_empty_queues_job)
 
-    # Canlı YouTube Analytics senkronu ve optimizasyon döngüsü
-    schedule.every(6).hours.do(refresh_live_analytics_job)
+    # Canlı YouTube Analytics senkronu (no-go durumunda planlama yapılmaz)
+    live_enabled, live_status = _resolve_live_collector_runtime()
+    if live_enabled:
+        schedule.every(6).hours.do(refresh_live_analytics_job)
+    else:
+        logger.info(
+            "Live analytics scheduler disabled: live_collector_enabled=false analytics_live_status=%s",
+            live_status,
+        )
 
     # Ön render başlat (arka planda)
     threading.Thread(target=initial_fill, daemon=True, name="initial-fill").start()

@@ -637,7 +637,7 @@ def test_pipeline_audio_metadata_standardization_writes_fields(monkeypatch, tmp_
     assert result["music_track_id"] == "track_001"
     assert result["ducking_applied"] is True
     assert result["loudness_target"] == -16.0
-    assert "audio_warning" not in result
+    assert result.get("audio_warning") is None
 
 
 def test_pipeline_audio_metadata_validation_fail_open_sets_warning(monkeypatch, tmp_path, caplog):
@@ -672,3 +672,42 @@ def test_pipeline_audio_metadata_validation_fail_open_sets_warning(monkeypatch, 
     assert "audio_warning" in result
     assert result["audio_warning"]["code"] == "audio_metadata_validation_failed"
     assert "Audio metadata fail-open" in caplog.text
+
+
+def test_pipeline_telemetry_payload_contains_observability_metadata(monkeypatch, tmp_path):
+    cfg = _FakeConfig(tmp_path)
+
+    events = []
+
+    def _capture_emit(event, *, logger=None, sink=None):
+        events.append(event)
+
+    monkeypatch.setattr(pipeline, "ContentGenerator", _FakeGenerator)
+    monkeypatch.setattr(pipeline, "TTSEngine", _FakeTTS)
+    monkeypatch.setattr(pipeline, "ImageFetcher", _FakeFetcher)
+    monkeypatch.setattr(pipeline, "VideoCreator", _FakeCreator)
+    monkeypatch.setattr(pipeline, "YouTubeUploader", _FakeUploader)
+    monkeypatch.setattr(pipeline, "build_default_fact_provider", lambda: object())
+    monkeypatch.setattr(pipeline, "validate_script_factual_freshness", _fact_check_ok)
+    monkeypatch.setattr(pipeline, "emit_event", _capture_emit)
+
+    import src.shorts_creator as shorts_creator_module
+
+    monkeypatch.setattr(shorts_creator_module, "ShortsCreator", _FakeShortsCreator)
+
+    result = pipeline.run_full_pipeline(topic="x", generate_only=False, channel_cfg=cfg, experiment_id="exp_keep")
+
+    assert result["experiment_id"] == "exp_keep"
+    assert result["live_collector_enabled"] is False
+    assert result["analytics_live_status"] == "no_go_api_not_enabled"
+
+    assert events
+    payload = events[-1].get("payload", {})
+    assert payload.get("experiment_id") == "exp_keep"
+    assert "thumbnail_variants" in payload
+    assert "selected_thumbnail_variant" in payload
+    assert "thumbnail_selection_policy" in payload
+    assert "audio_metadata" in payload
+    assert "audio_warning" in payload
+    assert "analytics_warning" in payload
+    assert payload.get("analytics_live_status") == "no_go_api_not_enabled"

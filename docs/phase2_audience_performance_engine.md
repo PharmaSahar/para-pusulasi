@@ -13,6 +13,7 @@ Phase 2 is executed in four ordered workstreams. No workstream is considered com
 4. Analytics Intelligence
 
 Thumbnail Intelligence başlangıç kontratı: [docs/thumbnail_intelligence_contract.md](docs/thumbnail_intelligence_contract.md)
+Audio Intelligence başlangıç kontratı: [docs/audio_intelligence_contract.md](docs/audio_intelligence_contract.md)
 
 ## Scope
 - Experiment registry and experiment lifecycle controls.

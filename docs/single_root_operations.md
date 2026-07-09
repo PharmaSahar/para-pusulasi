@@ -28,6 +28,7 @@ Remove auxiliary worktrees only after all checks below are true.
 - `python ops/thumbnail_permission_report.py`
 - `python ops/thumbnail_scope_audit.py`
 - `python ops/thumbnail_only_probe.py --channel <channel_id> --video-id <existing_video_id> [--thumbnail <jpg_path>]`
+- `python ops/activation_controller.py --channel <channel_id>`
 - `python ops/reset_thumbnail_permission_cache.py <channel_id|all>`
 - `python ops/metrics_health_report.py`
 
@@ -62,3 +63,8 @@ Probe yorumlama notu:
 - Fact Bundle runs enabled from the canonical root.
 - Retry regeneration for unverifiable volatile claims remains fail-closed if the second pass still violates fact-check rules.
 - Retry generation was hardened to avoid repeating speculative crypto and market-price target framing.
+
+## Activation Controller
+- Activation Controller remains scheduler-independent and is operated as an ops tool.
+- Recommended periodic mode is read-only report generation (no activation flags).
+- Runbook: `docs/activation_controller_runbook.md`

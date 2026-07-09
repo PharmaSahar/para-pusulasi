@@ -49,6 +49,17 @@ _RETRY_TOPIC_BY_CLAIM_TYPE = {
 }
 
 
+_REQUIRED_SNAPSHOT_FIELDS = (
+    "performance_schema_version",
+    "day",
+    "created_at",
+    "channel_id",
+    "content_id",
+    "run_id",
+    "title",
+)
+
+
 def _is_enabled(value: object) -> bool:
     if isinstance(value, bool):
         return value
@@ -153,6 +164,49 @@ def _resolve_posting_slot(publish_at: str | None) -> str:
     return "morning" if now_local.hour < 15 else "evening"
 
 
+def _attach_audio_mix_metadata(result: dict, creator: object) -> None:
+    mix = getattr(creator, "last_audio_mix_metadata", None)
+    if isinstance(mix, dict) and mix:
+        result["audio_mix"] = mix
+
+
+def _validate_performance_snapshot(snapshot: dict) -> tuple[bool, dict]:
+    """Validate required performance snapshot fields before append."""
+    if not isinstance(snapshot, dict):
+        return False, {"reason": "not_a_dict"}
+
+    missing_fields: list[str] = []
+    invalid_fields: list[str] = []
+
+    for field in _REQUIRED_SNAPSHOT_FIELDS:
+        value = snapshot.get(field)
+        if value is None:
+            missing_fields.append(field)
+            continue
+        if not str(value).strip():
+            invalid_fields.append(field)
+
+    day_raw = str(snapshot.get("day") or "").strip()
+    if day_raw:
+        try:
+            datetime.fromisoformat(day_raw)
+        except Exception:
+            invalid_fields.append("day")
+
+    created_raw = str(snapshot.get("created_at") or "").strip()
+    if created_raw:
+        try:
+            datetime.fromisoformat(created_raw.replace("Z", "+00:00"))
+        except Exception:
+            invalid_fields.append("created_at")
+
+    is_valid = not missing_fields and not invalid_fields
+    return is_valid, {
+        "missing_fields": missing_fields,
+        "invalid_fields": invalid_fields,
+    }
+
+
 def run_full_pipeline(
     topic: str | None = None,
     generate_only: bool = False,
@@ -182,6 +236,21 @@ def run_full_pipeline(
         "model_version": os.getenv("MODEL_VERSION"),
     }
 
+    def _record_warning(field: str, *, code: str, message: str, extra: dict | None = None):
+        previous = result.get(field)
+        count = 1
+        if isinstance(previous, dict):
+            count = int(previous.get("count", 0) or 0) + 1
+        warning = {
+            "code": code,
+            "message": message,
+            "count": count,
+        }
+        if isinstance(extra, dict):
+            warning.update(extra)
+        result[field] = warning
+        return warning
+
     def _emit(stage: str, event_type: str, payload: dict | None = None):
         try:
             envelope = build_event_envelope(
@@ -200,9 +269,26 @@ def run_full_pipeline(
                 model_version=telemetry_metadata.get("model_version"),
             )
             emit_event(envelope, logger=logger)
-        except Exception:
+        except Exception as e:
             # Telemetry must be fail-open and never affect production flow.
-            pass
+            warning = _record_warning(
+                "telemetry_warning",
+                code="telemetry_emit_failed",
+                message="Telemetry event emit failed; pipeline continued.",
+                extra={
+                    "stage": stage,
+                    "event_type": event_type,
+                    "error_type": e.__class__.__name__,
+                },
+            )
+            logger.warning(
+                "Telemetry emit fail-open: code=%s stage=%s event_type=%s error_type=%s count=%s",
+                warning.get("code"),
+                warning.get("stage"),
+                warning.get("event_type"),
+                warning.get("error_type"),
+                warning.get("count"),
+            )
 
     fact_provider = build_default_fact_provider()
     fact_check_metadata: dict | None = None
@@ -453,6 +539,12 @@ def run_full_pipeline(
         tts = TTSEngine(channel_cfg=cfg)
         audio_path = tts.generate_audio(content.script)
         result["audio_path"] = audio_path
+        chain = getattr(tts, "last_tts_fallback_chain", None)
+        if isinstance(chain, list) and chain:
+            result["tts_fallback_chain"] = chain
+        warning = getattr(tts, "last_tts_warning", None)
+        if isinstance(warning, dict) and warning:
+            result["tts_warning"] = warning
 
     # ─── ADIM 2.5: Stok Video Klipleri + Grafik ──────────────────────────────
     logger.info("Pexels video klipleri indiriliyor...")
@@ -516,6 +608,7 @@ def run_full_pipeline(
             image_paths=image_paths or None,
             script=content.script,
         )
+        _attach_audio_mix_metadata(result, creator)
         # Thumbnail için konuya özel ayrı fotoğraf çek (video klipten farklı)
         try:
             thumb_bg = None
@@ -570,8 +663,20 @@ def run_full_pipeline(
             output_resolution=f"{getattr(cfg, 'video_width', 1920)}x{getattr(cfg, 'video_height', 1080)}",
             output_fps=24,
         )
-    except Exception:
+    except Exception as e:
         result["render_metrics"] = {}
+        warning = _record_warning(
+            "metrics_warning",
+            code="render_metrics_build_failed",
+            message="Render metrics build failed; pipeline continued.",
+            extra={"error_type": e.__class__.__name__},
+        )
+        logger.warning(
+            "Metrics fail-open: code=%s error_type=%s count=%s",
+            warning.get("code"),
+            warning.get("error_type"),
+            warning.get("count"),
+        )
 
     # ─── ADIM 3.5: YouTube Short ──────────────────────────────────────────────
     _emit("shorts_render", "stage_started")
@@ -589,6 +694,9 @@ def run_full_pipeline(
                 image_paths=image_paths[:2] if image_paths else None,  # 2 clip: RAM tasarrufu
             )
             result["short_path"] = short_path
+            short_mix = getattr(sc, "last_audio_mix_metadata", None)
+            if isinstance(short_mix, dict) and short_mix:
+                result["short_audio_mix"] = short_mix
             logger.info(f"Short hazır: {short_path}")
             break
         except Exception as e:
@@ -775,9 +883,53 @@ def run_full_pipeline(
             youtube_analytics=result.get("youtube_analytics", {}),
         )
         result["performance_snapshot"] = performance_snapshot
-        append_performance_snapshot(performance_snapshot)
-    except Exception:
+    except Exception as e:
         result["performance_snapshot"] = {}
+        warning = _record_warning(
+            "metrics_warning",
+            code="performance_snapshot_build_failed",
+            message="Performance snapshot build failed; pipeline continued.",
+            extra={"error_type": e.__class__.__name__},
+        )
+        logger.warning(
+            "Metrics fail-open: code=%s error_type=%s count=%s",
+            warning.get("code"),
+            warning.get("error_type"),
+            warning.get("count"),
+        )
+    else:
+        snapshot_valid, snapshot_issues = _validate_performance_snapshot(performance_snapshot)
+        if not snapshot_valid:
+            warning = _record_warning(
+                "analytics_warning",
+                code="performance_snapshot_validation_failed",
+                message="Performance snapshot validation failed; append skipped.",
+                extra=snapshot_issues,
+            )
+            logger.warning(
+                "Analytics fail-open: code=%s missing=%s invalid=%s count=%s",
+                warning.get("code"),
+                ",".join(warning.get("missing_fields", []) or []) or "-",
+                ",".join(warning.get("invalid_fields", []) or []) or "-",
+                warning.get("count"),
+            )
+            result.setdefault("performance_snapshot_append_skipped", True)
+        else:
+            try:
+                append_performance_snapshot(performance_snapshot)
+            except Exception as e:
+                warning = _record_warning(
+                    "metrics_warning",
+                    code="performance_snapshot_append_failed",
+                    message="Performance snapshot append failed; pipeline continued.",
+                    extra={"error_type": e.__class__.__name__},
+                )
+                logger.warning(
+                    "Metrics fail-open: code=%s error_type=%s count=%s",
+                    warning.get("code"),
+                    warning.get("error_type"),
+                    warning.get("count"),
+                )
 
     logger.info("=" * 60)
     logger.info(f"✅ TAMAMLANDI! Video: {result.get('youtube_url')}")

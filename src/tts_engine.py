@@ -66,14 +66,16 @@ class TTSEngine:
         # Azure TTS — ElevenLabs yoksa kullan (öncelik 2)
         self.azure_key = os.getenv("AZURE_TTS_KEY", "")
         self.azure_region = os.getenv("AZURE_TTS_REGION", "eastus")
-        self.use_azure = bool(self.azure_key) and not self.use_elevenlabs
+        self.use_azure = bool(self.azure_key) and not str(self.azure_key).startswith("your_")
+
+        # Visible runtime metadata for pipeline/result-level observability.
+        self.last_tts_fallback_chain = []
+        self.last_tts_warning = None
 
         if self.use_elevenlabs:
             logger.info(f"ElevenLabs TTS motoru [{self._el_voice_id[:12]}] (premium ses).")
         elif self.use_azure:
             logger.info("Azure Neural TTS motoru kullanılıyor (SSML + duygu).")
-        elif self.use_azure:
-            logger.info(f"Azure Neural TTS motoru (SSML + duygu).")
         else:
             logger.info("Edge TTS motoru kullanılıyor (ücretsiz).")
 
@@ -87,19 +89,61 @@ class TTSEngine:
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         clean_text = self._clean_script(text)
 
+        self.last_tts_fallback_chain = []
+        self.last_tts_warning = None
+
+        providers = []
         if self.use_azure:
+            providers.append(("azure", self._generate_azure_tts))
+        if self.use_elevenlabs:
+            providers.append(("elevenlabs", self._generate_elevenlabs))
+        providers.append(("edge", self._generate_edge_tts))
+
+        for idx, (provider_name, provider_fn) in enumerate(providers):
             try:
-                self._generate_azure_tts(clean_text, output_path)
+                provider_fn(clean_text, output_path)
+                self.last_tts_fallback_chain.append(
+                    {
+                        "provider": provider_name,
+                        "status": "success",
+                    }
+                )
+                break
             except Exception as e:
-                logger.warning(f"Azure TTS başarısız, Edge TTS'e düşülüyor: {e}")
-                self._generate_edge_tts(clean_text, output_path)
-        elif self.use_elevenlabs:
-            self._generate_elevenlabs(clean_text, output_path)
-        else:
-            self._generate_edge_tts(clean_text, output_path)
+                error_class = self._classify_tts_error(e)
+                next_provider = providers[idx + 1][0] if idx + 1 < len(providers) else None
+                warning = {
+                    "provider": provider_name,
+                    "status": "failed",
+                    "error_type": e.__class__.__name__,
+                    "error_class": error_class,
+                    "next_provider": next_provider,
+                }
+                self.last_tts_fallback_chain.append(warning)
+                self.last_tts_warning = warning
+
+                if next_provider is None:
+                    raise
+
+                logger.warning(
+                    "TTS fallback: provider=%s next_provider=%s error_type=%s error_class=%s",
+                    provider_name,
+                    next_provider,
+                    warning["error_type"],
+                    error_class,
+                )
 
         logger.info(f"Ses dosyası oluşturuldu: {output_path}")
         return output_path
+
+    def _classify_tts_error(self, err: Exception) -> str:
+        """Classify errors as transient/permanent for fallback visibility."""
+        msg = str(err).lower()
+        if any(k in msg for k in ("timeout", "tempor", "connection", "dns", "reset", "unreachable")):
+            return "transient"
+        if any(k in msg for k in ("401", "403", "unauthorized", "forbidden", "invalid api", "api key")):
+            return "permanent"
+        return "unknown"
 
     def _clean_script(self, script: str) -> str:
         """Script'ten Markdown başlıklarını temizle."""

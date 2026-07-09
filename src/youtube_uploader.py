@@ -4,6 +4,7 @@ YouTube Data API v3 ile video ve thumbnail yükler.
 """
 import logging
 import os
+import re
 import socket
 import time
 from pathlib import Path
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 # YouTube API yeniden deneme ayarları
 MAX_RETRIES = 3
-RETRY_EXCEPTIONS = (IOError, HttpError, ServerNotFoundError)
+RETRY_EXCEPTIONS = (IOError, ServerNotFoundError, socket.timeout, TimeoutError)
 YOUTUBE_API_HOST = "youtube.googleapis.com"
 
 
@@ -30,6 +31,59 @@ class YouTubeUploader:
         self.channel_cfg = channel_cfg
         self._can_upload_thumbnail = True
         self._can_add_comment = True
+
+    def _resolve_default_language(self) -> str:
+        """Kanal dili -> global config -> güvenli default sırasıyla çöz."""
+        lang = None
+        if self.channel_cfg is not None:
+            lang = (
+                getattr(self.channel_cfg, "channel_language", None)
+                or getattr(self.channel_cfg, "language", None)
+            )
+        if not lang:
+            lang = getattr(config, "channel_language", None)
+
+        normalized = str(lang or "").strip().replace("_", "-")
+        if re.fullmatch(r"[a-zA-Z]{2,3}(?:-[a-zA-Z]{2,4})?", normalized):
+            return normalized
+        return "en"
+
+    def _classify_http_error(self, err: HttpError) -> tuple[str, bool]:
+        """HTTP hatasını sınıflandır: (reason, retryable)."""
+        status = int(getattr(getattr(err, "resp", None), "status", 0) or 0)
+        content = getattr(err, "content", b"")
+        if isinstance(content, bytes):
+            detail = content.decode("utf-8", errors="ignore").lower()
+        else:
+            detail = str(content).lower()
+
+        if 500 <= status <= 599:
+            return "server_error", True
+
+        if status == 408:
+            return "request_timeout", True
+
+        if status == 409:
+            # Resumable upload state/session çakışmaları transient olabilir.
+            if any(k in detail for k in ("resumable", "upload", "session", "state")):
+                return "resumable_conflict", True
+            return "conflict", False
+
+        if status == 429:
+            return "rate_limited", True
+
+        # 4xx'lerde kör retry kapalı: credential/quota/validation kalıcı sayılır.
+        if status in {401, 403}:
+            if "quota" in detail or "ratelimit" in detail or "rate_limit" in detail:
+                return "quota_or_rate_limit", False
+            return "credential_or_permission", False
+        if status == 400:
+            return "validation_error", False
+        if 400 <= status <= 499:
+            return "client_error", False
+
+        # Beklenmeyen durumda güvenli taraf: retry etme.
+        return "unknown_http_error", False
 
     def _get_service(self):
         if not self.service:
@@ -73,7 +127,7 @@ class YouTubeUploader:
                 "description": content.seo_description()[:5000],
                 "tags": clean_tags,
                 "categoryId": content.category_id,
-                "defaultLanguage": config.channel_language,
+                "defaultLanguage": self._resolve_default_language(),
             },
             "status": status,
         }
@@ -173,12 +227,24 @@ class YouTubeUploader:
                     progress = int(status.progress() * 100)
                     logger.info(f"Yükleniyor... %{progress}")
             except HttpError as e:
-                if e.resp.status in [500, 502, 503, 504] and retry < MAX_RETRIES:
+                reason, retryable = self._classify_http_error(e)
+                if retryable and retry < MAX_RETRIES:
                     retry += 1
                     wait = 2 ** retry
-                    logger.warning(f"Sunucu hatası, {wait}s sonra yeniden denenecek ({retry}/{MAX_RETRIES})")
+                    logger.warning(
+                        "Transient upload HTTP hatası (%s), %ss sonra yeniden denenecek (%s/%s)",
+                        reason,
+                        wait,
+                        retry,
+                        MAX_RETRIES,
+                    )
                     time.sleep(wait)
                 else:
+                    logger.error(
+                        "Kalıcı upload HTTP hatası (%s, status=%s) - retry yok",
+                        reason,
+                        getattr(getattr(e, "resp", None), "status", "unknown"),
+                    )
                     raise
             except ServerNotFoundError as e:
                 if retry < MAX_RETRIES:
@@ -189,11 +255,17 @@ class YouTubeUploader:
                     time.sleep(wait)
                 else:
                     raise
-            except RETRY_EXCEPTIONS:
+            except RETRY_EXCEPTIONS as e:
                 if retry < MAX_RETRIES:
                     retry += 1
                     wait = 2 ** retry
-                    logger.warning(f"Ağ hatası, {wait}s sonra yeniden denenecek ({retry}/{MAX_RETRIES})")
+                    logger.warning(
+                        "Transient upload hatası (%s), %ss sonra yeniden denenecek (%s/%s)",
+                        type(e).__name__,
+                        wait,
+                        retry,
+                        MAX_RETRIES,
+                    )
                     time.sleep(wait)
                 else:
                     raise

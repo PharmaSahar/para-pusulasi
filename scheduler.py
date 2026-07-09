@@ -55,6 +55,7 @@ except ValueError:
 TZ = pytz.timezone("Europe/Istanbul")
 QUEUE_FILE = "output/queue/channel_queue.json"
 QUEUE_LOCK = threading.RLock()
+RENDER_LOCKS_LOCK = threading.Lock()
 
 # Thread havuzu
 render_executor = ThreadPoolExecutor(max_workers=MAX_PARALLEL_RENDERS, thread_name_prefix="render")
@@ -141,6 +142,18 @@ def update_queue(mutator):
             except Exception as e:
                 logger.warning("Shadow mirror failed (non-blocking): %s", e)
 
+        return queue
+
+
+def _get_channel_render_lock(channel_id: str) -> threading.Lock:
+    """Kanal bazlı render lock nesnesini thread-safe biçimde döndür."""
+    with RENDER_LOCKS_LOCK:
+        lock = render_locks.get(channel_id)
+        if lock is None:
+            lock = threading.Lock()
+            render_locks[channel_id] = lock
+        return lock
+
 
 def get_ready_channels() -> list:
     """Token'i olan tüm kanalları keşfet."""
@@ -210,10 +223,9 @@ def render_and_schedule(channel_id: str):
         def notify_error(*a, **kw): pass
         def save_used_topic(*a): pass
 
-    if channel_id not in render_locks:
-        render_locks[channel_id] = threading.Lock()
-
-    if not render_locks[channel_id].acquire(blocking=False):
+    channel_lock = _get_channel_render_lock(channel_id)
+    acquired = channel_lock.acquire(blocking=False)
+    if not acquired:
         logger.info(f"[{channel_id}] Render zaten devam ediyor, atlandı.")
         return
 
@@ -313,7 +325,8 @@ def render_and_schedule(channel_id: str):
         except Exception:
             pass
     finally:
-        render_locks[channel_id].release()
+        if acquired:
+            channel_lock.release()
         force_cleanup()  # Belleği temizle
 
 
@@ -369,9 +382,17 @@ def initial_fill():
     # Başlangıçta bayat kuyruk girişlerini temizle
     try:
         from src.scheduler_utils import cleanup_stale_queue
-        queue, freed = cleanup_stale_queue(queue, TZ)
+        cleanup_state = {"freed": []}
+
+        def _cleanup_mutator(current_queue):
+            cleaned, freed = cleanup_stale_queue(current_queue, TZ)
+            current_queue.clear()
+            current_queue.update(cleaned)
+            cleanup_state["freed"] = list(freed)
+
+        queue = update_queue(_cleanup_mutator)
+        freed = cleanup_state["freed"]
         if freed:
-            save_queue(queue)
             logger.info(f"Başlangıç temizliği: {len(freed)} kanal için bayat kuyruk temizlendi")
     except Exception as e:
         logger.warning(f"Bayat kuyruk temizleme hatası: {e}")
@@ -468,10 +489,17 @@ def maintenance_job():
         rotate_log_file(log_file, max_lines=8000)
 
     # 3. Bayat kuyruk girişlerini temizle + boşalan kanallar için render tetikle
-    queue = load_queue()
-    queue, freed = cleanup_stale_queue(queue, TZ)
+    cleanup_state = {"freed": []}
+
+    def _cleanup_mutator(current_queue):
+        cleaned, freed = cleanup_stale_queue(current_queue, TZ)
+        current_queue.clear()
+        current_queue.update(cleaned)
+        cleanup_state["freed"] = list(freed)
+
+    update_queue(_cleanup_mutator)
+    freed = cleanup_state["freed"]
     if freed:
-        save_queue(queue)
         for cid in freed:
             logger.info(f"[{cid}] Bayat kuyruk temizlendi → yeni render başlatılıyor")
             render_executor.submit(render_and_schedule, cid)
@@ -620,11 +648,16 @@ def fill_empty_queues_job():
     Günde 2 upload olan kanallar 2 video kuyruğa alır.
     """
     try:
-        queue = load_queue()
         from src.scheduler_utils import cleanup_stale_queue
-        queue, freed = cleanup_stale_queue(queue, TZ)
-        if freed:
-            save_queue(queue)
+        cleanup_state = {"freed": []}
+
+        def _cleanup_mutator(current_queue):
+            cleaned, freed = cleanup_stale_queue(current_queue, TZ)
+            current_queue.clear()
+            current_queue.update(cleaned)
+            cleanup_state["freed"] = list(freed)
+
+        queue = update_queue(_cleanup_mutator)
 
         ready = get_ready_channels()
         now = datetime.now(TZ)

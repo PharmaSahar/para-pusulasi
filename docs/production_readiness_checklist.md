@@ -24,6 +24,9 @@ Single release gate for go/no-go decisions before production rollout.
 
 ## C. Pipeline and Scheduler Gates
 - [ ] Scheduler health is OK.
+- [ ] Running scheduler PID is alive and command is `scheduler.py`.
+- [ ] Running scheduler cwd matches canonical root.
+- [ ] Runtime build info is visible in logs (`BUILD_INFO scheduler git_sha=...`).
 - [ ] Lock/queue race hardening is present or mitigated.
 - [ ] Pipeline telemetry writes stage outcomes.
 - [ ] Fail-open events emit warning/metric.
@@ -31,6 +34,8 @@ Single release gate for go/no-go decisions before production rollout.
 
 ## D. Infra and Credential Gates
 - [ ] Upload credentials validated.
+- [ ] Thumbnail upload risk is mitigated (403 storm control/cache active).
+- [ ] Thumbnail upload is resolved: thumbnail-only probe shows 3 consecutive successful `thumbnails.set` calls on the target channel.
 - [ ] Required API keys/tokens are available and not expired.
 - [ ] Disk space is sufficient for planned batch.
 - [ ] API quota budget is sufficient for planned run.
@@ -63,6 +68,8 @@ Decision note:
 ## Post-Release Verification (First 30-60 Minutes)
 - [ ] First scheduled run completed.
 - [ ] Upload success ratio within expected range.
+- [ ] Experiment trace completeness >= 99% (target 100%).
+- [ ] Daily metrics coverage >= 95% for CTR, impressions, watch_time_hours, average_view_duration_seconds.
 - [ ] No spike in validation failures.
 - [ ] No spike in provider timeouts/rate limits.
 - [ ] Dashboard metrics and logs are normal.

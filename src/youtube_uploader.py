@@ -7,6 +7,7 @@ import os
 import re
 import socket
 import time
+import json
 from pathlib import Path
 
 from googleapiclient.errors import HttpError
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 MAX_RETRIES = 3
 RETRY_EXCEPTIONS = (IOError, ServerNotFoundError, socket.timeout, TimeoutError)
 YOUTUBE_API_HOST = "youtube.googleapis.com"
+THUMBNAIL_PERMISSION_CACHE = Path("logs/thumbnail_permission_cache.json")
 
 
 class YouTubeUploader:
@@ -31,6 +33,9 @@ class YouTubeUploader:
         self.channel_cfg = channel_cfg
         self._can_upload_thumbnail = True
         self._can_add_comment = True
+        self._thumbnail_permission_state = self._load_thumbnail_permission_state()
+        if self._thumbnail_permission_state is False:
+            self._can_upload_thumbnail = False
 
     def _resolve_default_language(self) -> str:
         """Kanal dili -> global config -> güvenli default sırasıyla çöz."""
@@ -150,6 +155,8 @@ class YouTubeUploader:
 
         if self._can_upload_thumbnail and thumbnail_path and Path(thumbnail_path).exists():
             self._upload_thumbnail(video_id, thumbnail_path)
+        elif thumbnail_path and Path(thumbnail_path).exists() and not self._can_upload_thumbnail:
+            logger.info("Thumbnail upload skipped by cached permission state (channel=%s)", self._channel_id())
 
         # Playlist ve yorum: quota koruma için devre dışı
         # Her upload 1600 birim, günlük limit 10000 — playlist/yorum ekstra birim yiyor
@@ -300,13 +307,76 @@ class YouTubeUploader:
                 videoId=video_id,
                 media_body=MediaFileUpload(thumbnail_path, mimetype="image/jpeg"),
             ).execute()
+            self._set_thumbnail_permission_state(True)
             logger.info(f"Thumbnail yüklendi: {thumbnail_path}")
         except HttpError as e:
             if getattr(e, "resp", None) and e.resp.status == 403:
                 self._can_upload_thumbnail = False
-                logger.info("Thumbnail yükleme izni yok (403) -> thumbnail yükleme bu oturum için devre dışı.")
+                token_path = getattr(self.channel_cfg, "token_path", "youtube_token.pickle")
+                channel_id = getattr(self.channel_cfg, "channel_id", "default")
+                content = getattr(e, "content", b"")
+                detail = content.decode("utf-8", errors="ignore") if isinstance(content, (bytes, bytearray)) else str(content)
+                reason = self._classify_thumbnail_403_reason(detail)
+                logger.warning(
+                    "Thumbnail yükleme izni yok (403) -> devre dışı. channel=%s token=%s reason=%s detail=%s remediation=thumbnail_only_probe",
+                    channel_id,
+                    token_path,
+                    reason,
+                    detail[:400],
+                )
+                self._set_thumbnail_permission_state(False, reason=reason)
             else:
                 logger.warning(f"Thumbnail yüklenemedi: {e}")
+
+    def _channel_id(self) -> str:
+        return str(getattr(self.channel_cfg, "channel_id", "default"))
+
+    def _load_thumbnail_permission_state(self) -> bool | None:
+        path = THUMBNAIL_PERMISSION_CACHE
+        if not path.exists():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            state = (payload.get("channels") or {}).get(self._channel_id(), {}).get("can_upload_thumbnail")
+            if isinstance(state, bool):
+                return state
+        except Exception:
+            return None
+        return None
+
+    def _set_thumbnail_permission_state(self, can_upload: bool, reason: str | None = None) -> None:
+        path = THUMBNAIL_PERMISSION_CACHE
+        try:
+            existing = {}
+            if path.exists():
+                existing = json.loads(path.read_text(encoding="utf-8"))
+            channels = dict(existing.get("channels") or {})
+            prev = channels.get(self._channel_id(), {})
+            prev_streak = int(prev.get("success_streak", 0) or 0)
+            success_streak = (prev_streak + 1) if can_upload else 0
+            channels[self._channel_id()] = {
+                "can_upload_thumbnail": bool(can_upload),
+                "success_streak": success_streak,
+                "last_reason": reason,
+                "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            }
+            data = {"channels": channels}
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _classify_thumbnail_403_reason(self, detail: str) -> str:
+        text = (detail or "").lower()
+        if "insufficientpermissions" in text or "forbidden" in text and "permission" in text:
+            return "ownership_or_brand_permission"
+        if "channel" in text and "not found" in text:
+            return "token_channel_mismatch"
+        if "thumbnail" in text and "disabled" in text:
+            return "custom_thumbnail_eligibility"
+        if "policy" in text or "verification" in text:
+            return "api_policy_or_verification"
+        return "forbidden_unknown"
 
     def get_channel_stats(self) -> dict:
         """Kanal istatistiklerini getir."""

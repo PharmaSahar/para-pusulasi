@@ -72,6 +72,16 @@ def _get_credentials(*, scopes: list[str], token_path: str, secrets_path: str, c
         with open(token_path, "rb") as f:
             credentials = pickle.load(f)
 
+    if credentials is not None:
+        try:
+            has_required_scopes = credentials.has_scopes(scopes)
+        except Exception:
+            has_required_scopes = False
+        if not has_required_scopes:
+            channel_name = channel_cfg.name if channel_cfg else "Ana Kanal"
+            print(f"[{channel_name}] Token scope yetersiz, yeniden yetkilendirme gerekiyor: {token_path}")
+            credentials = None
+
     if not credentials or not credentials.valid:
         if credentials and credentials.expired and credentials.refresh_token:
             credentials.refresh(Request())

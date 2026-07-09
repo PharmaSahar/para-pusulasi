@@ -21,6 +21,13 @@ Single release gate for go/no-go decisions before production rollout.
 - [ ] Snapshot validation guard is active.
 - [ ] Thumbnail diversity guard is active.
 - [ ] Thumbnail readability guard is active.
+- [ ] Thumbnail Intelligence metadata gate: `thumbnail_variants` exists.
+- [ ] Thumbnail Intelligence metadata gate: `selected_thumbnail_variant` exists.
+- [ ] Thumbnail Intelligence metadata gate: `experiment_id` is preserved across pipeline result fields.
+- [ ] Audio Intelligence metadata gate: `loudness_target` exists.
+- [ ] Audio Intelligence metadata gate: `ducking_applied` exists and is boolean.
+- [ ] Audio Intelligence metadata gate: `music_track_id` exists and is non-empty.
+- [ ] Audio Intelligence metadata gate: if `audio_warning` exists, reason code is in standard allowed set.
 
 ## C. Pipeline and Scheduler Gates
 - [ ] Scheduler health is OK.
@@ -39,6 +46,7 @@ Single release gate for go/no-go decisions before production rollout.
 - [ ] Required API keys/tokens are available and not expired.
 - [ ] Disk space is sufficient for planned batch.
 - [ ] API quota budget is sufficient for planned run.
+- [ ] Analytics live rollout gate: without YouTube Analytics API Go decision, live collector must NOT be connected to production pipeline.
 
 ## E. External Provider and Fallback Gates
 - [ ] TTS default path is healthy.
@@ -52,6 +60,8 @@ Single release gate for go/no-go decisions before production rollout.
 - [ ] Error classification is visible in logs/metrics.
 - [ ] Alerting routes for critical failures are ready.
 - [ ] Runbook links are up to date.
+- [ ] No-upload smoke requirement: 80-test targeted regression (or approved current smoke package) passes before cutover.
+- [ ] Working tree hygiene: unrelated music/media files are not mixed into reliability/performance cutover commits.
 
 ## G. Rollback and Incident Readiness
 - [ ] Rollback plan documented and reviewed.

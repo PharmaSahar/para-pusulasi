@@ -4,6 +4,7 @@ Tam Otomasyon Pipeline - Tek ve Cok Kanalli Mod
 import logging
 import os
 import re
+import json
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,6 +19,7 @@ from .analytics_join import build_analytics_join_metadata
 from .channel_performance import append_performance_snapshot, build_performance_snapshot
 from .performance_optimizer import build_optimization_guidance, load_channel_optimization_state
 from .render_metrics import build_render_metrics
+from .experiment_registry import build_experiment_id, DEFAULT_SCHEMA_VERSION
 from .telemetry import (
     build_event_envelope,
     emit_event,
@@ -170,6 +172,53 @@ def _attach_audio_mix_metadata(result: dict, creator: object) -> None:
         result["audio_mix"] = mix
 
 
+def _resolve_experiment_id(*, explicit_experiment_id: str | None, cfg: object) -> str:
+    if explicit_experiment_id and str(explicit_experiment_id).strip():
+        return str(explicit_experiment_id).strip()
+
+    cfg_value = getattr(cfg, "experiment_id", None)
+    if cfg_value and str(cfg_value).strip():
+        return str(cfg_value).strip()
+
+    env_value = os.getenv("EXPERIMENT_ID")
+    if env_value and str(env_value).strip():
+        return str(env_value).strip()
+
+    return build_experiment_id()
+
+
+def _append_pipeline_run_registry_event(
+    *,
+    experiment_id: str,
+    run_id: str,
+    channel_id: str,
+    topic: str | None,
+    title: str,
+    schema_version: str,
+) -> None:
+    """Append pipeline run trace event to registry JSONL in fail-open mode."""
+    registry_path = Path(os.getenv("EXPERIMENT_REGISTRY_PATH", "output/telemetry/experiments.jsonl"))
+    payload = {
+        "experiment_id": experiment_id,
+        "run_id": run_id,
+        "channel_id": channel_id,
+        "topic": (topic or "").strip() or None,
+        "title": (title or "").strip() or None,
+    }
+    event = {
+        "event_type": "pipeline_run",
+        "occurred_at": datetime.now(timezone.utc).isoformat(),
+        "experiment_id": experiment_id,
+        "schema_version": schema_version,
+        "created_by": "pipeline",
+        "payload": payload,
+    }
+
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    with registry_path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(event, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n")
+
+
 def _validate_performance_snapshot(snapshot: dict) -> tuple[bool, dict]:
     """Validate required performance snapshot fields before append."""
     if not isinstance(snapshot, dict):
@@ -214,6 +263,7 @@ def run_full_pipeline(
     channel_cfg=None,
     publish_at: str | None = None,
     posting_slot: str | None = None,
+    experiment_id: str | None = None,
 ) -> dict:
     """Tam pipeline: icerik -> ses -> video -> YouTube yukle."""
     # Aktif config belirle
@@ -224,10 +274,12 @@ def run_full_pipeline(
     result["slot"] = slot
     result["content_id"] = generate_content_id()
     result["run_id"] = generate_run_id()
+    resolved_experiment_id = _resolve_experiment_id(explicit_experiment_id=experiment_id, cfg=cfg)
+    result["experiment_id"] = resolved_experiment_id
     _invoke_fact_bundle_pipeline_adapter(cfg, result)
 
     telemetry_metadata = {
-        "experiment_id": os.getenv("EXPERIMENT_ID"),
+        "experiment_id": resolved_experiment_id,
         "experiment_group": os.getenv("EXPERIMENT_GROUP"),
         "prompt_version": getattr(cfg, "prompt_version", None) or os.getenv("PROMPT_VERSION"),
         "channel_dna_version": getattr(cfg, "channel_dna_version", None) or os.getenv("CHANNEL_DNA_VERSION"),
@@ -412,6 +464,29 @@ def run_full_pipeline(
             additional_guidance=optimization_guidance or None,
         )
 
+    try:
+        _append_pipeline_run_registry_event(
+            experiment_id=resolved_experiment_id,
+            run_id=result["run_id"],
+            channel_id=str(result.get("channel", "default")),
+            topic=topic,
+            title=getattr(content, "title", ""),
+            schema_version=DEFAULT_SCHEMA_VERSION,
+        )
+    except Exception as e:
+        warning = _record_warning(
+            "registry_warning",
+            code="pipeline_registry_event_append_failed",
+            message="Pipeline registry event append failed; pipeline continued.",
+            extra={"error_type": e.__class__.__name__},
+        )
+        logger.warning(
+            "Registry fail-open: code=%s error_type=%s count=%s",
+            warning.get("code"),
+            warning.get("error_type"),
+            warning.get("count"),
+        )
+
     diversity_video_record = None
     thumbnail_experiments = {}
     diversity_short_record = None
@@ -460,6 +535,7 @@ def run_full_pipeline(
             }
         }
         result["thumbnail_experiments"] = {
+            "experiment_id": resolved_experiment_id,
             "selected_variant_id": thumbnail_experiments.get("selected_variant_id"),
             "selected_prompt": thumbnail_experiments.get("selected_prompt"),
             "variants": [
@@ -484,6 +560,7 @@ def run_full_pipeline(
             "rejected_attempts": [],
         }
         result.setdefault("thumbnail_experiments", {})
+        result["thumbnail_experiments"]["experiment_id"] = resolved_experiment_id
 
     try:
         result["analytics_join_metadata"] = build_analytics_join_metadata(
@@ -663,6 +740,7 @@ def run_full_pipeline(
             output_resolution=f"{getattr(cfg, 'video_width', 1920)}x{getattr(cfg, 'video_height', 1080)}",
             output_fps=24,
         )
+        result["render_metrics"]["experiment_id"] = resolved_experiment_id
     except Exception as e:
         result["render_metrics"] = {}
         warning = _record_warning(
@@ -734,6 +812,12 @@ def run_full_pipeline(
             )
             result["video_id"] = video_id
             result["youtube_url"] = f"https://youtube.com/watch?v={video_id}"
+            result["upload_metadata"] = {
+                "experiment_id": resolved_experiment_id,
+                "video_id": video_id,
+                "privacy": privacy,
+                "publish_at": publish_at,
+            }
             try:
                 result["youtube_channel_stats"] = uploader.get_channel_stats()
             except Exception:
@@ -741,6 +825,13 @@ def run_full_pipeline(
     except Exception as e:
         upload_error = e
         result["upload_error"] = str(e)
+        result["upload_metadata"] = {
+            "experiment_id": resolved_experiment_id,
+            "video_id": None,
+            "privacy": privacy,
+            "publish_at": publish_at,
+            "error": str(e),
+        }
         logger.error(f"Upload başarısız, snapshot yine kaydedilecek: {e}")
 
     # ─── ADIM 4.5: Short Yukle ────────────────────────────────────────────────
@@ -882,6 +973,7 @@ def run_full_pipeline(
             youtube_stats=result.get("youtube_channel_stats"),
             youtube_analytics=result.get("youtube_analytics", {}),
         )
+        performance_snapshot["experiment_id"] = resolved_experiment_id
         result["performance_snapshot"] = performance_snapshot
     except Exception as e:
         result["performance_snapshot"] = {}

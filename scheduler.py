@@ -657,6 +657,7 @@ def _print_help() -> None:
     print("  python scheduler.py --list   # Aktif kanallari listele")
     print("  python scheduler.py --status # Kuyruk durumunu goster")
     print("  python scheduler.py --health-check # Uretim hazirlik kontrolunu calistir")
+    print("  python scheduler.py --sync-analytics-now # Canli YouTube Analytics sync ve optimizasyonu calistir")
     print("  python scheduler.py --help   # Bu yardim metnini goster")
 
 
@@ -686,6 +687,13 @@ def _run_startup_health_check(*, create_missing_directories: bool, require_teleg
     logger.info("Health check result: %s", "PASS" if result.ok else "FAIL")
     return result
 
+
+def run_live_analytics_sync_once() -> int:
+    """Canli analytics senkronunu bir kez calistirir."""
+    refresh_live_analytics_job()
+    print("Live analytics sync: PASS")
+    return 0
+
 def main():
     args = sys.argv[1:]
 
@@ -705,6 +713,9 @@ def main():
         for error in result.errors:
             print(f"- {error}")
         sys.exit(1)
+
+    if "--sync-analytics-now" in args:
+        sys.exit(run_live_analytics_sync_once())
 
     if "--list" in args or "--status" in args:
         show_status()

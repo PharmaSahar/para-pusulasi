@@ -24,6 +24,10 @@ class _FakeEvery:
     def at(self, *_args, **_kwargs):
         return self
 
+    @property
+    def hours(self):
+        return self
+
     def do(self, *_args, **_kwargs):
         return self
 
@@ -90,6 +94,21 @@ def test_scheduler_health_check_exits_without_starting_scheduler(monkeypatch, ca
     out = capsys.readouterr().out
     assert "Health check: PASS" in out
     assert calls == {"startup": 1, "ready": 0}
+
+
+def test_scheduler_sync_analytics_now_runs_once_and_exits(monkeypatch, capsys):
+    monkeypatch.setattr(scheduler.sys, "argv", ["scheduler.py", "--sync-analytics-now"])
+    calls = {"refresh": 0}
+
+    monkeypatch.setattr(scheduler, "refresh_live_analytics_job", lambda: calls.__setitem__("refresh", calls["refresh"] + 1))
+
+    with pytest.raises(SystemExit) as exc:
+        scheduler.main()
+
+    out = capsys.readouterr().out
+    assert "Live analytics sync: PASS" in out
+    assert exc.value.code == 0
+    assert calls == {"refresh": 1}
 
 
 def test_scheduler_default_startup_path_unchanged(monkeypatch):

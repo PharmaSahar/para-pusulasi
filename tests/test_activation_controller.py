@@ -181,3 +181,70 @@ def test_activation_controller_activate_learning_writes_flags_when_go(monkeypatc
     assert flags["thumbnail_learning_enabled"] is True
     assert flags["ready_for_learning_activation"] is True
     assert "activated_at_utc" in flags
+
+
+def test_activation_controller_writes_report_archive_and_latest(monkeypatch, tmp_path):
+    channel_id = "test_channel"
+    cache_path = tmp_path / "thumbnail_permission_cache.json"
+    report_path = tmp_path / "report.json"
+    archive_dir = tmp_path / "activation_reports"
+
+    _write_thumb_cache(cache_path, channel_id=channel_id, can_upload=True, streak=3)
+
+    monkeypatch.setattr(ac, "THUMB_CACHE_PATH", cache_path)
+
+    code = ac.main(
+        [
+            "--channel",
+            channel_id,
+            "--skip-analytics-probe",
+            "--report-path",
+            str(report_path),
+            "--report-archive-dir",
+            str(archive_dir),
+        ]
+    )
+
+    assert code == 0
+    assert report_path.exists()
+    latest_path = archive_dir / "latest.json"
+    assert latest_path.exists()
+
+    stamped = [p for p in archive_dir.glob("*.json") if p.name != "latest.json"]
+    assert len(stamped) == 1
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert "report_paths" in report
+    assert report["report_paths"]["archive_latest"].endswith("latest.json")
+    assert report["report_paths"]["archive_stamped"].endswith(stamped[0].name)
+
+
+def test_activation_controller_no_report_archive_flag_disables_history(monkeypatch, tmp_path):
+    channel_id = "test_channel"
+    cache_path = tmp_path / "thumbnail_permission_cache.json"
+    report_path = tmp_path / "report.json"
+    archive_dir = tmp_path / "activation_reports"
+
+    _write_thumb_cache(cache_path, channel_id=channel_id, can_upload=True, streak=3)
+
+    monkeypatch.setattr(ac, "THUMB_CACHE_PATH", cache_path)
+
+    code = ac.main(
+        [
+            "--channel",
+            channel_id,
+            "--skip-analytics-probe",
+            "--report-path",
+            str(report_path),
+            "--report-archive-dir",
+            str(archive_dir),
+            "--no-report-archive",
+        ]
+    )
+
+    assert code == 0
+    assert report_path.exists()
+    assert not archive_dir.exists()
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert "report_paths" not in report

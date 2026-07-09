@@ -24,6 +24,7 @@ ANALYTICS_PROBE_SCRIPT = ROOT / "ops" / "analytics_single_channel_probe.py"
 THUMB_CACHE_PATH = ROOT / "logs" / "thumbnail_permission_cache.json"
 DEFAULT_REPORT_PATH = ROOT / "logs" / "activation_controller_report.json"
 DEFAULT_FLAGS_PATH = ROOT / "output" / "state" / "learning_activation_flags.json"
+DEFAULT_REPORT_ARCHIVE_DIR = ROOT / "output" / "state" / "activation_reports"
 
 
 @dataclass
@@ -198,6 +199,22 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _archive_report(*, report: dict[str, Any], archive_dir: Path) -> dict[str, str]:
+    archive_dir.mkdir(parents=True, exist_ok=True)
+
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
+    stamped_path = archive_dir / f"{ts}.json"
+    latest_path = archive_dir / "latest.json"
+
+    _write_json(stamped_path, report)
+    _write_json(latest_path, report)
+
+    return {
+        "stamped": str(stamped_path),
+        "latest": str(latest_path),
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Controlled activation controller for learning gates")
     parser.add_argument("--channel", required=True, help="Target channel id for probe/cache checks")
@@ -207,6 +224,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout-seconds", type=int, default=120, help="Probe timeout in seconds")
     parser.add_argument("--skip-analytics-probe", action="store_true", help="Skip running analytics probe script")
     parser.add_argument("--report-path", default=str(DEFAULT_REPORT_PATH), help="Path to write controller report JSON")
+    parser.add_argument(
+        "--report-archive-dir",
+        default=str(DEFAULT_REPORT_ARCHIVE_DIR),
+        help="Directory for timestamped activation history reports and latest.json",
+    )
+    parser.add_argument("--no-report-archive", action="store_true", help="Disable writing activation history archive")
     parser.add_argument("--flags-path", default=str(DEFAULT_FLAGS_PATH), help="Path to write activation flags JSON")
     parser.add_argument("--activate-learning", action="store_true", help="Explicitly apply learning flags when all gates are GO")
     args = parser.parse_args(argv)
@@ -285,7 +308,23 @@ def main(argv: list[str] | None = None) -> int:
         },
     }
 
-    _write_json(Path(args.report_path), report)
+    report_path = Path(args.report_path)
+    _write_json(report_path, report)
+
+    archive_paths = None
+    if not args.no_report_archive:
+        archive_paths = _archive_report(report=report, archive_dir=Path(args.report_archive_dir))
+
+    if archive_paths:
+        report["report_paths"] = {
+            "report_path": str(report_path),
+            "archive_stamped": archive_paths["stamped"],
+            "archive_latest": archive_paths["latest"],
+        }
+        _write_json(report_path, report)
+        _write_json(Path(archive_paths["stamped"]), report)
+        _write_json(Path(archive_paths["latest"]), report)
+
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
     if args.activate_learning and not activation["applied"]:

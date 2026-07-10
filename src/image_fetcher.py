@@ -64,28 +64,30 @@ KEYWORD_MAP = {
 }
 
 # Pexels fotoğraf alt-text filtresi — insan/lifestyle içerenleri at
+# Legacy broad regex — now replaced by image_relevance_guard policies.
+# Kept for backward-compat with _photo_is_safe / _video_is_safe helpers below.
 PHOTO_REJECT_RE = re.compile(
     r'\b(bikini|swimsuit|swimwear|lingerie|beachwear|'
-    r'woman|man|girl|boy|lady|female|male|person|people|portrait|'
-    r'model|fashion|glamour|sexy|sensual|beauty|attractive|'
-    r'vacation|holiday|resort|tropical|beach|pool|'
-    r'influencer|lifestyle|selfie|dating)\b',
+    r'nude|naked|topless|explicit|erotic|'
+    r'nightclub|nightlife)\b',
     re.IGNORECASE,
 )
 
 
 def _photo_is_safe(photo: dict) -> bool:
-    """Alt text veya URL'den uygunsuz/alakasız fotoğrafı filtrele."""
+    """Hard-block filter — kept for legacy callers; guard handles full policy."""
+    from .image_relevance_guard import _HARD_BLOCK_RE
     alt = str(photo.get("alt", "") or "")
     url = str(photo.get("url", "") or "")
-    return not bool(PHOTO_REJECT_RE.search(f"{alt} {url}"))
+    return not bool(_HARD_BLOCK_RE.search(f"{alt} {url}"))
 
 
 def _video_is_safe(video: dict) -> bool:
-    """Video metaverisinden uygunsuz içeriği filtrele."""
+    """Hard-block filter — kept for legacy callers; guard handles full policy."""
+    from .image_relevance_guard import _HARD_BLOCK_RE
     url = str(video.get("url", "") or "")
     tags = " ".join(str(t) for t in (video.get("tags") or []))
-    return not bool(PHOTO_REJECT_RE.search(f"{url} {tags}"))
+    return not bool(_HARD_BLOCK_RE.search(f"{url} {tags}"))
 
 
 RISKY_QUERY_PATTERNS = (
@@ -189,112 +191,218 @@ class ImageFetcher:
 
         return raw
 
+    def _channel_context(self) -> tuple[str, str]:
+        """Return (channel_id, niche) for observability."""
+        cid = str(getattr(self.channel_cfg, "channel_id", "") or "unknown")
+        niche = str(getattr(self.channel_cfg, "niche", "") or "")
+        return cid, niche
+
     def fetch_video_clips(self, title: str, count: int = 6, output_dir: str = "", query_override: str = None) -> list:
-        """Konuyla ilgili Pexels video klibi indir."""
+        """Konuyla ilgili Pexels video klibi indir — relevance guard uygulanır."""
+        from .image_relevance_guard import (
+            build_safe_search_queries,
+            select_safe_assets,
+            SearchObservability,
+            record_search_observability,
+        )
+
         if not self.has_api:
             logger.warning("Pexels API anahtari yok! Statik arka plan kullanilacak.")
             return []
 
-        query = self._sanitize_query(query_override if query_override else self._extract_query(title), title)
+        channel_id, niche = self._channel_context()
+        original_query = self._sanitize_query(
+            query_override if query_override else self._extract_query(title), title
+        )
         output_dir = output_dir or "output/clips"
         Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-        logger.info("Pexels video klipleri aranıyor: " + query)
-        paths = []
-        try:
-            resp = requests.get(
-                PEXELS_VIDEOS_URL,
-                headers={"Authorization": self.api_key},
-                params={"query": query, "per_page": count, "orientation": "landscape"},
-                timeout=15,
-            )
-            resp.raise_for_status()
-            videos = resp.json().get("videos", [])
+        # Build query candidates: primary + safe fallbacks
+        query_candidates = [original_query] + build_safe_search_queries(title, niche, channel_id)
 
-            for i, video in enumerate(videos):
-                # Uygunsuz/alakasız video filtresi
-                if not _video_is_safe(video):
-                    logger.debug(f"Video filtrelendi (içerik): {video.get('url', '')}")
-                    continue
-                files = sorted(
-                    video.get("video_files", []),
-                    key=lambda x: x.get("width", 0),
-                    reverse=True,
-                )
-                best = next(
-                    (f for f in files if f.get("width", 0) >= 1280 and f.get("file_type") == "video/mp4"),
-                    files[0] if files else None,
-                )
-                if not best:
-                    continue
-                clip_path = f"{output_dir}/clip_{i:02d}.mp4"
-                self._download_file(best["link"], clip_path)
-                paths.append(clip_path)
-                logger.info(f"Klip indirildi: {clip_path}")
+        obs = SearchObservability(
+            channel_id=channel_id,
+            topic=title[:60],
+            niche=niche,
+            original_query=original_query,
+            effective_query=original_query,
+            media_type="video",
+        )
 
-        except Exception as e:
-            logger.warning("Video klip indirme basarisiz: " + str(e))
+        paths: list[str] = []
+        for attempt, query in enumerate(query_candidates):
+            if len(paths) >= count:
+                break
+            obs.effective_query = query
+            if attempt > 0:
+                obs.fallback_used = True
+                obs.fallback_reason = f"attempt_{attempt}: insufficient safe results"
+
+            logger.info(f"Pexels video aranıyor [{attempt+1}]: {query}")
+            try:
+                resp = requests.get(
+                    PEXELS_VIDEOS_URL,
+                    headers={"Authorization": self.api_key},
+                    params={"query": query, "per_page": max(count * 3, 15), "orientation": "landscape"},
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                raw_videos = resp.json().get("videos", [])
+                obs.total_candidates += len(raw_videos)
+
+                need = count - len(paths)
+                safe_videos, classifications = select_safe_assets(
+                    raw_videos, "video", title, niche, query, max_count=need
+                )
+                obs.classifications.extend(classifications)
+                obs.accepted += len(safe_videos)
+                obs.rejected += len(raw_videos) - len(safe_videos)
+                obs.hard_blocked += sum(1 for c in classifications if c.hard_blocked)
+                obs.low_relevance += sum(
+                    1 for c in classifications
+                    if c.rejection_reason and "low_relevance" in c.rejection_reason
+                )
+
+                for video in safe_videos:
+                    files = sorted(
+                        video.get("video_files", []),
+                        key=lambda x: x.get("width", 0),
+                        reverse=True,
+                    )
+                    best = next(
+                        (f for f in files if f.get("width", 0) >= 1280 and f.get("file_type") == "video/mp4"),
+                        files[0] if files else None,
+                    )
+                    if not best:
+                        continue
+                    clip_path = f"{output_dir}/clip_{len(paths):02d}.mp4"
+                    self._download_file(best["link"], clip_path)
+                    paths.append(clip_path)
+                    obs.selected_asset_urls.append(str(video.get("url", "")))
+                    logger.info(f"Klip indirildi [{query[:40]}]: {clip_path}")
+
+            except Exception as exc:
+                logger.warning(f"Video klip indirme başarısız (attempt {attempt+1}): {exc}")
+
+        # Final fallback: photos if no videos found
+        if not paths:
+            logger.warning("Tüm video sorguları başarısız — fotoğrafa geçiliyor")
+            obs.fallback_used = True
+            obs.fallback_reason = "all_video_queries_failed_using_photos"
             paths = self.fetch_images(title, count, output_dir)
 
-        logger.info(f"Toplam {len(paths)} medya dosyasi hazir.")
+        record_search_observability(obs)
+        logger.info(f"Toplam {len(paths)} medya dosyasi hazir. "
+                    f"[accepted={obs.accepted} rejected={obs.rejected} hard_blocked={obs.hard_blocked}]")
         return paths
 
     def fetch_images(self, title: str, count: int = 8, output_dir: str = "") -> list:
-        """Yedek: fotograflari indir."""
+        """Yedek fotoğrafları indir — relevance guard uygulanır."""
+        from .image_relevance_guard import (
+            build_safe_search_queries,
+            select_safe_assets,
+            SearchObservability,
+            record_search_observability,
+        )
+
         if not self.has_api:
             return []
-        query = self._sanitize_query(self._extract_query(title), title)
+
+        channel_id, niche = self._channel_context()
+        original_query = self._sanitize_query(self._extract_query(title), title)
         output_dir = output_dir or f"{config.output_dir}/images"
         Path(output_dir).mkdir(parents=True, exist_ok=True)
-        paths = []
-        try:
-            resp = requests.get(
-                PEXELS_PHOTOS_URL,
-                headers={"Authorization": self.api_key},
-                params={"query": query, "per_page": count, "orientation": "landscape"},
-                timeout=15,
-            )
-            resp.raise_for_status()
-            for i, photo in enumerate(resp.json().get("photos", [])):
-                # Uygunsuz/alakasız fotoğraf filtresi
-                if not _photo_is_safe(photo):
-                    logger.debug(f"Fotoğraf filtrelendi (içerik): {photo.get('alt', '')}")
-                    continue
-                img_path = f"{output_dir}/img_{i:02d}.jpg"
-                self._download_file(photo["src"]["large2x"], img_path)
-                paths.append(img_path)
-        except Exception as e:
-            logger.warning("Fotograf indirme basarisiz: " + str(e))
+
+        query_candidates = [original_query] + build_safe_search_queries(title, niche, channel_id)
+
+        obs = SearchObservability(
+            channel_id=channel_id,
+            topic=title[:60],
+            niche=niche,
+            original_query=original_query,
+            effective_query=original_query,
+            media_type="photo",
+        )
+
+        paths: list[str] = []
+        for attempt, query in enumerate(query_candidates):
+            if len(paths) >= count:
+                break
+            obs.effective_query = query
+            if attempt > 0:
+                obs.fallback_used = True
+                obs.fallback_reason = f"attempt_{attempt}: insufficient safe results"
+
+            try:
+                resp = requests.get(
+                    PEXELS_PHOTOS_URL,
+                    headers={"Authorization": self.api_key},
+                    params={"query": query, "per_page": max(count * 3, 15), "orientation": "landscape"},
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                raw_photos = resp.json().get("photos", [])
+                obs.total_candidates += len(raw_photos)
+
+                need = count - len(paths)
+                safe_photos, classifications = select_safe_assets(
+                    raw_photos, "photo", title, niche, query, max_count=need
+                )
+                obs.classifications.extend(classifications)
+                obs.accepted += len(safe_photos)
+                obs.rejected += len(raw_photos) - len(safe_photos)
+                obs.hard_blocked += sum(1 for c in classifications if c.hard_blocked)
+
+                for photo in safe_photos:
+                    img_path = f"{output_dir}/img_{len(paths):02d}.jpg"
+                    self._download_file(photo["src"]["large2x"], img_path)
+                    paths.append(img_path)
+                    obs.selected_asset_urls.append(str(photo.get("url", "")))
+            except Exception as exc:
+                logger.warning(f"Fotoğraf indirme başarısız (attempt {attempt+1}): {exc}")
+
+        record_search_observability(obs)
         return paths
 
     def fetch_thumbnail_photo(self, title: str, output_path: str = "") -> str | None:
-        """Thumbnail için konuya özel yüksek çözünürlüklü fotoğraf indir."""
+        """Thumbnail için konuya özel fotoğraf indir — relevance guard uygulanır."""
+        from .image_relevance_guard import select_safe_assets
+
         if not self.has_api:
             return None
         query = self._sanitize_query(self._extract_thumbnail_query(title), title)
         if not output_path:
             import tempfile
             output_path = tempfile.mktemp(suffix="_thumb_bg.jpg")
+
+        _, niche = self._channel_context()
+
         try:
             resp = requests.get(
                 PEXELS_PHOTOS_URL,
                 headers={"Authorization": self.api_key},
-                params={"query": query, "per_page": 20, "orientation": "landscape"},
+                params={"query": query, "per_page": 30, "orientation": "landscape"},
                 timeout=12,
             )
             resp.raise_for_status()
             photos = resp.json().get("photos", [])
             if not photos:
                 return None
-            # Title hash ile tutarlı ama her video farklı fotoğraf
-            idx = hash(title) % len(photos)
-            photo = photos[idx]
+
+            safe_photos, _ = select_safe_assets(photos, "photo", title, niche, query, max_count=20)
+            if not safe_photos:
+                logger.warning(f"Thumbnail: tüm fotoğraflar filtrelendi — sorgu: {query}")
+                return None
+
+            # Hash-tabanlı seçim: tutarlı ama her video farklı
+            idx = hash(title) % len(safe_photos)
+            photo = safe_photos[idx]
             url = photo["src"].get("large2x") or photo["src"]["large"]
             self._download_file(url, output_path)
             logger.info(f"Thumbnail fotoğrafı indirildi: {query}")
             return output_path
-        except Exception as e:
-            logger.warning(f"Thumbnail fotoğrafı alınamadı: {e}")
+        except Exception as exc:
+            logger.warning(f"Thumbnail fotoğrafı alınamadı: {exc}")
             return None
 
     def _extract_thumbnail_query(self, title: str) -> str:

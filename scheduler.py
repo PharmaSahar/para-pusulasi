@@ -257,15 +257,20 @@ def render_and_schedule(channel_id: str):
     try:
         from src.scheduler_utils import (
             check_disk_space, cleanup_old_renders, force_cleanup,
-            notify_upload, notify_error, save_used_topic,
+            get_provider_circuit_status, notify_upload, notify_error,
+            record_provider_failure, record_provider_success, save_used_topic,
         )
     except ImportError:
         def check_disk_space(**kw): return True
         def cleanup_old_renders(**kw): return 0
         def force_cleanup():
             import gc; gc.collect()
+        def get_provider_circuit_status(provider: str):
+            return {"provider": provider, "is_open": False, "retry_after_seconds": 0, "state": {}}
         def notify_upload(*a, **kw): pass
         def notify_error(*a, **kw): pass
+        def record_provider_failure(*a, **kw): return {}
+        def record_provider_success(*a, **kw): return {}
         def save_used_topic(*a): pass
 
     channel_lock = _get_channel_render_lock(channel_id)
@@ -279,6 +284,21 @@ def render_and_schedule(channel_id: str):
         from src.pipeline import run_full_pipeline
 
         cfg = get_channel(channel_id)
+
+        # ── Provider circuit breaker kontrolü ────────────────────────
+        circuit = get_provider_circuit_status("anthropic")
+        if circuit.get("is_open"):
+            retry_after = int(circuit.get("retry_after_seconds", 0))
+            logger.warning(
+                "[%s] Anthropic circuit OPEN. Render atlandi, retry_after=%ss",
+                cfg.name,
+                retry_after,
+            )
+            notify_error(
+                cfg.name,
+                f"Anthropic circuit open; provider is cooling down ({retry_after}s)",
+            )
+            return
 
         # ── Disk kontrolü ──────────────────────────────────────────────
         if not check_disk_space(min_gb=1.5):
@@ -309,6 +329,7 @@ def render_and_schedule(channel_id: str):
                 error_str = str(e).lower()
                 # Kesinlikle retry yapma
                 if any(x in error_str for x in ["failed_fact_check", "credit balance", "quota", "invalid_request", "invalidtags", "authentication"]):
+                    record_provider_failure("anthropic", str(e))
                     logger.error(f"[{cfg.name}] Fatal hata (retry yok): {e}")
                     if "failed_fact_check" not in error_str:
                         decision = notify_error(cfg.name, str(e))
@@ -322,6 +343,7 @@ def render_and_schedule(channel_id: str):
                     raise
 
         if result and result.get("video_id"):
+            record_provider_success("anthropic", note=f"render_ok:{channel_id}")
             # Topic deduplication kaydı
             save_used_topic(channel_id, result.get("title", ""))
 
@@ -360,6 +382,9 @@ def render_and_schedule(channel_id: str):
             logger.error(f"[{cfg.name}] Video ID alınamadı!")
 
     except Exception as e:
+        err_text = str(e).lower()
+        if any(token in err_text for token in ("anthropic", "credit balance", "quota", "invalid_request", "http 401", "rate limit")):
+            record_provider_failure("anthropic", str(e))
         logger.error(f"[{channel_id}] Render hatası: {e}", exc_info=True)
         try:
             if "failed_fact_check" in str(e).lower():
@@ -816,6 +841,7 @@ def _print_help() -> None:
     print("  python scheduler.py --list   # Aktif kanallari listele")
     print("  python scheduler.py --status # Kuyruk durumunu goster")
     print("  python scheduler.py --health-check # Uretim hazirlik kontrolunu calistir")
+    print("  python scheduler.py --skip-provider-preflight # Anthropic preflight kontrolunu atla")
     print("  python scheduler.py --sync-analytics-now # Canli YouTube Analytics sync ve optimizasyonu calistir")
     print("  python scheduler.py --help   # Bu yardim metnini goster")
 
@@ -854,8 +880,27 @@ def run_live_analytics_sync_once() -> int:
     print(f"Live analytics sync: PASS (analytics_live_status={live_status})")
     return 0
 
+
+def _run_provider_preflight_check(*, skip_preflight: bool = False) -> tuple[bool, str]:
+    if skip_preflight:
+        return True, "skipped_by_flag"
+
+    enabled = _is_enabled(os.getenv("ANTHROPIC_PREFLIGHT_ENABLED", "true"))
+    if not enabled:
+        return True, "disabled_by_env"
+
+    try:
+        from src.scheduler_utils import run_anthropic_preflight
+    except Exception:
+        # Test stubs veya minimal runtime ortamlarında preflight fonksiyonu olmayabilir.
+        return True, "preflight_unavailable"
+
+    ok, detail = run_anthropic_preflight(model=os.getenv("ANTHROPIC_MODEL", "claude-opus-4-5"))
+    return ok, detail
+
 def main():
     args = sys.argv[1:]
+    skip_provider_preflight = "--skip-provider-preflight" in args
 
     if "--help" in args or "-h" in args:
         _print_help()
@@ -909,6 +954,15 @@ def main():
             logger.error("Startup validation failed: %s", error)
             print(f"ERROR: {error}")
         sys.exit(1)
+
+    provider_ok, provider_detail = _run_provider_preflight_check(
+        skip_preflight=skip_provider_preflight,
+    )
+    if not provider_ok:
+        logger.error("Startup provider preflight failed: %s", provider_detail)
+        print(f"ERROR: Anthropic preflight failed: {provider_detail}")
+        sys.exit(1)
+    logger.info("Startup provider preflight result: %s", provider_detail)
 
     # scheduler_utils opsiyonel — yoksa basit fallback kullan
     try:

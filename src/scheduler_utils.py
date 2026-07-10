@@ -16,7 +16,11 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from dotenv import dotenv_values
+
 logger = logging.getLogger("SchedulerUtils")
+
+PROVIDER_HEALTH_FILE = "output/state/provider_health.json"
 
 # ─── BÜYÜME MİLESTONE TAKİBİ ─────────────────────────────────────────────────
 # Toplam yüklenen video sayısına göre otomatik yükseltme hatırlatması
@@ -379,6 +383,157 @@ def _classify_error_decision(summary: str) -> dict:
         "action_label": "Ayni hata tekrarlarsa manuel inceleme",
         "retry": True,
     }
+
+
+def _now_utc() -> datetime:
+    return datetime.utcnow()
+
+
+def _load_provider_health_state() -> dict:
+    path = Path(PROVIDER_HEALTH_FILE)
+    if not path.exists():
+        return {"providers": {}}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"providers": {}}
+    if not isinstance(data, dict):
+        return {"providers": {}}
+    data.setdefault("providers", {})
+    return data
+
+
+def _save_provider_health_state(state: dict) -> None:
+    path = Path(PROVIDER_HEALTH_FILE)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _error_type_from_text(error_text: str) -> str:
+    txt = str(error_text or "").lower()
+    if any(key in txt for key in ("credit balance", "insufficient credit")):
+        return "credit"
+    if "quota" in txt:
+        return "quota"
+    if any(key in txt for key in ("rate limit", "http 429")):
+        return "rate_limit"
+    if any(key in txt for key in ("authentication", "invalid api key", "unauthorized", "http 401")):
+        return "auth"
+    if any(key in txt for key in ("timeout", "connection", "dns", "chunkedencodingerror")):
+        return "network"
+    return "unknown"
+
+
+def _extract_request_id(error_text: str) -> str:
+    raw = str(error_text or "")
+    match = re.search(r"(req_[A-Za-z0-9]+)", raw)
+    return match.group(1) if match else ""
+
+
+def record_provider_failure(provider: str, error_text: str) -> dict:
+    state = _load_provider_health_state()
+    providers = state.setdefault("providers", {})
+    provider_state = providers.setdefault(provider, {})
+
+    failure_count = int(provider_state.get("consecutive_failures", 0)) + 1
+    err_type = _error_type_from_text(error_text)
+    now = _now_utc()
+
+    open_seconds = 0
+    if err_type in {"credit", "quota", "rate_limit", "auth"}:
+        open_seconds = min(7200, 300 * (2 ** max(0, failure_count - 1)))
+
+    open_until = ""
+    if open_seconds > 0:
+        open_until = (now + timedelta(seconds=open_seconds)).isoformat() + "Z"
+
+    provider_state.update(
+        {
+            "provider": provider,
+            "consecutive_failures": failure_count,
+            "last_failed_at": now.isoformat() + "Z",
+            "last_error": _summarize_error_for_telegram(error_text, max_len=400),
+            "last_error_type": err_type,
+            "last_request_id": _extract_request_id(error_text),
+            "open_until": open_until,
+        }
+    )
+    _save_provider_health_state(state)
+    return provider_state
+
+
+def record_provider_success(provider: str, note: str = "") -> dict:
+    state = _load_provider_health_state()
+    providers = state.setdefault("providers", {})
+    provider_state = providers.setdefault(provider, {})
+    now = _now_utc()
+    provider_state.update(
+        {
+            "provider": provider,
+            "consecutive_failures": 0,
+            "last_success_at": now.isoformat() + "Z",
+            "last_success_note": note,
+            "open_until": "",
+        }
+    )
+    _save_provider_health_state(state)
+    return provider_state
+
+
+def get_provider_circuit_status(provider: str) -> dict:
+    state = _load_provider_health_state()
+    provider_state = state.get("providers", {}).get(provider, {})
+    open_until_raw = str(provider_state.get("open_until") or "").strip()
+    is_open = False
+    retry_after_seconds = 0
+    if open_until_raw:
+        try:
+            parsed = datetime.fromisoformat(open_until_raw.replace("Z", "+00:00"))
+            now_utc = _now_utc().replace(tzinfo=parsed.tzinfo)
+            if parsed > now_utc:
+                is_open = True
+                retry_after_seconds = max(0, int((parsed - now_utc).total_seconds()))
+        except Exception:
+            pass
+
+    return {
+        "provider": provider,
+        "is_open": is_open,
+        "retry_after_seconds": retry_after_seconds,
+        "state": provider_state,
+    }
+
+
+def _get_anthropic_key() -> str:
+    for env_path in (".env", "/opt/parapusulasi/.env"):
+        if Path(env_path).exists():
+            env = dotenv_values(env_path)
+            key = str(env.get("ANTHROPIC_API_KEY") or "").strip()
+            if key:
+                return key
+    return str(os.getenv("ANTHROPIC_API_KEY") or "").strip()
+
+
+def run_anthropic_preflight(model: str = "claude-opus-4-5") -> tuple[bool, str]:
+    key = _get_anthropic_key()
+    if not key:
+        record_provider_failure("anthropic", "ANTHROPIC_API_KEY missing")
+        return False, "missing_anthropic_api_key"
+
+    try:
+        from anthropic import Anthropic
+
+        client = Anthropic(api_key=key)
+        resp = client.messages.create(
+            model=model,
+            max_tokens=8,
+            messages=[{"role": "user", "content": "ok"}],
+        )
+        record_provider_success("anthropic", note=f"preflight_ok:{getattr(resp, 'id', 'no_id')}")
+        return True, getattr(resp, "id", "ok")
+    except Exception as e:
+        record_provider_failure("anthropic", str(e))
+        return False, _summarize_error_for_telegram(str(e), max_len=240)
 
 
 def notify_startup(active_channels: int):

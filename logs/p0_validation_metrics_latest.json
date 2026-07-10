@@ -1,11 +1,11 @@
 {
-  "generated_at_utc": "2026-07-10T12:36:09.044035+00:00",
+  "generated_at_utc": "2026-07-10T12:39:02.884323+00:00",
   "scope": {
     "lookback_rows": 500,
     "performance_rows_total": 368,
     "performance_rows_scoped": 368,
     "thumbnail_history_rows_total": 805,
-    "routing_guard_decision_rows_total": 26,
+    "routing_guard_decision_rows_total": 27,
     "shorts_safety_decision_rows_total": 93,
     "chapter_validation_rows_total": 17
   },
@@ -14,7 +14,7 @@
       "workstream": "P0-A",
       "name": "routing_and_dna_leak_prevention",
       "sample_count": 353,
-      "guard_decision_rows": 26,
+      "guard_decision_rows": 27,
       "guard_block_rows": 7,
       "guard_reviewed_block_rows": 0,
       "metrics": {

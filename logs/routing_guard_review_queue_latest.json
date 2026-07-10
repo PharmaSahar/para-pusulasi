@@ -1,8 +1,8 @@
 {
-  "generated_at_utc": "2026-07-10T12:36:09.079287+00:00",
+  "generated_at_utc": "2026-07-10T12:38:38.414942+00:00",
   "source": "/Users/klara/Downloads/adsız klasör/logs/routing_guard_decisions.jsonl",
   "summary": {
-    "guard_rows": 26,
+    "guard_rows": 27,
     "blocked_rows": 7,
     "reviewed_block_rows": 0,
     "pending_review_rows": 7

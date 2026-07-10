@@ -1,6 +1,6 @@
 {
   "controller": "activation_controller",
-  "generated_at_utc": "2026-07-10T12:36:09.120067+00:00",
+  "generated_at_utc": "2026-07-10T12:38:38.461099+00:00",
   "channel_id": "para_pusulasi",
   "gates": {
     "analytics_api_probe": {
@@ -43,7 +43,7 @@
     "analytics_live_status": "no_go_api_not_enabled",
     "thumbnail_permission_status": "go_streak_met",
     "ready_for_learning_activation": false,
-    "generated_at_utc": "2026-07-10T12:36:09.119860+00:00",
+    "generated_at_utc": "2026-07-10T12:38:38.460918+00:00",
     "source": "activation_controller"
   },
   "activation": {
@@ -101,7 +101,7 @@
   ],
   "report_paths": {
     "report_path": "logs/activation_controller_report_latest.json",
-    "archive_stamped": "/Users/klara/Downloads/adsız klasör/output/state/activation_reports/2026-07-10T12-36-09.json",
+    "archive_stamped": "/Users/klara/Downloads/adsız klasör/output/state/activation_reports/2026-07-10T12-38-38.json",
     "archive_latest": "/Users/klara/Downloads/adsız klasör/output/state/activation_reports/latest.json"
   }
 }

@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-07-10T12:36:09.206056+00:00",
+  "generated_at_utc": "2026-07-10T12:39:02.917483+00:00",
   "scope": "p0_p1_operational_evidence_bundle",
   "artifacts": {
     "p0_validation_metrics": {
@@ -7,13 +7,13 @@
       "exists": true,
       "valid_json_object": true,
       "payload": {
-        "generated_at_utc": "2026-07-10T12:36:09.044035+00:00",
+        "generated_at_utc": "2026-07-10T12:39:02.884323+00:00",
         "scope": {
           "lookback_rows": 500,
           "performance_rows_total": 368,
           "performance_rows_scoped": 368,
           "thumbnail_history_rows_total": 805,
-          "routing_guard_decision_rows_total": 26,
+          "routing_guard_decision_rows_total": 27,
           "shorts_safety_decision_rows_total": 93,
           "chapter_validation_rows_total": 17
         },
@@ -22,7 +22,7 @@
             "workstream": "P0-A",
             "name": "routing_and_dna_leak_prevention",
             "sample_count": 353,
-            "guard_decision_rows": 26,
+            "guard_decision_rows": 27,
             "guard_block_rows": 7,
             "guard_reviewed_block_rows": 0,
             "metrics": {
@@ -130,22 +130,22 @@
         "metrics_coverage": {
           "click_through_rate": {
             "filled": 0,
-            "total": 365,
+            "total": 368,
             "percent": 0.0
           },
           "watch_time_hours": {
             "filled": 0,
-            "total": 365,
+            "total": 368,
             "percent": 0.0
           },
           "impressions": {
             "filled": 0,
-            "total": 365,
+            "total": 368,
             "percent": 0.0
           },
           "average_view_duration_seconds": {
             "filled": 0,
-            "total": 365,
+            "total": 368,
             "percent": 0.0
           }
         },
@@ -186,7 +186,7 @@
       "exists": true,
       "valid_json_object": true,
       "payload": {
-        "generated_at_utc": "2026-07-10T12:35:53.683814+00:00",
+        "generated_at_utc": "2026-07-10T12:38:38.299563+00:00",
         "required_streak": 3,
         "source": "/Users/klara/Downloads/adsız klasör/logs/thumbnail_permission_cache.json",
         "summary": {
@@ -354,7 +354,7 @@
       "valid_json_object": true,
       "payload": {
         "controller": "activation_controller",
-        "generated_at_utc": "2026-07-10T12:36:09.120067+00:00",
+        "generated_at_utc": "2026-07-10T12:38:38.461099+00:00",
         "channel_id": "para_pusulasi",
         "gates": {
           "analytics_api_probe": {
@@ -397,7 +397,7 @@
           "analytics_live_status": "no_go_api_not_enabled",
           "thumbnail_permission_status": "go_streak_met",
           "ready_for_learning_activation": false,
-          "generated_at_utc": "2026-07-10T12:36:09.119860+00:00",
+          "generated_at_utc": "2026-07-10T12:38:38.460918+00:00",
           "source": "activation_controller"
         },
         "activation": {
@@ -455,7 +455,7 @@
         ],
         "report_paths": {
           "report_path": "logs/activation_controller_report_latest.json",
-          "archive_stamped": "/Users/klara/Downloads/adsız klasör/output/state/activation_reports/2026-07-10T12-36-09.json",
+          "archive_stamped": "/Users/klara/Downloads/adsız klasör/output/state/activation_reports/2026-07-10T12-38-38.json",
           "archive_latest": "/Users/klara/Downloads/adsız klasör/output/state/activation_reports/latest.json"
         }
       }
@@ -465,7 +465,7 @@
       "exists": true,
       "valid_json_object": true,
       "payload": {
-        "generated_at_utc": "2026-07-10T12:36:09.172162+00:00",
+        "generated_at_utc": "2026-07-10T12:38:38.517223+00:00",
         "channel_id": "para_pusulasi",
         "artifacts": {
           "flags_path": "/Users/klara/Downloads/adsız klasör/output/state/learning_activation_flags.json",
@@ -523,10 +523,10 @@
       "exists": true,
       "valid_json_object": true,
       "payload": {
-        "generated_at_utc": "2026-07-10T12:36:09.079287+00:00",
+        "generated_at_utc": "2026-07-10T12:38:38.414942+00:00",
         "source": "/Users/klara/Downloads/adsız klasör/logs/routing_guard_decisions.jsonl",
         "summary": {
-          "guard_rows": 26,
+          "guard_rows": 27,
           "blocked_rows": 7,
           "reviewed_block_rows": 0,
           "pending_review_rows": 7

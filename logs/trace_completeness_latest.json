@@ -12,22 +12,22 @@
   "metrics_coverage": {
     "click_through_rate": {
       "filled": 0,
-      "total": 365,
+      "total": 368,
       "percent": 0.0
     },
     "watch_time_hours": {
       "filled": 0,
-      "total": 365,
+      "total": 368,
       "percent": 0.0
     },
     "impressions": {
       "filled": 0,
-      "total": 365,
+      "total": 368,
       "percent": 0.0
     },
     "average_view_duration_seconds": {
       "filled": 0,
-      "total": 365,
+      "total": 368,
       "percent": 0.0
     }
   },

@@ -133,6 +133,11 @@ def _build_readiness_markdown(*, generated_at: str, lookback_rows: int, steps: l
         )
     lines.extend([
         "",
+        "## Secondary Summary Layer",
+        "",
+        "- Strict evidence bridge artifact: `logs/governance_dashboard_bridge_latest.json`",
+        "- Purpose: channel-level P0 thumbnail auth follow-up + P1 VALIDATION_QUEUE exit worklist.",
+        "",
         "## Entry Point",
         "",
         "This snapshot is refreshed by `ops/refresh_governance_readiness.py`.",
@@ -256,6 +261,7 @@ def run_refresh(*, lookback_rows: int) -> dict[str, Any]:
             "p0_metrics": str((LOGS / "p0_validation_metrics_latest.json").resolve()),
             "bundle": str((LOGS / "p0_p1_artifacts_bundle_latest.json").resolve()),
             "executive_dashboard": str((LOGS / "executive_dashboard.json").resolve()),
+            "strict_evidence_bridge": str((LOGS / "governance_dashboard_bridge_latest.json").resolve()),
             "readiness_markdown": str(readiness_markdown.resolve()),
         },
     }

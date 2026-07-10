@@ -1,11 +1,11 @@
 channel_id,gmail,youtube_channel_name,niche,status,subscribers,token_ready,created_date,notes
 para_pusulasi,para@eduofficial.org,Para Pusulasi,kisisel_finans,active,0,TRUE,2026-07-06,Ana kanal - sifre Zoho ile ayni
 borsa_akademi,borsa@eduofficial.org,Borsa Akademi,borsa,active,0,TRUE,2026-07-06,snt@eduofficial.org ile baglandi
-kripto_rehber,kripto@eduofficial.org,Kripto Rehber,kripto,email_ready,0,FALSE,2026-07-06,Zoho sifre:r4vga_Og
-kariyer_pusulasi,kariyer@eduofficial.org,Kariyer Pusulasi,kariyer,email_ready,0,FALSE,2026-07-06,Zoho sifre:a_4ogvTj
-girisim_okulu,girisim@eduofficial.org,Girisim Okulu,girisimcilik,email_ready,0,FALSE,2026-07-06,Zoho sifre:r9dyuG-g
-saglik_pusulasi,saglik@eduofficial.org,Saglik Pusulasi,saglik,pending,0,FALSE,,
-teknoloji_pusulasi,teknoloji@eduofficial.org,Teknoloji Pusulasi,teknoloji,pending,0,FALSE,,
-egitim_rehberi,egitim@eduofficial.org,Egitim Rehberi,egitim,pending,0,FALSE,,
-gayrimenkul_tv,emlak@eduofficial.org,Gayrimenkul TV,gayrimenkul,pending,0,FALSE,,
+kripto_rehber,kripto@eduofficial.org,Kripto Rehber,kripto,active,0,TRUE,2026-07-06,Zoho sifre:r4vga_Og
+kariyer_pusulasi,kariyer@eduofficial.org,Kariyer Pusulasi,kariyer,active,0,TRUE,2026-07-06,Zoho sifre:a_4ogvTj
+girisim_okulu,girisim@eduofficial.org,Girisim Okulu,girisimcilik,active,0,TRUE,2026-07-06,Zoho sifre:r9dyuG-g
+saglik_pusulasi,saglik@eduofficial.org,Saglik Pusulasi,saglik,active,0,TRUE,,
+teknoloji_pusulasi,teknoloji@eduofficial.org,Teknoloji Pusulasi,teknoloji,active,0,TRUE,,
+egitim_rehberi,egitim@eduofficial.org,Egitim Rehberi,egitim,active,0,TRUE,,
+gayrimenkul_tv,emlak@eduofficial.org,Gayrimenkul TV,gayrimenkul,active,0,TRUE,,
 psikoloji_okulu,psikoloji@eduofficial.org,Psikoloji Okulu,psikoloji,pending,0,FALSE,,

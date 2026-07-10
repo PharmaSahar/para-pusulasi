@@ -21,6 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PID_FILE = ROOT / "logs" / "production_scheduler.pid"
 LOG_FILE = ROOT / "logs" / "production_scheduler.out"
+SCHEDULER_LOG_FILE = ROOT / "logs" / "scheduler.log"
 
 
 def _run(cmd: list[str]) -> tuple[int, str]:
@@ -77,13 +78,26 @@ def _process_info(pid: int) -> dict:
 
 
 def _last_build_info() -> dict:
-    if not LOG_FILE.exists():
+    candidates: list[tuple[float, str]] = []
+    for path in (LOG_FILE, SCHEDULER_LOG_FILE):
+        if not path.exists():
+            continue
+        build_line = None
+        for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            if "BUILD_INFO scheduler" in line:
+                build_line = line
+        if build_line:
+            try:
+                mtime = path.stat().st_mtime
+            except Exception:
+                mtime = 0.0
+            candidates.append((mtime, build_line))
+
+    if not candidates:
         return {"line": None, "sha": None}
 
-    build_line = None
-    for line in LOG_FILE.read_text(encoding="utf-8", errors="ignore").splitlines():
-        if "BUILD_INFO scheduler" in line:
-            build_line = line
+    candidates.sort(key=lambda item: item[0])
+    build_line = candidates[-1][1]
 
     sha = None
     if build_line:

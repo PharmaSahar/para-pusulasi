@@ -1,0 +1,110 @@
+{
+  "generated_at_utc": "2026-07-10T12:36:09.079287+00:00",
+  "source": "/Users/klara/Downloads/adsız klasör/logs/routing_guard_decisions.jsonl",
+  "summary": {
+    "guard_rows": 26,
+    "blocked_rows": 7,
+    "reviewed_block_rows": 0,
+    "pending_review_rows": 7
+  },
+  "pending_review_queue": [
+    {
+      "decision_id": "e15dc9662c5f3be1",
+      "created_at": "2026-07-10T10:36:35.302516+00:00",
+      "channel_id": null,
+      "channel_name": "Test",
+      "niche": "test",
+      "topic": "Topic",
+      "title_preview": "Title",
+      "attempt_index": 1,
+      "attempt_count": 2,
+      "reason": "niche_alignment_failed",
+      "review_outcome": null,
+      "review_note": null
+    },
+    {
+      "decision_id": "3ff101583b4483a3",
+      "created_at": "2026-07-10T10:36:35.302638+00:00",
+      "channel_id": null,
+      "channel_name": "Test",
+      "niche": "test",
+      "topic": "Topic",
+      "title_preview": "Title",
+      "attempt_index": 2,
+      "attempt_count": 2,
+      "reason": "niche_alignment_failed",
+      "review_outcome": null,
+      "review_note": null
+    },
+    {
+      "decision_id": "307c8d7bc9341215",
+      "created_at": "2026-07-10T10:36:35.340841+00:00",
+      "channel_id": null,
+      "channel_name": "Test",
+      "niche": "test",
+      "topic": "Topic",
+      "title_preview": "Title",
+      "attempt_index": 1,
+      "attempt_count": 2,
+      "reason": "niche_alignment_failed",
+      "review_outcome": null,
+      "review_note": null
+    },
+    {
+      "decision_id": "f7ab3314eb9ffae1",
+      "created_at": "2026-07-10T10:36:35.341011+00:00",
+      "channel_id": null,
+      "channel_name": "Test",
+      "niche": "test",
+      "topic": "Topic",
+      "title_preview": "Title",
+      "attempt_index": 2,
+      "attempt_count": 2,
+      "reason": "niche_alignment_failed",
+      "review_outcome": null,
+      "review_note": null
+    },
+    {
+      "decision_id": "65d3aea7d440b2dc",
+      "created_at": "2026-07-10T10:36:35.348638+00:00",
+      "channel_id": null,
+      "channel_name": "Test",
+      "niche": "test",
+      "topic": "Topic",
+      "title_preview": "Title",
+      "attempt_index": 1,
+      "attempt_count": 2,
+      "reason": "niche_alignment_failed",
+      "review_outcome": null,
+      "review_note": null
+    },
+    {
+      "decision_id": "54915ca3e711b779",
+      "created_at": "2026-07-10T10:36:35.348865+00:00",
+      "channel_id": null,
+      "channel_name": "Test",
+      "niche": "test",
+      "topic": "Topic",
+      "title_preview": "Title",
+      "attempt_index": 2,
+      "attempt_count": 2,
+      "reason": "niche_alignment_failed",
+      "review_outcome": null,
+      "review_note": null
+    },
+    {
+      "decision_id": "8035de6158828ecf",
+      "created_at": "2026-07-10T11:38:38.851306+00:00",
+      "channel_id": null,
+      "channel_name": "Girisim Okulu",
+      "niche": "girisimcilik",
+      "topic": "Startup fikrini dogrulama",
+      "title_preview": "Startup Fikrin Gerçekten Para Eder mi? 500 TL ile Öğren",
+      "attempt_index": 1,
+      "attempt_count": 2,
+      "reason": "niche_alignment_failed",
+      "review_outcome": null,
+      "review_note": null
+    }
+  ]
+}

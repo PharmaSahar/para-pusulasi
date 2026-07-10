@@ -1,0 +1,138 @@
+{
+  "controller": "activation_controller",
+  "generated_at_utc": "2026-07-09T19:16:04.242371+00:00",
+  "channel_id": "egitim_rehberi",
+  "gates": {
+    "analytics_api_probe": {
+      "go": true,
+      "status": "go",
+      "reason": "analytics_api_enabled_and_oauth_ready",
+      "evidence": {
+        "probe": {
+          "attempted": true,
+          "ok": true,
+          "error": null,
+          "exit_code": 0,
+          "probe_result": {
+            "channel_id": "egitim_rehberi",
+            "token_before": {
+              "token_path": "channels/egitim_rehberi/youtube_analytics_token.pickle",
+              "token_exists": true,
+              "token_scopes": [
+                "https://www.googleapis.com/auth/yt-analytics.readonly",
+                "https://www.googleapis.com/auth/youtube.readonly"
+              ],
+              "missing_scopes": [],
+              "ready": true
+            },
+            "oauth": {
+              "attempted": true,
+              "ok": true,
+              "error": null
+            },
+            "token_after": {
+              "token_path": "channels/egitim_rehberi/youtube_analytics_token.pickle",
+              "token_exists": true,
+              "token_scopes": [
+                "https://www.googleapis.com/auth/yt-analytics.readonly",
+                "https://www.googleapis.com/auth/youtube.readonly"
+              ],
+              "missing_scopes": [],
+              "ready": true
+            },
+            "backfill_probe": {
+              "video_ids": [],
+              "reports_count": 0,
+              "rows_appended": 0,
+              "non_null_metric_counts": {
+                "click_through_rate": 0,
+                "impressions": 0,
+                "watch_time_hours": 0,
+                "average_view_duration_seconds": 0
+              },
+              "errors": []
+            }
+          },
+          "stdout_tail": "    \"token_scopes\": [\n      \"https://www.googleapis.com/auth/yt-analytics.readonly\",\n      \"https://www.googleapis.com/auth/youtube.readonly\"\n    ],\n    \"missing_scopes\": [],\n    \"ready\": true\n  },\n  \"backfill_probe\": {\n    \"video_ids\": [],\n    \"reports_count\": 0,\n    \"rows_appended\": 0,\n    \"non_null_metric_counts\": {\n      \"click_through_rate\": 0,\n      \"impressions\": 0,\n      \"watch_time_hours\": 0,\n      \"average_view_duration_seconds\": 0\n    },\n    \"errors\": []\n  }\n}",
+          "stderr_tail": "",
+          "command": [
+            "/Users/klara/Downloads/adsız klasör/.venv-2/bin/python",
+            "/Users/klara/Downloads/adsız klasör/ops/analytics_single_channel_probe.py",
+            "--channel",
+            "egitim_rehberi",
+            "--limit",
+            "3"
+          ]
+        },
+        "token_after": {
+          "token_path": "channels/egitim_rehberi/youtube_analytics_token.pickle",
+          "token_exists": true,
+          "token_scopes": [
+            "https://www.googleapis.com/auth/yt-analytics.readonly",
+            "https://www.googleapis.com/auth/youtube.readonly"
+          ],
+          "missing_scopes": [],
+          "ready": true
+        },
+        "oauth": {
+          "attempted": true,
+          "ok": true,
+          "error": null
+        }
+      }
+    },
+    "thumbnail_permission_probe": {
+      "go": false,
+      "status": "no_go",
+      "reason": "thumbnail_set_streak_below_threshold",
+      "evidence": {
+        "channel_id": "egitim_rehberi",
+        "required_streak": 3,
+        "cache_entry": {
+          "can_upload_thumbnail": false,
+          "success_streak": 0,
+          "last_reason": "ownership_or_brand_permission",
+          "updated_at": "2026-07-09T21:53:00+0300",
+          "last_probe": {
+            "channel_id": "egitim_rehberi",
+            "token_path": "channels/egitim_rehberi/youtube_token.pickle",
+            "video_id": "Twq4ZH3d2mI",
+            "thumbnail_path": "/Users/klara/Downloads/adsız klasör/channels/egitim_rehberi/output/videos/20260709_191609_thumbnail.jpg",
+            "authenticated_channel_id": "UCVmjUlrK8L5rA-To5iGDbIw",
+            "authenticated_channel_title": "Eğitim Rehberi",
+            "status": 403,
+            "detail": "{\n  \"error\": {\n    \"code\": 403,\n    \"message\": \"The authenticated user doesn't have permissions to upload and set custom video thumbnails.\",\n    \"errors\": [\n      {\n        \"message\": \"The authenticated user doesn't have permissions to upload and set custom video thumbnails.\",\n        \"domain\": \"youtube.thumbnail\",\n        \"reason\": \"forbidden\",\n        \"location\": \"Authorization\",\n        \"locationType\": \"header\"\n      }\n    ]\n  }\n}\n"
+          }
+        },
+        "cache_path": "/Users/klara/Downloads/adsız klasör/logs/thumbnail_permission_cache.json"
+      }
+    }
+  },
+  "flags": {
+    "analytics_collector_enabled": true,
+    "thumbnail_learning_enabled": false,
+    "analytics_live_status": "go_enabled",
+    "thumbnail_permission_status": "no_go_streak_not_met",
+    "ready_for_learning_activation": false,
+    "generated_at_utc": "2026-07-09T19:16:04.242139+00:00",
+    "source": "activation_controller"
+  },
+  "activation": {
+    "requested": false,
+    "applied": false,
+    "reason": "not_requested",
+    "flags_path": "/Users/klara/Downloads/adsız klasör/output/state/learning_activation_flags.json"
+  },
+  "system_status": "blocked_for_learning_activation",
+  "safety_policy": {
+    "analytics_api_go_required": true,
+    "thumbnail_success_streak_required": 3,
+    "explicit_activation_command_required": true,
+    "auto_code_generation": false
+  },
+  "report_paths": {
+    "report_path": "/Users/klara/Downloads/adsız klasör/logs/activation_controller_report.json",
+    "archive_stamped": "/Users/klara/Downloads/adsız klasör/output/state/activation_reports/2026-07-09T19-16-04.json",
+    "archive_latest": "/Users/klara/Downloads/adsız klasör/output/state/activation_reports/latest.json"
+  }
+}

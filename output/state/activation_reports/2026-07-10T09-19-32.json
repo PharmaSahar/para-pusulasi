@@ -1,0 +1,157 @@
+{
+  "controller": "activation_controller",
+  "generated_at_utc": "2026-07-10T09:19:32.502163+00:00",
+  "channel_id": "test_channel",
+  "gates": {
+    "analytics_api_probe": {
+      "go": true,
+      "status": "go",
+      "reason": "analytics_api_enabled_and_oauth_ready",
+      "evidence": {
+        "probe": {
+          "attempted": true,
+          "ok": true,
+          "error": null,
+          "exit_code": 0,
+          "probe_result": {
+            "token_after": {
+              "ready": true
+            },
+            "oauth": {
+              "ok": true
+            }
+          },
+          "command": [
+            "fake"
+          ]
+        },
+        "token_after": {
+          "ready": true
+        },
+        "oauth": {
+          "ok": true
+        }
+      }
+    },
+    "thumbnail_permission_probe": {
+      "go": false,
+      "status": "no_go",
+      "reason": "runtime_policy_blocked:ctr_trend_below_threshold",
+      "evidence": {
+        "channel_id": "test_channel",
+        "required_streak": 3,
+        "cache_entry": {
+          "can_upload_thumbnail": true,
+          "success_streak": 3,
+          "last_reason": null,
+          "updated_at": "2026-07-09T00:00:00+00:00",
+          "last_probe": {}
+        },
+        "cache_path": "/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-161/test_activation_controller_run0/thumbnail_permission_cache.json",
+        "runtime_gate": {
+          "go": false,
+          "status": "no_go",
+          "reason": "ctr_trend_below_threshold",
+          "evidence": {
+            "channel_id": "test_channel",
+            "performance_path": "/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-161/test_activation_controller_run0/channel_performance.jsonl",
+            "rows_seen": 4,
+            "window": 2,
+            "recent_ctr": 0.0495,
+            "previous_ctr": 0.0795,
+            "ctr_delta": -0.03,
+            "min_ctr_delta": 0.001,
+            "upload_success_rate": 1.0,
+            "min_upload_success_rate": 0.9
+          }
+        }
+      }
+    },
+    "runtime_policy_engine": {
+      "go": false,
+      "status": "no_go",
+      "reason": "ctr_trend_below_threshold",
+      "evidence": {
+        "channel_id": "test_channel",
+        "performance_path": "/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-161/test_activation_controller_run0/channel_performance.jsonl",
+        "rows_seen": 4,
+        "window": 2,
+        "recent_ctr": 0.0495,
+        "previous_ctr": 0.0795,
+        "ctr_delta": -0.03,
+        "min_ctr_delta": 0.001,
+        "upload_success_rate": 1.0,
+        "min_upload_success_rate": 0.9
+      }
+    }
+  },
+  "flags": {
+    "analytics_collector_enabled": true,
+    "thumbnail_learning_enabled": false,
+    "analytics_live_status": "go_enabled",
+    "thumbnail_permission_status": "no_go_streak_not_met",
+    "ready_for_learning_activation": false,
+    "generated_at_utc": "2026-07-10T09:19:32.502151+00:00",
+    "source": "activation_controller"
+  },
+  "activation": {
+    "requested": false,
+    "applied": false,
+    "reason": "not_requested",
+    "flags_path": "/Users/klara/Downloads/adsız klasör/output/state/learning_activation_flags.json"
+  },
+  "system_status": "blocked_for_learning_activation",
+  "safety_policy": {
+    "analytics_api_go_required": true,
+    "thumbnail_success_streak_required": 3,
+    "explicit_activation_command_required": true,
+    "runtime_policy_engine_allowed_to_toggle_flags": true,
+    "runtime_policy_gate_enabled": true,
+    "auto_code_generation": false
+  },
+  "controller_scope": {
+    "allowed_actions": [
+      "read_kpi_evidence",
+      "evaluate_policy_thresholds",
+      "write_runtime_flags",
+      "write_controller_reports"
+    ],
+    "forbidden_actions": [
+      "generate_new_policy_logic",
+      "generate_optimization_backlog",
+      "modify_model_behavior",
+      "modify_source_code",
+      "create_git_commit"
+    ]
+  },
+  "data_flow": [
+    "video_generation",
+    "thumbnail_intelligence",
+    "metadata_engine",
+    "video_quality_score",
+    "upload",
+    "analytics_collector",
+    "evaluator",
+    "creative_learning",
+    "activation_controller",
+    "next_generation"
+  ],
+  "kpi_catalog": [
+    "click_through_rate",
+    "retention",
+    "watch_time",
+    "upload_success_rate",
+    "dna_violations",
+    "metadata_repairs",
+    "thumbnail_403_rate",
+    "thumbnail_reject_rate",
+    "quality_score_distribution",
+    "learning_confidence",
+    "false_positive_rate"
+  ],
+  "report_paths": {
+    "report_path": "/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-161/test_activation_controller_run0/report.json",
+    "archive_stamped": "/Users/klara/Downloads/adsız klasör/output/state/activation_reports/2026-07-10T09-19-32.json",
+    "archive_latest": "/Users/klara/Downloads/adsız klasör/output/state/activation_reports/latest.json"
+  }
+}

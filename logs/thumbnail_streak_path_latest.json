@@ -1,0 +1,162 @@
+{
+  "generated_at_utc": "2026-07-10T12:35:53.683814+00:00",
+  "required_streak": 3,
+  "source": "/Users/klara/Downloads/adsız klasör/logs/thumbnail_permission_cache.json",
+  "summary": {
+    "resolved": 4,
+    "in_progress": 0,
+    "blocked": 5,
+    "unknown": 0,
+    "channels_total": 9
+  },
+  "rows": [
+    {
+      "channel_id": "borsa_akademi",
+      "state": "resolved",
+      "can_upload_thumbnail": true,
+      "success_streak": 5,
+      "last_reason": null,
+      "last_probe": null,
+      "next_action": "keep_monitoring",
+      "remaining_successes": 0
+    },
+    {
+      "channel_id": "egitim_rehberi",
+      "state": "blocked",
+      "can_upload_thumbnail": false,
+      "success_streak": 0,
+      "last_reason": "ownership_or_brand_permission",
+      "last_probe": {
+        "channel_id": "egitim_rehberi",
+        "token_path": "channels/egitim_rehberi/youtube_token.pickle",
+        "video_id": "Twq4ZH3d2mI",
+        "thumbnail_path": "/Users/klara/Downloads/adsız klasör/channels/egitim_rehberi/output/videos/20260709_191609_thumbnail.jpg",
+        "authenticated_channel_id": "UCVmjUlrK8L5rA-To5iGDbIw",
+        "authenticated_channel_title": "Eğitim Rehberi",
+        "status": 403,
+        "detail": "{\n  \"error\": {\n    \"code\": 403,\n    \"message\": \"The authenticated user doesn't have permissions to upload and set custom video thumbnails.\",\n    \"errors\": [\n      {\n        \"message\": \"The authenticated user doesn't have permissions to upload and set custom video thumbnails.\",\n        \"domain\": \"youtube.thumbnail\",\n        \"reason\": \"forbidden\",\n        \"location\": \"Authorization\",\n        \"locationType\": \"header\"\n      }\n    ]\n  }\n}\n"
+      },
+      "next_action": "fix_brand_or_channel_permission_then_reauth_then_probe",
+      "remaining_successes": 3,
+      "block_reason": "ownership_or_brand_permission"
+    },
+    {
+      "channel_id": "gayrimenkul_tv",
+      "state": "blocked",
+      "can_upload_thumbnail": false,
+      "success_streak": 0,
+      "last_reason": "ownership_or_brand_permission",
+      "last_probe": {
+        "channel_id": "gayrimenkul_tv",
+        "token_path": "channels/gayrimenkul_tv/youtube_token.pickle",
+        "video_id": "b5rXqexuxdE",
+        "thumbnail_path": "/Users/klara/Downloads/adsız klasör/channels/gayrimenkul_tv/output/videos/20260710_111535_thumbnail.jpg",
+        "authenticated_channel_id": "UCIAevq41ewEZORIZ7ODMOoA",
+        "authenticated_channel_title": "Gayrimenkul TV",
+        "status": 403,
+        "detail": "{\n  \"error\": {\n    \"code\": 403,\n    \"message\": \"The authenticated user doesn't have permissions to upload and set custom video thumbnails.\",\n    \"errors\": [\n      {\n        \"message\": \"The authenticated user doesn't have permissions to upload and set custom video thumbnails.\",\n        \"domain\": \"youtube.thumbnail\",\n        \"reason\": \"forbidden\",\n        \"location\": \"Authorization\",\n        \"locationType\": \"header\"\n      }\n    ]\n  }\n}\n"
+      },
+      "next_action": "fix_brand_or_channel_permission_then_reauth_then_probe",
+      "remaining_successes": 3,
+      "block_reason": "ownership_or_brand_permission"
+    },
+    {
+      "channel_id": "girisim_okulu",
+      "state": "blocked",
+      "can_upload_thumbnail": false,
+      "success_streak": 0,
+      "last_reason": "ownership_or_brand_permission",
+      "last_probe": {
+        "channel_id": "girisim_okulu",
+        "token_path": "channels/girisim_okulu/youtube_token.pickle",
+        "video_id": "3iYSwJPfvwo",
+        "thumbnail_path": "/Users/klara/Downloads/adsız klasör/channels/girisim_okulu/output/videos/20260710_021032_thumbnail.jpg",
+        "authenticated_channel_id": "UCvfuE893JTeSJx72j3eq3hQ",
+        "authenticated_channel_title": "Girişim Okulu",
+        "status": 403,
+        "detail": "{\n  \"error\": {\n    \"code\": 403,\n    \"message\": \"The authenticated user doesn't have permissions to upload and set custom video thumbnails.\",\n    \"errors\": [\n      {\n        \"message\": \"The authenticated user doesn't have permissions to upload and set custom video thumbnails.\",\n        \"domain\": \"youtube.thumbnail\",\n        \"reason\": \"forbidden\",\n        \"location\": \"Authorization\",\n        \"locationType\": \"header\"\n      }\n    ]\n  }\n}\n"
+      },
+      "next_action": "fix_brand_or_channel_permission_then_reauth_then_probe",
+      "remaining_successes": 3,
+      "block_reason": "ownership_or_brand_permission"
+    },
+    {
+      "channel_id": "kariyer_pusulasi",
+      "state": "resolved",
+      "can_upload_thumbnail": true,
+      "success_streak": 3,
+      "last_reason": null,
+      "last_probe": {
+        "channel_id": "kariyer_pusulasi",
+        "token_path": "channels/kariyer_pusulasi/youtube_token.pickle",
+        "video_id": "fW46ImLIuKc",
+        "thumbnail_path": "/Users/klara/Downloads/adsız klasör/channels/kariyer_pusulasi/output/videos/20260710_110924_thumbnail.jpg",
+        "authenticated_channel_id": "UC-LxyfIrfqWDfFCzJLVBwEg",
+        "authenticated_channel_title": "`Kariyer Pusulası`",
+        "status": 200
+      },
+      "next_action": "keep_monitoring",
+      "remaining_successes": 0
+    },
+    {
+      "channel_id": "kripto_rehber",
+      "state": "resolved",
+      "can_upload_thumbnail": true,
+      "success_streak": 5,
+      "last_reason": null,
+      "last_probe": null,
+      "next_action": "keep_monitoring",
+      "remaining_successes": 0
+    },
+    {
+      "channel_id": "para_pusulasi",
+      "state": "resolved",
+      "can_upload_thumbnail": true,
+      "success_streak": 8,
+      "last_reason": null,
+      "last_probe": null,
+      "next_action": "keep_monitoring",
+      "remaining_successes": 0
+    },
+    {
+      "channel_id": "saglik_pusulasi",
+      "state": "blocked",
+      "can_upload_thumbnail": false,
+      "success_streak": 0,
+      "last_reason": "ownership_or_brand_permission",
+      "last_probe": {
+        "channel_id": "saglik_pusulasi",
+        "token_path": "channels/saglik_pusulasi/youtube_token.pickle",
+        "video_id": "zPhPrRoaaYo",
+        "thumbnail_path": "/Users/klara/Downloads/adsız klasör/channels/saglik_pusulasi/output/videos/20260710_023314_thumbnail.jpg",
+        "authenticated_channel_id": "UCFgiTIusu01pgxviXU33jBQ",
+        "authenticated_channel_title": "Sağlık Pusulası",
+        "status": 403,
+        "detail": "{\n  \"error\": {\n    \"code\": 403,\n    \"message\": \"The authenticated user doesn't have permissions to upload and set custom video thumbnails.\",\n    \"errors\": [\n      {\n        \"message\": \"The authenticated user doesn't have permissions to upload and set custom video thumbnails.\",\n        \"domain\": \"youtube.thumbnail\",\n        \"reason\": \"forbidden\",\n        \"location\": \"Authorization\",\n        \"locationType\": \"header\"\n      }\n    ]\n  }\n}\n"
+      },
+      "next_action": "fix_brand_or_channel_permission_then_reauth_then_probe",
+      "remaining_successes": 3,
+      "block_reason": "ownership_or_brand_permission"
+    },
+    {
+      "channel_id": "teknoloji_pusulasi",
+      "state": "blocked",
+      "can_upload_thumbnail": false,
+      "success_streak": 0,
+      "last_reason": "ownership_or_brand_permission",
+      "last_probe": {
+        "channel_id": "teknoloji_pusulasi",
+        "token_path": "channels/teknoloji_pusulasi/youtube_token.pickle",
+        "video_id": "YXHmaYNGiSQ",
+        "thumbnail_path": "/Users/klara/Downloads/adsız klasör/channels/teknoloji_pusulasi/output/videos/20260710_104847_thumbnail.jpg",
+        "authenticated_channel_id": "UCZgzLieTfwq6_euBi1nEsrQ",
+        "authenticated_channel_title": "Teknoloji Pusulası",
+        "status": 403,
+        "detail": "{\n  \"error\": {\n    \"code\": 403,\n    \"message\": \"The authenticated user doesn't have permissions to upload and set custom video thumbnails.\",\n    \"errors\": [\n      {\n        \"message\": \"The authenticated user doesn't have permissions to upload and set custom video thumbnails.\",\n        \"domain\": \"youtube.thumbnail\",\n        \"reason\": \"forbidden\",\n        \"location\": \"Authorization\",\n        \"locationType\": \"header\"\n      }\n    ]\n  }\n}\n"
+      },
+      "next_action": "fix_brand_or_channel_permission_then_reauth_then_probe",
+      "remaining_successes": 3,
+      "block_reason": "ownership_or_brand_permission"
+    }
+  ]
+}

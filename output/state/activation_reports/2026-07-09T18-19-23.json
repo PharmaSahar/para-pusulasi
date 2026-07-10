@@ -1,0 +1,77 @@
+{
+  "controller": "activation_controller",
+  "generated_at_utc": "2026-07-09T18:19:23.299425+00:00",
+  "channel_id": "egitim_rehberi",
+  "gates": {
+    "analytics_api_probe": {
+      "go": false,
+      "status": "no_go",
+      "reason": "analytics_probe_skipped",
+      "evidence": {
+        "probe": {
+          "attempted": false,
+          "ok": false,
+          "error": "skipped_by_flag",
+          "exit_code": null,
+          "probe_result": {},
+          "command": []
+        },
+        "token_after": null,
+        "oauth": null
+      }
+    },
+    "thumbnail_permission_probe": {
+      "go": false,
+      "status": "no_go",
+      "reason": "thumbnail_set_streak_below_threshold",
+      "evidence": {
+        "channel_id": "egitim_rehberi",
+        "required_streak": 3,
+        "cache_entry": {
+          "can_upload_thumbnail": false,
+          "success_streak": 0,
+          "last_reason": "ownership_or_brand_permission",
+          "updated_at": "2026-07-09T15:01:04+0300",
+          "last_probe": {
+            "channel_id": "egitim_rehberi",
+            "token_path": "channels/egitim_rehberi/youtube_token.pickle",
+            "video_id": "s8OPhoeJ8sY",
+            "thumbnail_path": "/Users/klara/Downloads/adsız klasör/channels/egitim_rehberi/output/videos/20260709_140004_thumbnail.jpg",
+            "authenticated_channel_id": "UCVmjUlrK8L5rA-To5iGDbIw",
+            "authenticated_channel_title": "Eğitim Rehberi",
+            "status": 403,
+            "detail": "{\n  \"error\": {\n    \"code\": 403,\n    \"message\": \"The authenticated user doesn't have permissions to upload and set custom video thumbnails.\",\n    \"errors\": [\n      {\n        \"message\": \"The authenticated user doesn't have permissions to upload and set custom video thumbnails.\",\n        \"domain\": \"youtube.thumbnail\",\n        \"reason\": \"forbidden\",\n        \"location\": \"Authorization\",\n        \"locationType\": \"header\"\n      }\n    ]\n  }\n}\n"
+          }
+        },
+        "cache_path": "/Users/klara/Downloads/adsız klasör/logs/thumbnail_permission_cache.json"
+      }
+    }
+  },
+  "flags": {
+    "analytics_collector_enabled": false,
+    "thumbnail_learning_enabled": false,
+    "analytics_live_status": "no_go_api_not_enabled",
+    "thumbnail_permission_status": "no_go_streak_not_met",
+    "ready_for_learning_activation": false,
+    "generated_at_utc": "2026-07-09T18:19:23.299274+00:00",
+    "source": "activation_controller"
+  },
+  "activation": {
+    "requested": false,
+    "applied": false,
+    "reason": "not_requested",
+    "flags_path": "/Users/klara/Downloads/adsız klasör/output/state/learning_activation_flags.json"
+  },
+  "system_status": "blocked_for_learning_activation",
+  "safety_policy": {
+    "analytics_api_go_required": true,
+    "thumbnail_success_streak_required": 3,
+    "explicit_activation_command_required": true,
+    "auto_code_generation": false
+  },
+  "report_paths": {
+    "report_path": "/Users/klara/Downloads/adsız klasör/logs/activation_controller_report.json",
+    "archive_stamped": "/Users/klara/Downloads/adsız klasör/output/state/activation_reports/2026-07-09T18-19-23.json",
+    "archive_latest": "/Users/klara/Downloads/adsız klasör/output/state/activation_reports/latest.json"
+  }
+}

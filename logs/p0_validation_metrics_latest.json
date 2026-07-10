@@ -1,0 +1,105 @@
+{
+  "generated_at_utc": "2026-07-10T12:36:09.044035+00:00",
+  "scope": {
+    "lookback_rows": 500,
+    "performance_rows_total": 368,
+    "performance_rows_scoped": 368,
+    "thumbnail_history_rows_total": 805,
+    "routing_guard_decision_rows_total": 26,
+    "shorts_safety_decision_rows_total": 93,
+    "chapter_validation_rows_total": 17
+  },
+  "workstreams": [
+    {
+      "workstream": "P0-A",
+      "name": "routing_and_dna_leak_prevention",
+      "sample_count": 353,
+      "guard_decision_rows": 26,
+      "guard_block_rows": 7,
+      "guard_reviewed_block_rows": 0,
+      "metrics": {
+        "wrong_channel_publish_rate": {
+          "value": 0.0,
+          "unit": "percent",
+          "evidence_status": "observed"
+        },
+        "dna_violation_block_precision": {
+          "value": null,
+          "unit": "percent",
+          "evidence_status": "insufficient_evidence",
+          "reason": "missing_review_outcome_labels_in_guard_decisions"
+        },
+        "false_block_rate": {
+          "value": null,
+          "unit": "percent",
+          "evidence_status": "insufficient_evidence",
+          "reason": "missing_review_outcome_labels_in_guard_decisions"
+        },
+        "guard_fail_closed_rate": {
+          "value": 0.0,
+          "unit": "percent",
+          "evidence_status": "observed"
+        }
+      }
+    },
+    {
+      "workstream": "P0-B",
+      "name": "shorts_visual_safety",
+      "sample_count": 68,
+      "history_rows": 805,
+      "shorts_safety_decision_rows": 0,
+      "shorts_safety_non_error_rows": 0,
+      "metrics": {
+        "unsafe_visual_escape_rate": {
+          "value": null,
+          "unit": "percent",
+          "evidence_status": "insufficient_evidence",
+          "reason": "missing_structured_shorts_safety_decisions"
+        },
+        "thumbnail_reject_rate_proxy": {
+          "value": null,
+          "unit": "percent",
+          "evidence_status": "no_evidence"
+        },
+        "safe_area_compliance": {
+          "value": null,
+          "unit": "percent",
+          "evidence_status": "insufficient_evidence",
+          "reason": "missing_structured_shorts_safety_decisions"
+        }
+      }
+    },
+    {
+      "workstream": "P0-C",
+      "name": "chapter_validator_hardening",
+      "sample_count": 353,
+      "chapter_validation_rows": 17,
+      "chapter_revalidate_rows": 10,
+      "metrics": {
+        "chapter_contract_compliance": {
+          "value": 100.0,
+          "unit": "percent",
+          "evidence_status": "observed",
+          "reason": null
+        },
+        "upload_time_chapter_failure_rate": {
+          "value": 0.0,
+          "unit": "percent",
+          "evidence_status": "observed",
+          "reason": null
+        },
+        "post_upload_chapter_edit_rate": {
+          "value": 0.0,
+          "unit": "percent",
+          "evidence_status": "observed",
+          "reason": null
+        }
+      }
+    }
+  ],
+  "safety": {
+    "read_only": true,
+    "changes_runtime_behavior": false,
+    "writes_flags": false
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "controller": "activation_controller",
+  "generated_at_utc": "2026-07-09T18:31:43.966445+00:00",
+  "channel_id": "teknoloji_pusulasi",
+  "gates": {
+    "analytics_api_probe": {
+      "go": false,
+      "status": "no_go",
+      "reason": "analytics_probe_skipped",
+      "evidence": {
+        "probe": {
+          "attempted": false,
+          "ok": false,
+          "error": "skipped_by_flag",
+          "exit_code": null,
+          "probe_result": {},
+          "command": []
+        },
+        "token_after": null,
+        "oauth": null
+      }
+    },
+    "thumbnail_permission_probe": {
+      "go": false,
+      "status": "no_go",
+      "reason": "thumbnail_set_streak_below_threshold",
+      "evidence": {
+        "channel_id": "teknoloji_pusulasi",
+        "required_streak": 3,
+        "cache_entry": {
+          "can_upload_thumbnail": false,
+          "success_streak": 0,
+          "last_reason": "ownership_or_brand_permission",
+          "updated_at": "2026-07-09T17:09:15+0300"
+        },
+        "cache_path": "/Users/klara/Downloads/adsız klasör/logs/thumbnail_permission_cache.json"
+      }
+    }
+  },
+  "flags": {
+    "analytics_collector_enabled": false,
+    "thumbnail_learning_enabled": false,
+    "analytics_live_status": "no_go_api_not_enabled",
+    "thumbnail_permission_status": "no_go_streak_not_met",
+    "ready_for_learning_activation": false,
+    "generated_at_utc": "2026-07-09T18:31:43.966313+00:00",
+    "source": "activation_controller"
+  },
+  "activation": {
+    "requested": false,
+    "applied": false,
+    "reason": "not_requested",
+    "flags_path": "/Users/klara/Downloads/adsız klasör/output/state/learning_activation_flags.json"
+  },
+  "system_status": "blocked_for_learning_activation",
+  "safety_policy": {
+    "analytics_api_go_required": true,
+    "thumbnail_success_streak_required": 3,
+    "explicit_activation_command_required": true,
+    "auto_code_generation": false
+  },
+  "report_paths": {
+    "report_path": "/Users/klara/Downloads/adsız klasör/logs/activation_controller_report.json",
+    "archive_stamped": "/Users/klara/Downloads/adsız klasör/output/state/activation_reports/2026-07-09T18-31-43.json",
+    "archive_latest": "/Users/klara/Downloads/adsız klasör/output/state/activation_reports/latest.json"
+  }
+}

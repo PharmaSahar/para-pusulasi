@@ -1,0 +1,53 @@
+{
+  "generated_at_utc": "2026-07-10T12:36:09.172162+00:00",
+  "channel_id": "para_pusulasi",
+  "artifacts": {
+    "flags_path": "/Users/klara/Downloads/adsız klasör/output/state/learning_activation_flags.json",
+    "thumbnail_cache_path": "/Users/klara/Downloads/adsız klasör/logs/thumbnail_permission_cache.json"
+  },
+  "cases": {
+    "A_learning_off": {
+      "effective_policy": "first",
+      "runtime": {
+        "source": "runtime_flag_ab_evidence",
+        "configured_policy": "first",
+        "effective_policy": "first",
+        "thumbnail_learning_enabled": false,
+        "can_upload_thumbnail": true,
+        "reason": "learning_disabled_keep_config"
+      }
+    },
+    "B_learning_on": {
+      "effective_policy": "max_attention_score",
+      "runtime": {
+        "source": "runtime_flag_ab_evidence",
+        "configured_policy": "first",
+        "effective_policy": "max_attention_score",
+        "thumbnail_learning_enabled": true,
+        "can_upload_thumbnail": true,
+        "reason": "thumbnail_learning_enabled"
+      }
+    },
+    "A2_learning_off": {
+      "effective_policy": "first",
+      "runtime": {
+        "source": "runtime_flag_ab_evidence",
+        "configured_policy": "first",
+        "effective_policy": "first",
+        "thumbnail_learning_enabled": false,
+        "can_upload_thumbnail": true,
+        "reason": "learning_disabled_keep_config"
+      }
+    }
+  },
+  "assertions": {
+    "behavior_changed_when_on": true,
+    "behavior_reverted_when_off": true,
+    "expected_on_policy": "max_attention_score",
+    "actual_on_policy": "max_attention_score"
+  },
+  "result": {
+    "ok": true,
+    "summary": "runtime_flag_behavior_validated"
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "files": {
+    "performance": "/Users/klara/Downloads/adsız klasör/logs/channel_performance.jsonl",
+    "telemetry": "/Users/klara/Downloads/adsız klasör/logs/production_scheduler.out",
+    "registry": "/Users/klara/Downloads/adsız klasör/output/telemetry/experiments.jsonl"
+  },
+  "cutover": {
+    "build_info_marker_line": 60,
+    "telemetry_events_considered": 278,
+    "mode": "post_build_info_window"
+  },
+  "metrics_coverage": {
+    "click_through_rate": {
+      "filled": 0,
+      "total": 365,
+      "percent": 0.0
+    },
+    "watch_time_hours": {
+      "filled": 0,
+      "total": 365,
+      "percent": 0.0
+    },
+    "impressions": {
+      "filled": 0,
+      "total": 365,
+      "percent": 0.0
+    },
+    "average_view_duration_seconds": {
+      "filled": 0,
+      "total": 365,
+      "percent": 0.0
+    }
+  },
+  "trace_completeness": {
+    "eligible_upload_runs": 2,
+    "complete_runs": 2,
+    "percent": 100.0,
+    "target_percent": 100.0,
+    "alert_below_percent": 99.0,
+    "missing_reasons": {},
+    "upload_runs_by_channel": {
+      "para_pusulasi": 1,
+      "kariyer_pusulasi": 1
+    }
+  }
+}

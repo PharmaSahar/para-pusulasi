@@ -1,0 +1,13 @@
+{
+  "ok": true,
+  "log": "/Users/klara/Downloads/adsız klasör/logs/production_scheduler.out",
+  "video_upload_count": 4,
+  "thumbnail_403_count": 0,
+  "thumbnail_403_ratio_percent": 0.0,
+  "thresholds": {
+    "target_ratio_percent": 0.0,
+    "alert_if_ratio_percent_gt": 0.0
+  },
+  "forbidden_by_channel": {},
+  "sample_lines": []
+}

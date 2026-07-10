@@ -361,7 +361,17 @@ def _classify_error_decision(summary: str) -> dict:
             "retry": False,
         }
 
-    if any(k in txt for k in ("quota", "credit balance", "http 429", "rate limit")):
+    if any(k in txt for k in (
+        "quota",
+        "credit balance",
+        "http 429",
+        "http 529",
+        "rate limit",
+        "overloaded",
+        "overloaded_error",
+        "service unavailable",
+        "internal server error",
+    )):
         return {
             "decision": "continue_with_backoff",
             "decision_label": "Uretim devam (bekleme/backoff)",
@@ -425,6 +435,11 @@ def _error_type_from_text(error_text: str) -> str:
         return "quota"
     if any(key in txt for key in ("rate limit", "http 429")):
         return "rate_limit"
+    if any(
+        key in txt
+        for key in ("overloaded", "overloaded_error", "http 529", "service unavailable", "internal server error")
+    ):
+        return "overload"
     if any(key in txt for key in ("authentication", "invalid api key", "unauthorized", "http 401")):
         return "auth"
     if any(key in txt for key in ("timeout", "connection", "dns", "chunkedencodingerror")):
@@ -448,7 +463,7 @@ def record_provider_failure(provider: str, error_text: str) -> dict:
     now = _now_utc()
 
     open_seconds = 0
-    if err_type in {"credit", "quota", "rate_limit", "auth"}:
+    if err_type in {"credit", "quota", "rate_limit", "auth", "overload"}:
         open_seconds = min(7200, 300 * (2 ** max(0, failure_count - 1)))
 
     open_until = ""

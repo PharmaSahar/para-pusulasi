@@ -10,6 +10,12 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
+from .chapter_validator import (
+    chapter_entries_from_description,
+    remove_chapter_lines,
+    render_chapter_block,
+    validate_and_fix_chapters,
+)
 from .quality_scoring import build_quality_scores
 
 
@@ -90,19 +96,17 @@ def _parse_timestamp_to_seconds(token: str) -> int:
 
 
 def extract_chapter_seconds(description: str) -> list[int]:
-    seconds: list[int] = []
-    for raw in str(description or "").splitlines():
-        m = _TIMESTAMP_RE.match(raw.strip())
-        if not m:
-            continue
-        sec = _parse_timestamp_to_seconds(m.group("t"))
-        if sec >= 0:
-            seconds.append(sec)
-    return seconds
+    entries = chapter_entries_from_description(description)
+    return [int(item.get("seconds", 0)) for item in entries]
 
 
 def chapter_rule_ok(description: str, min_gap: int = 10, min_count: int = 3) -> tuple[bool, int, bool]:
-    secs = extract_chapter_seconds(description)
+    result = validate_and_fix_chapters(
+        description=description,
+        video_duration_seconds=None,
+        is_short=False,
+    )
+    secs = [int(item.get("seconds", 0)) for item in result.get("final_chapters", [])]
     if len(secs) < min_count:
         return False, len(secs), False
 
@@ -117,18 +121,7 @@ def chapter_rule_ok(description: str, min_gap: int = 10, min_count: int = 3) -> 
 
 def strip_existing_chapters(description: str) -> str:
     """Remove existing chapter heading/timestamp lines from description."""
-    out: list[str] = []
-    for raw in str(description or "").splitlines():
-        line = raw.strip()
-        if not line:
-            out.append(raw)
-            continue
-        if _CHAPTER_HEADING_RE.match(line):
-            continue
-        if _TIMESTAMP_RE.match(line):
-            continue
-        out.append(raw)
-    return "\n".join(out).strip()
+    return remove_chapter_lines(description)
 
 
 def sanitize_tags(tags: list[str] | None, max_tags: int = 15) -> list[str]:
@@ -276,8 +269,17 @@ def build_normalized_description(
 ) -> str:
     summary = f"Bu videoda: {title}".strip()
     question = f"Yorum sorusu: {title} konusunda en cok hangi adim zor geliyor?".strip()
-    chapters = render_chapters_block(build_duration_safe_chapters(duration_sec))
     body = strip_existing_chapters(base_description)
+    proposed_chapters = render_chapters_block(build_duration_safe_chapters(duration_sec))
+    chapter_candidate = body
+    if proposed_chapters:
+        chapter_candidate = f"{body}\n\n{proposed_chapters}".strip()
+    chapter_result = validate_and_fix_chapters(
+        description=chapter_candidate,
+        video_duration_seconds=duration_sec,
+        is_short=bool(int(duration_sec or 0) < 60),
+    )
+    chapters = render_chapter_block(chapter_result.get("final_chapters", []))
 
     parts = [summary]
     if body:
@@ -319,7 +321,7 @@ def normalize_metadata(
     min_seo: int = 60,
 ) -> NormalizedMetadata:
     ok, chapter_count, min_gap_ok = chapter_rule_ok(description)
-    chapter_issue = not ok
+    chapter_issue = False if int(duration_sec or 0) < 60 else not ok
 
     normalized_tags = ensure_minimum_tags(title=title, tags=tags, niche=niche, min_tags=min_tags)
     tag_issue = len(sanitize_tags(tags)) < min_tags

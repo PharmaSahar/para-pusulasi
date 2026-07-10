@@ -30,8 +30,13 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import TextIO
 
 import pytz
+try:
+    import fcntl
+except ImportError:  # pragma: no cover
+    fcntl = None
 try:
     import schedule
 except ImportError:
@@ -103,7 +108,10 @@ except ValueError:
 TZ = pytz.timezone("Europe/Istanbul")
 QUEUE_FILE = "output/queue/channel_queue.json"
 PID_FILE = Path("logs/production_scheduler.pid")
+SCHEDULER_SINGLETON_LOCK_FILE = Path("output/state/scheduler_singleton.lock")
+SCHEDULER_SINGLETON_META_FILE = Path("output/state/scheduler_singleton_meta.json")
 RUNTIME_EVIDENCE_LATEST_FILE = Path("logs/runtime_optimization_evidence_latest.json")
+SAFETY_GATE_LATEST_FILE = Path("logs/production_safety_gate_latest.json")
 ACTIVATION_CONTROLLER_SCRIPT = Path("ops/activation_controller.py")
 FLEET_HEALTH_SCRIPT = Path("ops/fleet_health_report.py")
 BACKLOG_SCRIPT = Path("ops/optimization_backlog_engine.py")
@@ -112,6 +120,7 @@ GOVERNANCE_REFRESH_SCRIPT = Path("ops/refresh_governance_readiness.py")
 QUEUE_LOCK = threading.RLock()
 RENDER_LOCKS_LOCK = threading.Lock()
 RUNTIME_CYCLE_LOCK = threading.Lock()
+_SCHEDULER_SINGLETON_HANDLE: TextIO | None = None
 
 # Thread havuzu
 render_executor = ThreadPoolExecutor(max_workers=MAX_PARALLEL_RENDERS, thread_name_prefix="render")
@@ -218,6 +227,91 @@ def _write_pid_record() -> None:
         logger.info("Scheduler pid record updated: %s -> %s", PID_FILE, os.getpid())
     except Exception as e:
         logger.warning("Scheduler pid record write failed (non-blocking): %s", e)
+
+
+def _scheduler_singleton_lock_path() -> Path:
+    raw = str(os.getenv("SCHEDULER_SINGLETON_LOCK_FILE", str(SCHEDULER_SINGLETON_LOCK_FILE))).strip()
+    return Path(raw) if raw else SCHEDULER_SINGLETON_LOCK_FILE
+
+
+def _scheduler_singleton_meta_path() -> Path:
+    raw = str(os.getenv("SCHEDULER_SINGLETON_META_FILE", str(SCHEDULER_SINGLETON_META_FILE))).strip()
+    return Path(raw) if raw else SCHEDULER_SINGLETON_META_FILE
+
+
+def _load_scheduler_singleton_meta() -> dict:
+    path = _scheduler_singleton_meta_path()
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _save_scheduler_singleton_meta(meta: dict) -> None:
+    path = _scheduler_singleton_meta_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _acquire_scheduler_singleton_lock() -> None:
+    global _SCHEDULER_SINGLETON_HANDLE
+
+    if fcntl is None:
+        raise RuntimeError("scheduler_singleton_lock_unavailable:fcntl_missing")
+    if _SCHEDULER_SINGLETON_HANDLE is not None:
+        return
+
+    lock_path = _scheduler_singleton_lock_path()
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    handle = lock_path.open("a+", encoding="utf-8")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        holder = _load_scheduler_singleton_meta()
+        handle.close()
+        holder_pid = holder.get("pid", "unknown")
+        holder_started = holder.get("started_at", "unknown")
+        holder_cwd = holder.get("cwd", "unknown")
+        raise RuntimeError(
+            "scheduler_singleton_lock_conflict: "
+            f"pid={holder_pid} started_at={holder_started} cwd={holder_cwd} lock={lock_path}"
+        )
+
+    _SCHEDULER_SINGLETON_HANDLE = handle
+    _save_scheduler_singleton_meta(
+        {
+            "pid": os.getpid(),
+            "started_at": datetime.now(TZ).isoformat(),
+            "cwd": os.getcwd(),
+            "git_sha": _resolve_git_head_short(),
+            "lock_file": str(lock_path),
+        }
+    )
+    logger.info("Scheduler singleton lock acquired: %s", lock_path)
+
+
+def _release_scheduler_singleton_lock() -> None:
+    global _SCHEDULER_SINGLETON_HANDLE
+
+    handle = _SCHEDULER_SINGLETON_HANDLE
+    _SCHEDULER_SINGLETON_HANDLE = None
+    if handle is None:
+        return
+
+    try:
+        if fcntl is not None:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    except Exception:
+        pass
+    try:
+        handle.close()
+    except Exception:
+        pass
+    logger.info("Scheduler singleton lock released")
 
 
 def _load_json_file(path: Path) -> dict:
@@ -436,14 +530,34 @@ def render_and_schedule(channel_id: str):
                 break  # Başarılı
             except Exception as e:
                 last_error = e
-                error_str = str(e).lower()
+                error_text = str(getattr(e, "_provider_error_text", str(e)))
+                error_str = error_text.lower()
+                provider_failure_tokens = (
+                    "anthropic",
+                    "credit balance",
+                    "quota",
+                    "invalid_request",
+                    "http 400",
+                    "http 401",
+                    "http 403",
+                    "http 429",
+                    "http 529",
+                    "rate limit",
+                    "overloaded",
+                    "overloaded_error",
+                    "service unavailable",
+                    "internal server error",
+                )
+                if any(token in error_str for token in provider_failure_tokens) and not getattr(e, "_provider_failure_recorded", False):
+                    record_provider_failure("anthropic", error_text)
                 # Kesinlikle retry yapma
-                if any(x in error_str for x in ["failed_fact_check", "credit balance", "quota", "invalid_request", "invalidtags", "authentication"]):
-                    record_provider_failure("anthropic", str(e))
+                if any(x in error_str for x in ["failed_fact_check", "credit balance", "quota", "invalid_request", "invalidtags", "authentication", "http 400", "http 401", "http 403"]):
                     logger.error(f"[{cfg.name}] Fatal hata (retry yok): {e}")
                     if "failed_fact_check" not in error_str:
-                        decision = notify_error(cfg.name, str(e))
+                        decision = notify_error(cfg.name, error_text)
                         logger.info(f"[{cfg.name}] Telegram karar feedback: {decision.get('decision')}")
+                    raise
+                if getattr(e, "_skip_scheduler_pipeline_retry", False):
                     raise
                 if attempt < 3:
                     wait = 30 * attempt
@@ -530,17 +644,33 @@ def render_and_schedule(channel_id: str):
             logger.error(f"[{cfg.name}] Video ID alınamadı!")
 
     except Exception as e:
-        err_text = str(e).lower()
-        if any(token in err_text for token in ("anthropic", "credit balance", "quota", "invalid_request", "http 401", "rate limit")):
-            record_provider_failure("anthropic", str(e))
+        routed_error_text = str(getattr(e, "_provider_error_text", str(e)))
+        err_text = routed_error_text.lower()
+        if any(token in err_text for token in (
+            "anthropic",
+            "credit balance",
+            "quota",
+            "invalid_request",
+            "http 400",
+            "http 401",
+            "http 403",
+            "http 429",
+            "http 529",
+            "rate limit",
+            "overloaded",
+            "overloaded_error",
+            "service unavailable",
+            "internal server error",
+        )) and not getattr(e, "_provider_failure_recorded", False):
+            record_provider_failure("anthropic", routed_error_text)
         logger.error(f"[{channel_id}] Render hatası: {e}", exc_info=True)
         try:
-            if "failed_fact_check" in str(e).lower():
+            if "failed_fact_check" in routed_error_text.lower():
                 return
             from src.channel_manager import get_channel
             cfg = get_channel(channel_id)
             from src.scheduler_utils import notify_error
-            decision = notify_error(cfg.name, str(e))
+            decision = notify_error(cfg.name, routed_error_text)
             logger.info(f"[{cfg.name}] Telegram karar feedback: {decision.get('decision')}")
         except Exception:
             pass
@@ -1103,6 +1233,7 @@ def _print_help() -> None:
     print("  python scheduler.py --list   # Aktif kanallari listele")
     print("  python scheduler.py --status # Kuyruk durumunu goster")
     print("  python scheduler.py --health-check # Uretim hazirlik kontrolunu calistir")
+    print("  python scheduler.py --safety-check-now # Production safety gate raporu olustur")
     print("  python scheduler.py --skip-provider-preflight # Anthropic preflight kontrolunu atla")
     print("  python scheduler.py --sync-analytics-now # Canli YouTube Analytics sync ve optimizasyonu calistir")
     print("  python scheduler.py --run-optimization-cycle-now # Controller+Fleet+Backlog+Memory runtime kanit dongusu")
@@ -1135,6 +1266,73 @@ def _run_startup_health_check(*, create_missing_directories: bool, require_teleg
     )
     logger.info("Health check result: %s", "PASS" if result.ok else "FAIL")
     return result
+
+
+def _record_safety_gate_result(
+    *,
+    mode: str,
+    startup_health,
+    provider_preflight_ok: bool,
+    provider_preflight_detail: str,
+) -> dict:
+    health_errors = [str(item) for item in getattr(startup_health, "errors", ())]
+    payload = {
+        "generated_at": datetime.now(TZ).isoformat(),
+        "mode": str(mode or "unknown"),
+        "health_check_ok": bool(getattr(startup_health, "ok", False)),
+        "health_check_errors": health_errors,
+        "provider_preflight_ok": bool(provider_preflight_ok),
+        "provider_preflight_detail": str(provider_preflight_detail or ""),
+        "overall_ok": bool(getattr(startup_health, "ok", False)) and bool(provider_preflight_ok),
+        "git_sha": _resolve_git_head_short(),
+    }
+    _write_json_atomic(SAFETY_GATE_LATEST_FILE, payload)
+    logger.info(
+        "PRODUCTION_SAFETY_GATE mode=%s result=%s health_check=%s provider_preflight=%s detail=%s file=%s",
+        payload["mode"],
+        "PASS" if payload["overall_ok"] else "FAIL",
+        "PASS" if payload["health_check_ok"] else "FAIL",
+        "PASS" if payload["provider_preflight_ok"] else "FAIL",
+        payload["provider_preflight_detail"],
+        SAFETY_GATE_LATEST_FILE,
+    )
+    return payload
+
+
+def run_safety_check_once(*, skip_provider_preflight: bool = False) -> int:
+    startup_health = _run_startup_health_check(
+        create_missing_directories=False,
+        require_telegram=True,
+    )
+
+    provider_ok = False
+    provider_detail = "not_run_due_to_health_check_fail"
+    if startup_health.ok:
+        provider_ok, provider_detail = _run_provider_preflight_check(
+            skip_preflight=skip_provider_preflight,
+        )
+
+    payload = _record_safety_gate_result(
+        mode="manual",
+        startup_health=startup_health,
+        provider_preflight_ok=provider_ok,
+        provider_preflight_detail=provider_detail,
+    )
+
+    print(
+        json.dumps(
+            {
+                "ok": payload["overall_ok"],
+                "health_check_ok": payload["health_check_ok"],
+                "provider_preflight_ok": payload["provider_preflight_ok"],
+                "provider_preflight_detail": payload["provider_preflight_detail"],
+                "latest": str(SAFETY_GATE_LATEST_FILE),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0 if payload["overall_ok"] else 1
 
 
 def run_live_analytics_sync_once() -> int:
@@ -1235,6 +1433,9 @@ def main():
             print(f"- {error}")
         sys.exit(1)
 
+    if "--safety-check-now" in args:
+        sys.exit(run_safety_check_once(skip_provider_preflight=skip_provider_preflight))
+
     if "--sync-analytics-now" in args:
         sys.exit(run_live_analytics_sync_once())
 
@@ -1247,6 +1448,13 @@ def main():
     if "--list" in args or "--status" in args:
         show_status()
         return
+
+    try:
+        _acquire_scheduler_singleton_lock()
+    except RuntimeError as e:
+        logger.error("Scheduler singleton lock acquisition failed: %s", e)
+        print(f"ERROR: {e}")
+        sys.exit(1)
 
     from rich.console import Console
     console = Console()
@@ -1272,6 +1480,12 @@ def main():
         require_telegram=True,
     )
     if not startup_health.ok:
+        _record_safety_gate_result(
+            mode="startup",
+            startup_health=startup_health,
+            provider_preflight_ok=False,
+            provider_preflight_detail="not_run_due_to_health_check_fail",
+        )
         for error in startup_health.errors:
             logger.error("Startup validation failed: %s", error)
             print(f"ERROR: {error}")
@@ -1281,9 +1495,22 @@ def main():
         skip_preflight=skip_provider_preflight,
     )
     if not provider_ok:
+        _record_safety_gate_result(
+            mode="startup",
+            startup_health=startup_health,
+            provider_preflight_ok=False,
+            provider_preflight_detail=provider_detail,
+        )
         logger.error("Startup provider preflight failed: %s", provider_detail)
         print(f"ERROR: Anthropic preflight failed: {provider_detail}")
         sys.exit(1)
+
+    _record_safety_gate_result(
+        mode="startup",
+        startup_health=startup_health,
+        provider_preflight_ok=True,
+        provider_preflight_detail=provider_detail,
+    )
     logger.info("Startup provider preflight result: %s", provider_detail)
 
     # scheduler_utils opsiyonel — yoksa basit fallback kullan
@@ -1354,9 +1581,12 @@ def main():
     console.print("[green]Çalışıyor. Durdurmak: Ctrl+C[/green]")
     console.print("[dim]Her upload sonrası sonraki video otomatik render edilir.[/dim]\n")
 
-    while True:
-        schedule.run_pending()
-        time.sleep(30)
+    try:
+        while True:
+            schedule.run_pending()
+            time.sleep(30)
+    finally:
+        _release_scheduler_singleton_lock()
 
 
 if __name__ == "__main__":

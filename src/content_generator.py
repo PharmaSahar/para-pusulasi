@@ -2,16 +2,48 @@
 Gelismis Icerik Uretici - v2.0
 Claude AI + Ust Duzey Prompt Muhendisligi
 """
+import contextlib
 import json
 import logging
 import os
 import random
 import re
+import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
 import anthropic
+import httpx
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - non-Unix fallback
+    fcntl = None
+
+try:
+    from anthropic._exceptions import (
+        APIConnectionError,
+        APITimeoutError,
+        APIStatusError,
+        AuthenticationError,
+        BadRequestError,
+        DeadlineExceededError,
+        InternalServerError,
+        OverloadedError,
+        PermissionDeniedError,
+        RateLimitError,
+        RequestTooLargeError,
+        ServiceUnavailableError,
+        UnprocessableEntityError,
+    )
+except Exception:  # pragma: no cover - defensive import fallback
+    APIConnectionError = APITimeoutError = APIStatusError = Exception
+    AuthenticationError = BadRequestError = DeadlineExceededError = Exception
+    InternalServerError = OverloadedError = PermissionDeniedError = Exception
+    RateLimitError = RequestTooLargeError = ServiceUnavailableError = Exception
+    UnprocessableEntityError = Exception
 
 from .channel_dna import build_channel_dna_metadata
 from .config import config
@@ -19,6 +51,133 @@ from .prompt_registry import build_prompt_metadata
 from .quality_scoring import build_quality_scores
 
 logger = logging.getLogger(__name__)
+ANTHROPIC_CALL_LOCK = threading.Lock()
+_LAST_ANTHROPIC_CALL_AT = 0.0
+
+
+def _anthropic_rate_gate_lock_path() -> Path:
+    return Path(os.getenv("ANTHROPIC_RATE_GATE_LOCK_FILE", "output/state/anthropic_rate_gate.lock"))
+
+
+def _anthropic_rate_gate_state_path() -> Path:
+    return Path(os.getenv("ANTHROPIC_RATE_GATE_STATE_FILE", "output/state/anthropic_rate_gate.json"))
+
+
+def _load_anthropic_rate_gate_state() -> dict:
+    path = _anthropic_rate_gate_state_path()
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _save_anthropic_rate_gate_state(state: dict) -> None:
+    path = _anthropic_rate_gate_state_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+@contextlib.contextmanager
+def _acquire_anthropic_rate_gate(min_interval_seconds: float):
+    global _LAST_ANTHROPIC_CALL_AT
+
+    lock_path = _anthropic_rate_gate_lock_path()
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with ANTHROPIC_CALL_LOCK:
+        with open(lock_path, "a+", encoding="utf-8") as handle:
+            if fcntl is not None:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                gate_state = _load_anthropic_rate_gate_state()
+                last_completed_wall = float(gate_state.get("last_call_completed_at", 0.0) or 0.0)
+                local_last_call = float(_LAST_ANTHROPIC_CALL_AT or 0.0)
+                mono_now = time.monotonic()
+                wall_now = time.time()
+                mono_wait = max(0.0, min_interval_seconds - (mono_now - local_last_call)) if local_last_call else 0.0
+                wall_wait = max(0.0, min_interval_seconds - (wall_now - last_completed_wall)) if last_completed_wall else 0.0
+                wait_seconds = max(mono_wait, wall_wait)
+                if wait_seconds > 0:
+                    logger.info("Anthropic request pacing active; sleeping %.1fs", wait_seconds)
+                    time.sleep(wait_seconds)
+                yield
+            finally:
+                _LAST_ANTHROPIC_CALL_AT = time.monotonic()
+                _save_anthropic_rate_gate_state({"last_call_completed_at": time.time()})
+                if fcntl is not None:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _anthropic_error_text(exc: Exception) -> str:
+    status_code = getattr(exc, "status_code", None)
+    body = getattr(exc, "body", None)
+    detail_parts: list[str] = []
+    if status_code:
+        detail_parts.append(f"HTTP {status_code}")
+    if isinstance(body, dict):
+        err = body.get("error") if isinstance(body.get("error"), dict) else {}
+        err_type = str(err.get("type") or body.get("type") or "").strip()
+        err_message = str(err.get("message") or body.get("message") or "").strip()
+        if err_type:
+            detail_parts.append(err_type)
+        if err_message:
+            detail_parts.append(err_message)
+    message = str(exc or "").strip()
+    if message and message not in detail_parts:
+        detail_parts.append(message)
+    if not detail_parts:
+        detail_parts.append(exc.__class__.__name__)
+    return " - ".join(part for part in detail_parts if part)
+
+
+def _is_retryable_anthropic_exception(exc: Exception) -> bool:
+    if isinstance(exc, (OverloadedError, RateLimitError, InternalServerError, ServiceUnavailableError, APIConnectionError, APITimeoutError, DeadlineExceededError)):
+        return True
+    if isinstance(exc, (BadRequestError, AuthenticationError, PermissionDeniedError, RequestTooLargeError, UnprocessableEntityError)):
+        return False
+    if isinstance(exc, (httpx.TimeoutException, httpx.TransportError)):
+        return True
+    if isinstance(exc, APIStatusError):
+        return int(getattr(exc, "status_code", 0) or 0) in {429, 500, 503, 529}
+
+    lowered = _anthropic_error_text(exc).lower()
+    retryable_tokens = (
+        "overloaded",
+        "overloaded_error",
+        "http 429",
+        "http 500",
+        "http 503",
+        "http 529",
+        "rate_limit_error",
+        "rate limit",
+        "service unavailable",
+        "internal server error",
+        "timeout",
+        "connection error",
+    )
+    non_retryable_tokens = (
+        "http 400",
+        "http 401",
+        "http 403",
+        "badrequesterror",
+        "authenticationerror",
+        "permissiondeniederror",
+        "requesttoolargeerror",
+        "unprocessableentityerror",
+    )
+    if any(token in lowered for token in non_retryable_tokens):
+        return False
+    return any(token in lowered for token in retryable_tokens)
+
+
+def _mark_provider_exception(exc: Exception, *, error_text: str, recorded: bool, skip_scheduler_retry: bool) -> Exception:
+    setattr(exc, "_provider_error_text", error_text)
+    setattr(exc, "_provider_failure_recorded", recorded)
+    setattr(exc, "_skip_scheduler_pipeline_retry", skip_scheduler_retry)
+    return exc
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SISTEM PROMPTU - Kanal Kimligi ve Icerik Stratejisi
@@ -192,14 +351,18 @@ def _content_has_niche_mismatch(
     combined_text = " ".join(
         str(data.get(field, "")) for field in ("title", "description", "script", "thumbnail_prompt", "pexels_search")
     )
-    has_market_keyword = bool(MARKET_TOPIC_RE.search(combined_text))
     has_domain_anchor = _text_has_domain_anchor(
         combined_text,
         normalized_niche,
         channel_topics,
         channel_name,
     )
-    return has_market_keyword or not has_domain_anchor
+    # Sadece domain anchor yoksa mismatch say — market keyword tek başına yeterli değil
+    # (egitim kanalı "yatırım yapmak" gibi metaforik ifadeler kullanabilir)
+    if not has_domain_anchor:
+        return True
+    # Market keyword VE domain anchor beraber varsa mismatch değil (finansal eğitim içeriği meşru)
+    return False
 
 
 def _niche_alignment_guidance(niche: str | None) -> str:
@@ -607,6 +770,54 @@ class ContentGenerator:
 
         self._channel_dna_overrides = self._extract_channel_dna_overrides(channel_cfg)
 
+    def _anthropic_create(self, **kwargs):
+        from src.scheduler_utils import get_provider_circuit_status, record_provider_failure, record_provider_success
+
+        try:
+            min_interval = max(0.0, float(os.getenv("ANTHROPIC_MIN_REQUEST_INTERVAL_SECONDS", "8")))
+        except ValueError:
+            min_interval = 8.0
+        try:
+            max_attempts = max(1, int(os.getenv("ANTHROPIC_MAX_RETRIES", "3")))
+        except ValueError:
+            max_attempts = 3
+
+        last_error = None
+        for attempt in range(1, max_attempts + 1):
+            circuit = get_provider_circuit_status("anthropic")
+            if circuit.get("is_open"):
+                retry_after = max(1, int(circuit.get("retry_after_seconds", 0) or 0))
+                circuit_error = RuntimeError(f"Anthropic circuit open; retry after {retry_after}s")
+                raise _mark_provider_exception(
+                    circuit_error,
+                    error_text=str(circuit_error),
+                    recorded=False,
+                    skip_scheduler_retry=True,
+                )
+
+            try:
+                with _acquire_anthropic_rate_gate(min_interval):
+                    response = self.client.messages.create(**kwargs)
+                record_provider_success("anthropic", note=f"messages_create_ok_attempt_{attempt}")
+                return response
+            except Exception as exc:
+                last_error = exc
+                error_text = _anthropic_error_text(exc)
+                retryable = _is_retryable_anthropic_exception(exc)
+                if not retryable or attempt >= max_attempts:
+                    record_provider_failure("anthropic", error_text)
+                    raise _mark_provider_exception(
+                        exc,
+                        error_text=error_text,
+                        recorded=True,
+                        skip_scheduler_retry=True,
+                    )
+                backoff = min(90, max(5, int(min_interval * attempt)))
+                logger.warning("Anthropic request failed (%s/%s), retrying in %ss: %s", attempt, max_attempts, backoff, error_text)
+                time.sleep(backoff)
+
+        raise last_error or RuntimeError("Anthropic request failed")
+
     def _system_prompt(self) -> str:
         base_persona = self._persona or CHANNEL_PERSONA
         return f"{base_persona.rstrip()}\n{CONTENT_SAFETY_BOUNDARY}"
@@ -664,7 +875,7 @@ class ContentGenerator:
         ) + trend_hint + avoid
         logger.info(f"'{self.niche}' icin {count} konu uretiliyor...")
 
-        response = self.client.messages.create(
+        response = self._anthropic_create(
             model=self.model,
             max_tokens=1024,
             system=self._system_prompt(),
@@ -693,21 +904,18 @@ class ContentGenerator:
         topic: str,
         prev_title: str | None = None,
         additional_guidance: str | None = None,
+        next_topic_hint: str | None = None,
     ) -> VideoContent:
-        # Bir sonraki video ipucu
-        topics = self.generate_topic_ideas(count=3)
-        next_hint = topics[-1] if topics else "Yatirim hatalarından nasil kacinilir"
+        next_hint = (next_topic_hint or "").strip() or "Yatirim hatalarından nasil kacinilir"
+        channel_topics = list(getattr(self, "_channel_topics", []) or [])
+        channel_name = getattr(self, "_channel_name", "Para Pusulasi")
+        channel_dna_overrides = dict(getattr(self, "_channel_dna_overrides", {}) or {})
 
         logger.info("Icerik uretiliyor: " + topic)
+        prompt_metadata = {}
 
         try:
-            prompt_metadata = build_prompt_metadata(prompt)
-        except Exception:
-            # Registry is metadata-only and must never block generation.
-            prompt_metadata = {}
-
-        try:
-            channel_dna_metadata = build_channel_dna_metadata(**self._channel_dna_overrides)
+            channel_dna_metadata = build_channel_dna_metadata(**channel_dna_overrides)
         except Exception:
             # Channel DNA is metadata-only and must never block generation.
             channel_dna_metadata = {}
@@ -732,7 +940,12 @@ class ContentGenerator:
                 additional_guidance=guidance or None,
                 niche=self.niche,
             )
-            response = self.client.messages.create(
+            try:
+                prompt_metadata = build_prompt_metadata(prompt)
+            except Exception:
+                # Registry is metadata-only and must never block generation.
+                prompt_metadata = {}
+            response = self._anthropic_create(
                 model=self.model,
                 max_tokens=8192,
                 system=self._system_prompt(),
@@ -756,8 +969,8 @@ class ContentGenerator:
             if _content_has_niche_mismatch(
                 candidate,
                 self.niche,
-                channel_topics=self._channel_topics,
-                channel_name=self._channel_name,
+                channel_topics=channel_topics,
+                channel_name=channel_name,
             ):
                 last_error = ValueError(f"niche_alignment_failed:{self.niche}")
                 continue
@@ -819,6 +1032,7 @@ class ContentGenerator:
 
         # İçerik türünü belirle (evergreen/semi/trend dengesi)
         content_type = get_content_type_for_next_video(self.niche, config.scripts_dir)
+        next_topic_hint = None
 
         if not topic:
             if content_type == "evergreen":
@@ -836,10 +1050,17 @@ class ContentGenerator:
             if not topic:
                 topics = self.generate_topic_ideas(count=5)
                 topic = topics[0]
+                if len(topics) > 1:
+                    next_topic_hint = topics[1]
                 logger.info("Secilen konu: " + topic)
 
         prev_title = self._get_last_title()
-        content = self.generate_video_content(topic, prev_title, additional_guidance=additional_guidance)
+        content = self.generate_video_content(
+            topic,
+            prev_title,
+            additional_guidance=additional_guidance,
+            next_topic_hint=next_topic_hint,
+        )
         path = content.save()
 
         # Content type'ı kaydet

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 import scheduler
+from src.scheduler_utils import _classify_error_decision, get_provider_circuit_status, record_provider_failure
 
 
 def test_main_exits_when_provider_preflight_fails(monkeypatch):
@@ -178,3 +179,53 @@ def test_render_and_schedule_quarantines_when_upload_precheck_blocked(monkeypatc
     assert entry["quarantine_reason"] == "channel_dna_mismatch"
     assert entry["recoverable"] is True
     assert entry.get("video_id") is None
+
+
+def test_overloaded_error_maps_to_backoff_decision():
+    decision = _classify_error_decision("HTTP 529 - Overloaded")
+
+    assert decision["decision"] == "continue_with_backoff"
+    assert decision["retry"] is True
+
+
+def test_record_provider_failure_opens_circuit_for_overloaded(tmp_path, monkeypatch):
+    import src.scheduler_utils as scheduler_utils
+
+    health_file = tmp_path / "provider_health.json"
+    monkeypatch.setattr(scheduler_utils, "PROVIDER_HEALTH_FILE", str(health_file))
+
+    state = record_provider_failure("anthropic", "HTTP 529 - Overloaded")
+    circuit = get_provider_circuit_status("anthropic")
+
+    assert state["last_error_type"] == "overload"
+    assert circuit["is_open"] is True
+    assert circuit["retry_after_seconds"] > 0
+
+
+def test_render_and_schedule_does_not_outer_retry_provider_handled_exception(monkeypatch):
+    import src.channel_manager as channel_manager
+    import src.pipeline as pipeline
+    import src.scheduler_utils as scheduler_utils
+
+    channel_cfg = SimpleNamespace(name="Demo Channel", upload_times=["10:00"])
+    calls = {"pipeline": 0, "notify": 0}
+
+    def _provider_handled_error(**_kwargs):
+        calls["pipeline"] += 1
+        exc = RuntimeError("HTTP 529 - Overloaded")
+        setattr(exc, "_provider_error_text", "HTTP 529 - overloaded_error - Overloaded")
+        setattr(exc, "_provider_failure_recorded", True)
+        setattr(exc, "_skip_scheduler_pipeline_retry", True)
+        raise exc
+
+    monkeypatch.setattr(channel_manager, "get_channel", lambda _cid: channel_cfg)
+    monkeypatch.setattr(scheduler_utils, "check_disk_space", lambda **_kwargs: True)
+    monkeypatch.setattr(scheduler_utils, "get_provider_circuit_status", lambda _provider: {"provider": "anthropic", "is_open": False, "retry_after_seconds": 0, "state": {}})
+    monkeypatch.setattr(scheduler_utils, "notify_error", lambda *_args, **_kwargs: calls.__setitem__("notify", calls["notify"] + 1) or {})
+    monkeypatch.setattr(scheduler_utils, "force_cleanup", lambda: None)
+    monkeypatch.setattr(pipeline, "run_full_pipeline", _provider_handled_error)
+
+    scheduler.render_and_schedule("demo_channel")
+
+    assert calls["pipeline"] == 1
+    assert calls["notify"] == 1

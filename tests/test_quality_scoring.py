@@ -127,6 +127,7 @@ def test_content_generator_attaches_quality_score_metadata(monkeypatch):
 
     monkeypatch.setattr(cg.ContentGenerator, "__init__", fake_init)
     monkeypatch.setattr(cg.ContentGenerator, "generate_topic_ideas", lambda self, count=3: ["a", "b", "c"])
+    monkeypatch.setattr(cg, "_content_has_niche_mismatch", lambda *_args, **_kwargs: False)
 
     content = cg.ContentGenerator().generate_video_content("Topic")
 
@@ -174,6 +175,7 @@ def test_content_generator_fail_open_when_quality_scoring_fails(monkeypatch):
 
     monkeypatch.setattr(cg.ContentGenerator, "__init__", fake_init)
     monkeypatch.setattr(cg.ContentGenerator, "generate_topic_ideas", lambda self, count=3: ["a", "b", "c"])
+    monkeypatch.setattr(cg, "_content_has_niche_mismatch", lambda *_args, **_kwargs: False)
 
     def boom(**_kwargs):
         raise RuntimeError("quality scoring down")
@@ -226,6 +228,7 @@ def test_quality_scoring_does_not_change_prompt_text(monkeypatch):
 
     monkeypatch.setattr(cg.ContentGenerator, "__init__", fake_init)
     monkeypatch.setattr(cg.ContentGenerator, "generate_topic_ideas", lambda self, count=3: ["a", "b", "c"])
+    monkeypatch.setattr(cg, "_content_has_niche_mismatch", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(cg, "_build_content_prompt", lambda *args, **kwargs: "FIXED_PROMPT")
 
     def fake_build_prompt_metadata(prompt_text):

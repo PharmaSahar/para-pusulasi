@@ -88,10 +88,23 @@ Replay stored events once:
 python -m src.run_replay_once --research-root research --schema-version 1 --pretty
 ```
 
+Generate strict read-only evidence report (latest + dated copy):
+
+```bash
+"/Users/klara/Downloads/adsız klasör/.venv-2/bin/python" ops/generate_strict_evidence_report.py --date 2026-07-10 --write-dated-copy
+```
+
+Generate strict report in cron-safe latest-only mode:
+
+```bash
+"/Users/klara/Downloads/adsız klasör/.venv-2/bin/python" ops/generate_strict_evidence_report.py --latest-only
+```
+
 ## Documentation
 
 - [docs/architecture.md](docs/architecture.md)
 - [docs/collector_contract.md](docs/collector_contract.md)
 - [docs/activation_controller_runbook.md](docs/activation_controller_runbook.md)
+- [docs/strict_evidence_launchagent.md](docs/strict_evidence_launchagent.md)
 - [docs/v0.2.0_planning.md](docs/v0.2.0_planning.md)
 - [CHANGELOG.md](CHANGELOG.md)

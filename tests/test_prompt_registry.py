@@ -73,6 +73,7 @@ def test_content_generator_attaches_prompt_metadata(monkeypatch):
 
     monkeypatch.setattr(cg.ContentGenerator, "__init__", fake_init)
     monkeypatch.setattr(cg.ContentGenerator, "generate_topic_ideas", lambda self, count=3: ["a", "b", "c"])
+    monkeypatch.setattr(cg, "_content_has_niche_mismatch", lambda *_args, **_kwargs: False)
 
     content = cg.ContentGenerator().generate_video_content("Topic")
     assert content.prompt_metadata.get("prompt_hash")
@@ -120,6 +121,7 @@ def test_content_generator_fail_open_when_registry_fails(monkeypatch):
 
     monkeypatch.setattr(cg.ContentGenerator, "__init__", fake_init)
     monkeypatch.setattr(cg.ContentGenerator, "generate_topic_ideas", lambda self, count=3: ["a", "b", "c"])
+    monkeypatch.setattr(cg, "_content_has_niche_mismatch", lambda *_args, **_kwargs: False)
 
     def boom(_prompt):
         raise RuntimeError("registry down")

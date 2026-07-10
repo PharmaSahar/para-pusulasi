@@ -217,3 +217,150 @@ def test_ensure_dns_resolution_converts_gaierror_to_server_not_found(monkeypatch
 
     with pytest.raises(ServerNotFoundError):
         uploader._ensure_dns_resolution("youtube.googleapis.com")  # noqa: SLF001
+
+
+def test_build_upload_description_uses_shared_validator_shorts_bypass(monkeypatch, tmp_path: Path):
+    uploader = youtube_uploader.YouTubeUploader()
+    content = _make_content()
+    content.description = "Aciklama\n\nBOLUMLER:\n00:00 Giris\n00:10 Ornek"
+    monkeypatch.setattr(uploader, "_get_video_duration_seconds", lambda _path: 30)
+
+    description = uploader._build_upload_description(content, str(_make_video_file(tmp_path)))  # noqa: SLF001
+
+    assert "BOLUMLER" not in description
+
+
+def test_build_upload_description_reports_preflight_revalidate(monkeypatch, tmp_path: Path):
+    uploader = youtube_uploader.YouTubeUploader()
+    content = _make_content()
+    content.description = "Aciklama\n\nBOLUMLER:\n00:00 Giris\n00:05 Hizli\n00:08 Son"
+
+    events: list[dict] = []
+    artifacts: list[dict] = []
+    monkeypatch.setattr(youtube_uploader, "append_chapter_validation_event", lambda payload: events.append(payload))
+    monkeypatch.setattr(
+        youtube_uploader,
+        "write_latest_chapter_validator_artifact",
+        lambda **kwargs: artifacts.append(kwargs),
+    )
+    monkeypatch.setattr(uploader, "_get_video_duration_seconds", lambda _path: 130)
+    monkeypatch.setattr(
+        uploader,
+        "_build_chapters_for_duration",
+        lambda _duration: "\n".join(
+            [
+                "⏱️ BOLUMLER:",
+                "00:00 Giris",
+                "00:06 Hizli Gecis",
+                "00:20 Temel Kavramlar",
+                "01:05 Ornekler",
+                "01:55 Abone Ol",
+            ]
+        ),
+    )
+
+    video_path = _make_video_file(tmp_path)
+    description = uploader._build_upload_description(content, str(video_path))  # noqa: SLF001
+
+    assert description
+    assert events
+    latest = events[-1]
+    assert "revalidate" in latest
+    assert "min_gap_ok" in latest["revalidate"]
+    assert "ending_guard_pass" in latest["revalidate"]
+    assert "cta_removed_count" in latest["revalidate"]
+    assert artifacts
+    latest_artifact = artifacts[-1]
+    chapter_result = latest_artifact["chapter_result"]
+    assert chapter_result["schema_version"] == "2.0"
+    assert chapter_result["validator_version"] == "1.1.0"
+    assert "fix_counts" in chapter_result
+
+
+def test_build_upload_description_validator_exception_fail_open(monkeypatch, tmp_path: Path):
+    uploader = youtube_uploader.YouTubeUploader()
+    content = _make_content()
+    content.description = "Aciklama"
+
+    events: list[dict] = []
+    artifacts: list[dict] = []
+    monkeypatch.setattr(youtube_uploader, "append_chapter_validation_event", lambda payload: events.append(payload))
+    monkeypatch.setattr(
+        youtube_uploader,
+        "write_latest_chapter_validator_artifact",
+        lambda **kwargs: artifacts.append(kwargs),
+    )
+    monkeypatch.setattr(uploader, "_get_video_duration_seconds", lambda _path: 130)
+    monkeypatch.setattr(
+        youtube_uploader,
+        "validate_and_fix_chapters",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("validator boom")),
+    )
+
+    description = uploader._build_upload_description(content, str(_make_video_file(tmp_path)))  # noqa: SLF001
+
+    assert description
+    assert events
+    assert artifacts
+    latest_event = events[-1]
+    assert latest_event["revalidate"]["chapter_contract_pass"] is False
+    assert latest_event["revalidate"]["bypass_reason"] == "validator_error"
+    artifact_result = artifacts[-1]["chapter_result"]
+    assert artifact_result["auto_fix_actions"] == ["validator_fail_open"]
+
+
+def test_upload_no_network_smoke_captures_preflight_description(monkeypatch, tmp_path: Path):
+    request = _FakeRequest([(None, {"id": "video123"})])
+    uploader = youtube_uploader.YouTubeUploader()
+    captured_bodies: list[dict] = []
+
+    class _CaptureVideos:
+        def insert(self, **kwargs):
+            captured_bodies.append(kwargs.get("body") or {})
+            return request
+
+    class _CaptureService:
+        def videos(self):
+            return _CaptureVideos()
+
+    uploader._get_service = lambda: _CaptureService()  # noqa: SLF001
+    uploader._resumable_upload = lambda _req: "video123"  # noqa: SLF001
+    uploader._can_add_comment = False
+
+    monkeypatch.setattr(uploader, "_log_dns_resolution", lambda _host: None)
+    monkeypatch.setattr(uploader, "_ensure_dns_resolution", lambda _host: None)
+    monkeypatch.setattr(uploader, "_get_video_duration_seconds", lambda _path: 130)
+    monkeypatch.setattr(
+        uploader,
+        "_build_chapters_for_duration",
+        lambda _duration: "\n".join(
+            [
+                "⏱️ BOLUMLER:",
+                "00:00 Giris",
+                "00:06 Hizli Gecis",
+                "00:20 Temel Kavramlar",
+                "01:05 Ornekler",
+                "01:55 Abone Ol",
+            ]
+        ),
+    )
+
+    content = _make_content()
+    content.description = "Aciklama\n\nBOLUMLER:\n00:00 Giris\n00:03 Kisa\n00:09 Outro"
+
+    video_path = _make_video_file(tmp_path)
+    video_id = uploader.upload_video(str(video_path), content)
+
+    assert video_id == "video123"
+    assert request.calls == 0
+    assert len(captured_bodies) == 1
+    sent_description = captured_bodies[0]["snippet"]["description"]
+    assert "Abone Ol" not in sent_description
+    assert "Outro" not in sent_description
+
+    from src.chapter_validator import chapter_entries_from_description
+
+    secs = [item["seconds"] for item in chapter_entries_from_description(sent_description)]
+    assert secs == sorted(secs)
+    assert all((secs[i + 1] - secs[i]) >= 10 for i in range(len(secs) - 1))
+    assert secs and secs[0] == 0

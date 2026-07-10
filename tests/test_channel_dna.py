@@ -78,6 +78,7 @@ def test_content_generator_attaches_channel_dna_metadata(monkeypatch):
 
     monkeypatch.setattr(cg.ContentGenerator, "__init__", fake_init)
     monkeypatch.setattr(cg.ContentGenerator, "generate_topic_ideas", lambda self, count=3: ["a", "b", "c"])
+    monkeypatch.setattr(cg, "_content_has_niche_mismatch", lambda *_args, **_kwargs: False)
 
     content = cg.ContentGenerator().generate_video_content("Topic")
     assert content.channel_dna_metadata.get("channel_dna_hash")
@@ -125,6 +126,7 @@ def test_content_generator_fail_open_when_channel_dna_registry_fails(monkeypatch
 
     monkeypatch.setattr(cg.ContentGenerator, "__init__", fake_init)
     monkeypatch.setattr(cg.ContentGenerator, "generate_topic_ideas", lambda self, count=3: ["a", "b", "c"])
+    monkeypatch.setattr(cg, "_content_has_niche_mismatch", lambda *_args, **_kwargs: False)
 
     def boom(**_kwargs):
         raise RuntimeError("channel dna registry down")
@@ -177,6 +179,7 @@ def test_channel_dna_attachment_does_not_change_prompt_text(monkeypatch):
 
     monkeypatch.setattr(cg.ContentGenerator, "__init__", fake_init)
     monkeypatch.setattr(cg.ContentGenerator, "generate_topic_ideas", lambda self, count=3: ["a", "b", "c"])
+    monkeypatch.setattr(cg, "_content_has_niche_mismatch", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(cg, "_build_content_prompt", lambda *args, **kwargs: "FIXED_PROMPT")
 
     def fake_build_prompt_metadata(prompt_text):

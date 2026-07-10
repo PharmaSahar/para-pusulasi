@@ -8,6 +8,7 @@ import re
 import socket
 import time
 import json
+import unicodedata
 from pathlib import Path
 
 from googleapiclient.errors import HttpError
@@ -15,8 +16,14 @@ from googleapiclient.http import MediaFileUpload
 from httplib2 import ServerNotFoundError
 
 from .config import config
+from .chapter_validator import remove_chapter_lines, render_chapter_block, validate_and_fix_chapters
 from .content_generator import VideoContent
 from .youtube_auth import get_authenticated_service
+from .quality_scoring import build_quality_scores
+from .chapter_validation_trail import (
+    append_chapter_validation_event,
+    write_latest_chapter_validator_artifact,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -125,11 +132,31 @@ class YouTubeUploader:
         else:
             status["privacyStatus"] = privacy
 
-        clean_tags = self._sanitize_tags(content.tags)
+        upload_description = self._build_upload_description(content=content, video_path=video_path)
+        clean_tags = self._ensure_minimum_tags(content=content, tags=self._sanitize_tags(content.tags))
+
+        try:
+            seo_meta = build_quality_scores(
+                title=str(content.title or ""),
+                description=upload_description,
+                script=str(getattr(content, "script", "") or ""),
+                tags=clean_tags,
+                thumbnail_prompt=str(getattr(content, "thumbnail_prompt", "") or ""),
+            )
+            logger.info(
+                "Upload metadata quality: seo=%s overall=%s tags=%s desc_len=%s",
+                seo_meta.get("seo_score"),
+                seo_meta.get("overall_quality_score"),
+                len(clean_tags),
+                len(upload_description),
+            )
+        except Exception:
+            pass
+
         body = {
             "snippet": {
                 "title": content.title[:100],
-                "description": content.seo_description()[:5000],
+                "description": upload_description[:5000],
                 "tags": clean_tags,
                 "categoryId": content.category_id,
                 "defaultLanguage": self._resolve_default_language(),
@@ -150,7 +177,32 @@ class YouTubeUploader:
             media_body=media,
         )
 
-        video_id = self._resumable_upload(request)
+        try:
+            video_id = self._resumable_upload(request)
+        except Exception as exc:
+            append_chapter_validation_event(
+                {
+                    "artifact_version": "v1",
+                    "channel_id": self._channel_id(),
+                    "title": str(getattr(content, "title", "") or "")[:180],
+                    "upload_stage_failed": True,
+                    "post_upload_edit": None,
+                    "error_type": exc.__class__.__name__,
+                    "event_type": "upload_outcome",
+                }
+            )
+            raise
+
+        append_chapter_validation_event(
+            {
+                "artifact_version": "v1",
+                "channel_id": self._channel_id(),
+                "title": str(getattr(content, "title", "") or "")[:180],
+                "upload_stage_failed": False,
+                "post_upload_edit": False,
+                "event_type": "upload_outcome",
+            }
+        )
         logger.info(f"Video yuklendi: https://youtube.com/watch?v={video_id}")
 
         if self._can_upload_thumbnail and thumbnail_path and Path(thumbnail_path).exists():
@@ -221,6 +273,254 @@ class YouTubeUploader:
             clean.append(t)
             total_len += len(t) + 1
         return clean[:15]  # Max 15 tag
+
+    def _build_upload_description(self, content: VideoContent, video_path: str) -> str:
+        """Normalize description for chapter safety and minimum SEO quality."""
+        raw = str(content.seo_description() or "").strip()
+        base = self._strip_chapters(raw)
+        summary = self._build_summary_line(content)
+        discussion = self._build_discussion_line(content)
+        duration = self._get_video_duration_seconds(video_path)
+        proposed_chapters = self._build_chapters_for_duration(duration)
+        chapter_candidate = base
+        if proposed_chapters:
+            chapter_candidate = f"{base}\n\n{proposed_chapters}".strip()
+        try:
+            chapter_preflight = validate_and_fix_chapters(
+                description=chapter_candidate,
+                video_duration_seconds=duration,
+                is_short=bool(int(duration or 0) < 60),
+            )
+        except Exception as exc:
+            logger.warning("Chapter validator failed-open: %s", exc)
+            chapter_preflight = {
+                "schema_version": "2.0",
+                "validator_version": "1.1.0",
+                "final_chapters": [],
+                "chapter_contract_pass": False,
+                "input_chapter_count": 0,
+                "shorts_bypass": bool(int(duration or 0) < 60),
+                "issue_codes": [],
+                "issue_labels": ["validator_error"],
+                "auto_fix_actions": ["validator_fail_open"],
+                "fix_counts": {
+                    "cta_removed_count": 0,
+                    "merge_count": 0,
+                    "ending_trim_count": 0,
+                    "duplicate_removed_count": 0,
+                },
+                "bypass_reason": "validator_error",
+                "min_gap_seconds": 10,
+                "min_gap_ok": False,
+                "ending_guard_pass": False,
+                "short_segment_merges": 0,
+                "cta_removed_count": 0,
+            }
+        chapters = render_chapter_block(chapter_preflight.get("final_chapters", []))
+        chapter_lines = [line for line in chapters.splitlines()[1:] if line.strip()] if chapters else []
+        chapter_count = len(chapter_lines)
+        chapter_contract_pass = bool(chapter_preflight.get("chapter_contract_pass", False))
+
+        auto_fix_actions = []
+        if raw != base:
+            auto_fix_actions.append("strip_static_chapters")
+        auto_fix_actions.extend(chapter_preflight.get("auto_fix_actions", []))
+        auto_fix_applied = bool(auto_fix_actions)
+
+        append_chapter_validation_event(
+            {
+                "artifact_version": "v1",
+                "channel_id": self._channel_id(),
+                "title": str(getattr(content, "title", "") or "")[:180],
+                "duration_seconds": int(max(0, duration)),
+                "validate_before": {
+                    "raw_has_static_chapter_block": bool(raw != base),
+                    "generated_chapter_count": int(chapter_preflight.get("input_chapter_count", 0)),
+                    "shorts_bypass": bool(chapter_preflight.get("shorts_bypass", False)),
+                },
+                "auto_fix": {
+                    "applied": bool(auto_fix_applied),
+                    "action": ",".join(auto_fix_actions) if auto_fix_actions else "none",
+                },
+                "revalidate": {
+                    "chapter_count": int(chapter_count),
+                    "chapter_contract_pass": bool(chapter_contract_pass),
+                    "bypass_reason": chapter_preflight.get("bypass_reason"),
+                    "min_gap_seconds": int(chapter_preflight.get("min_gap_seconds", 10)),
+                    "min_gap_ok": bool(chapter_preflight.get("min_gap_ok", False)),
+                    "ending_guard_pass": bool(chapter_preflight.get("ending_guard_pass", False)),
+                    "short_segment_merges": int(chapter_preflight.get("short_segment_merges", 0)),
+                    "cta_removed_count": int(chapter_preflight.get("cta_removed_count", 0)),
+                },
+                "upload_stage_failed": None,
+                "post_upload_edit": None,
+            }
+        )
+
+        write_latest_chapter_validator_artifact(
+            channel_id=self._channel_id(),
+            title=str(getattr(content, "title", "") or ""),
+            duration_seconds=int(max(0, duration)),
+            chapter_result=chapter_preflight,
+            input_description=chapter_candidate,
+        )
+
+        keywords = self._build_keyword_line(content)
+        hashtags = self._build_hashtags(content)
+
+        parts = [summary]
+        if base:
+            parts.append(base)
+        if chapters:
+            parts.append(chapters)
+        parts.append(discussion)
+        parts.append(keywords)
+        if hashtags:
+            parts.append(hashtags)
+
+        description = "\n\n".join(part.strip() for part in parts if part and part.strip())
+        if len(description) < 220:
+            description = (
+                f"{description}\n\n"
+                "Bu icerik egitim amaclidir. Risk yonetimi, uygulama adimlari ve pratik kontrol listesiyle ilerliyoruz."
+            )
+        return description
+
+    def _strip_chapters(self, text: str) -> str:
+        return remove_chapter_lines(text)
+
+    def _build_summary_line(self, content: VideoContent) -> str:
+        hook = str(getattr(content, "hook", "") or "").strip()
+        title = str(getattr(content, "title", "") or "").strip()
+        if hook:
+            return f"📌 Bu videoda: {hook}"
+        return f"📌 Bu videoda: {title}"
+
+    def _build_discussion_line(self, content: VideoContent) -> str:
+        title = str(getattr(content, "title", "") or "").strip()
+        return f"💬 Yorum sorusu: {title} konusunda en cok hangi adimda zorlaniyorsun?"
+
+    def _build_keyword_line(self, content: VideoContent) -> str:
+        tags = self._ensure_minimum_tags(content=content, tags=self._sanitize_tags(getattr(content, "tags", [])))
+        return "Anahtar kelimeler: " + ", ".join(tags[:10]) + "."
+
+    def _build_hashtags(self, content: VideoContent) -> str:
+        tags = self._ensure_minimum_tags(content=content, tags=self._sanitize_tags(getattr(content, "tags", [])))
+        hashtag_tokens = []
+        for tag in tags[:8]:
+            token = "".join(ch for ch in tag if ch.isalnum())
+            if token:
+                hashtag_tokens.append(f"#{token}")
+        return " ".join(hashtag_tokens)
+
+    def _get_video_duration_seconds(self, video_path: str) -> int:
+        try:
+            from moviepy import VideoFileClip
+
+            clip = VideoFileClip(video_path)
+            try:
+                duration = int(float(getattr(clip, "duration", 0) or 0))
+            finally:
+                clip.close()
+            return max(0, duration)
+        except Exception as e:
+            logger.warning("Video duration okunamadi, chapter blok atlanacak: %s", e)
+            return 0
+
+    def _build_chapters_for_duration(self, duration_sec: int) -> str:
+        if duration_sec < 45:
+            return ""
+
+        available = duration_sec - 10
+        if available < 30:
+            return ""
+
+        target_count = min(6, max(3, duration_sec // 120 + 2))
+        points: list[int] = [0]
+        for i in range(1, target_count):
+            candidate = int(round((available * i) / (target_count - 1)))
+            candidate = max(10, min(available, candidate))
+            if candidate - points[-1] < 10:
+                candidate = points[-1] + 10
+            if candidate > available:
+                break
+            points.append(candidate)
+
+        while len(points) >= 2 and (available - points[-1]) < 10:
+            points.pop()
+
+        if len(points) < 3:
+            return ""
+
+        titles = [
+            "Giris ve Hook",
+            "Temel Kavramlar",
+            "Ornekler ve Veri",
+            "Adim Adim Uygulama",
+            "Kritik Hatalar",
+            "Ozet ve Sonraki Adim",
+        ]
+        chapter_lines = ["⏱️ BOLUMLER:"]
+        for idx, sec in enumerate(points):
+            minute = sec // 60
+            second = sec % 60
+            title = titles[min(idx, len(titles) - 1)]
+            chapter_lines.append(f"{minute:02d}:{second:02d} {title}")
+        return "\n".join(chapter_lines)
+
+    def _ensure_minimum_tags(self, content: VideoContent, tags: list[str]) -> list[str]:
+        normalized = [t for t in tags if t]
+        seen = {t.lower() for t in normalized}
+
+        fallbacks = self._fallback_tags_from_content(content)
+        for tag in fallbacks:
+            key = tag.lower()
+            if key in seen:
+                continue
+            normalized.append(tag)
+            seen.add(key)
+            if len(normalized) >= 15:
+                break
+
+        while len(normalized) < 8:
+            candidate = f"anahtar konu {len(normalized) + 1}"
+            if candidate.lower() not in seen:
+                normalized.append(candidate)
+                seen.add(candidate.lower())
+
+        return normalized[:15]
+
+    def _fallback_tags_from_content(self, content: VideoContent) -> list[str]:
+        title = str(getattr(content, "title", "") or "")
+        niche = str(getattr(content, "niche", "") or "")
+        ascii_title = "".join(
+            ch for ch in unicodedata.normalize("NFKD", title) if not unicodedata.combining(ch)
+        ).lower()
+        words = [w for w in re.findall(r"[a-z0-9ığüşöç]+", ascii_title) if len(w) >= 3]
+        defaults = [
+            niche.strip() or "egitim",
+            "finans",
+            "strateji",
+            "analiz",
+            "risk yonetimi",
+            "turkiye",
+            "yatirim",
+        ]
+        merged = defaults + words
+        out: list[str] = []
+        seen: set[str] = set()
+        for item in merged:
+            token = str(item).strip()[:50]
+            if not token:
+                continue
+            key = token.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(token)
+            if len(out) >= 15:
+                break
+        return out
 
     def _resumable_upload(self, request) -> str:
         """Yeniden başlatılabilir yükleme ile video yükle."""

@@ -111,6 +111,112 @@ def test_scheduler_sync_analytics_now_runs_once_and_exits(monkeypatch, capsys):
     assert calls == {"refresh": 1}
 
 
+def test_scheduler_safety_check_now_runs_once_and_exits(monkeypatch):
+    monkeypatch.setattr(scheduler.sys, "argv", ["scheduler.py", "--safety-check-now"])
+    calls = {"safety": 0}
+
+    monkeypatch.setattr(
+        scheduler,
+        "run_safety_check_once",
+        lambda **_kwargs: calls.__setitem__("safety", calls["safety"] + 1) or 0,
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        scheduler.main()
+
+    assert exc.value.code == 0
+    assert calls == {"safety": 1}
+
+
+def test_scheduler_default_startup_writes_safety_gate_result(monkeypatch):
+    monkeypatch.setattr(scheduler.sys, "argv", ["scheduler.py"])
+    calls = {"safety": 0}
+
+    class _StartupResult:
+        ok = True
+        errors = ()
+
+    class _StopLoop(Exception):
+        pass
+
+    class _FakeEvery:
+        @property
+        def day(self):
+            return self
+
+        @property
+        def hour(self):
+            return self
+
+        @property
+        def hours(self):
+            return self
+
+        def at(self, *_args, **_kwargs):
+            return self
+
+        def do(self, *_args, **_kwargs):
+            return self
+
+    class _FakeThread:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            pass
+
+    fake_schedule = SimpleNamespace(
+        every=lambda *args, **kwargs: _FakeEvery(),
+        run_pending=lambda: (_ for _ in ()).throw(_StopLoop()),
+    )
+
+    fake_utils = SimpleNamespace(
+        cleanup_old_renders=lambda **kwargs: None,
+        notify_startup=lambda _n: None,
+    )
+
+    def _fake_record(**_kwargs):
+        calls["safety"] += 1
+        return {"overall_ok": True}
+
+    monkeypatch.setattr(scheduler, "_run_startup_health_check", lambda **_kwargs: _StartupResult())
+    monkeypatch.setattr(scheduler, "_run_provider_preflight_check", lambda **_kwargs: (True, "ok"))
+    monkeypatch.setattr(scheduler, "_record_safety_gate_result", _fake_record)
+    monkeypatch.setattr(scheduler, "get_ready_channels", lambda: ["demo"])
+    monkeypatch.setattr(scheduler, "setup_schedule", lambda: ["demo"])
+    monkeypatch.setattr(scheduler, "catch_up_overdue_queue_entries", lambda: {})
+    monkeypatch.setattr(scheduler, "schedule", fake_schedule)
+    monkeypatch.setattr(scheduler.threading, "Thread", _FakeThread)
+    monkeypatch.setitem(sys.modules, "src.scheduler_utils", fake_utils)
+
+    with pytest.raises(_StopLoop):
+        scheduler.main()
+
+    assert calls["safety"] == 1
+
+
+def test_scheduler_startup_exits_when_singleton_lock_conflicts(monkeypatch):
+    monkeypatch.setattr(scheduler.sys, "argv", ["scheduler.py"])
+    calls = {"startup": 0}
+
+    class _StartupResult:
+        ok = True
+        errors = ()
+
+    def _fake_startup_health(**_kwargs):
+        calls["startup"] += 1
+        return _StartupResult()
+
+    monkeypatch.setattr(scheduler, "_acquire_scheduler_singleton_lock", lambda: (_ for _ in ()).throw(RuntimeError("scheduler_singleton_lock_conflict")))
+    monkeypatch.setattr(scheduler, "_run_startup_health_check", _fake_startup_health)
+
+    with pytest.raises(SystemExit) as exc:
+        scheduler.main()
+
+    assert exc.value.code == 1
+    assert calls["startup"] == 0
+
+
 def test_scheduler_default_startup_path_unchanged(monkeypatch):
     monkeypatch.setattr(scheduler.sys, "argv", ["scheduler.py"])
     calls = {"setup": 0, "thread_start": 0, "cleanup": 0, "notify": 0}

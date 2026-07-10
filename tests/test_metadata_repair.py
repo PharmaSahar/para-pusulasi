@@ -1,4 +1,5 @@
 from src.metadata_repair import (
+    build_normalized_description,
     build_duration_safe_chapters,
     chapter_rule_ok,
     ensure_minimum_tags,
@@ -6,6 +7,7 @@ from src.metadata_repair import (
     parse_iso8601_duration_seconds,
     strip_existing_chapters,
 )
+from src.chapter_validator import validate_and_fix_chapters
 
 
 def test_parse_iso8601_duration_seconds_basic():
@@ -54,3 +56,21 @@ def test_normalize_metadata_improves_chapter_and_seo_signals():
     assert min_gap_ok is True
     assert len(normalized.tags) >= 8
     assert normalized.assessment.seo_score_after >= normalized.assessment.seo_score_before
+
+
+def test_metadata_repair_output_matches_shared_chapter_validator_contract():
+    description = build_normalized_description(
+        title="Risk yonetimi rehberi",
+        base_description="Aciklama\n\nBOLUMLER:\n00:00 Giris\n00:04 Kisa\n00:09 Outro",
+        tags=["risk", "yonetim", "borsa", "egitim", "strateji", "finans", "analiz", "plan"],
+        duration_sec=130,
+    )
+
+    result = validate_and_fix_chapters(
+        description=description,
+        video_duration_seconds=130,
+        is_short=False,
+    )
+
+    assert result["valid_after"] is True
+    assert result["auto_fix_actions"] == []

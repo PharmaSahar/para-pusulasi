@@ -161,3 +161,53 @@ def test_generate_topic_ideas_filters_finance_ai_topics_for_non_finance_channel(
     assert all("Dolar/TL" not in topic for topic in topics)
     assert all("BIST" not in topic for topic in topics)
     assert any("Uyku" in topic or "uyku" in topic for topic in topics)
+
+
+def test_generate_video_content_does_not_fetch_extra_topics(monkeypatch):
+    class FakeResponse:
+        def __init__(self, text: str):
+            self.content = [SimpleNamespace(text=text)]
+
+    class FakeMessages:
+        def __init__(self):
+            self.calls = 0
+
+        def create(self, **kwargs):
+            self.calls += 1
+            payload = {
+                "title": "Title",
+                "description": "Description",
+                "tags": ["a"],
+                "script": "Script",
+                "thumbnail_prompt": "Thumb",
+                "category_id": "27",
+                "hook": "Hook",
+                "next_video_teaser": "Teaser",
+                "pexels_search": "query",
+                "chart_data": None,
+            }
+            return FakeResponse(__import__("json").dumps(payload, ensure_ascii=False))
+
+    class FakeAnthropicClient:
+        def __init__(self, api_key=None):
+            self.messages = FakeMessages()
+
+    class FakeConfig:
+        anthropic_api_key = "key"
+        niche = "saglik"
+        persona = "Sen Saglik Pusulasi icin yazan editor-sensin."
+        name = "Saglik Pusulasi"
+        topics = ["beslenme", "uyku", "stres"]
+
+    monkeypatch.setattr(content_generator.anthropic, "Anthropic", FakeAnthropicClient)
+    monkeypatch.setattr(content_generator, "build_prompt_metadata", lambda _prompt: {})
+    monkeypatch.setattr(content_generator, "build_channel_dna_metadata", lambda **_kwargs: {})
+    monkeypatch.setattr(content_generator, "build_quality_scores", lambda **_kwargs: {})
+    monkeypatch.setattr(content_generator, "_content_has_niche_mismatch", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(content_generator, "_LAST_ANTHROPIC_CALL_AT", 0.0)
+
+    generator = content_generator.ContentGenerator(channel_cfg=FakeConfig())
+    content = generator.generate_video_content("Saglikli uyku duzeni")
+
+    assert content.title == "Title"
+    assert generator.client.messages.calls == 1

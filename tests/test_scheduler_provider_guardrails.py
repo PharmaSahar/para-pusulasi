@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from types import SimpleNamespace
 
@@ -123,3 +124,57 @@ def test_render_and_schedule_skips_when_provider_circuit_open(monkeypatch):
 
     assert called["pipeline"] == 0
     assert called["notify"] == 1
+
+
+def test_render_and_schedule_quarantines_when_upload_precheck_blocked(monkeypatch, tmp_path):
+    import src.channel_manager as channel_manager
+    import src.scheduler_utils as scheduler_utils
+    import src.pipeline as pipeline
+
+    channel_cfg = SimpleNamespace(
+        name="Demo Channel",
+        upload_times=["10:00"],
+        niche="teknoloji",
+        topics=["yazilim", "ai"],
+    )
+
+    queue_file = tmp_path / "channel_queue.json"
+    queue_file.write_text("{}", encoding="utf-8")
+    trail = tmp_path / "queue_quarantine_decisions.jsonl"
+
+    monkeypatch.setattr(scheduler, "QUEUE_FILE", str(queue_file))
+    monkeypatch.setattr(channel_manager, "get_channel", lambda _cid: channel_cfg)
+    monkeypatch.setattr(scheduler_utils, "QUARANTINE_TRAIL_PATH", trail)
+    monkeypatch.setattr(scheduler_utils, "check_disk_space", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        scheduler_utils,
+        "get_provider_circuit_status",
+        lambda _provider: {"provider": "anthropic", "is_open": False, "retry_after_seconds": 0, "state": {}},
+    )
+    monkeypatch.setattr(scheduler_utils, "notify_error", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(scheduler_utils, "notify_upload", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(scheduler_utils, "force_cleanup", lambda: None)
+    monkeypatch.setattr(scheduler_utils, "save_used_topic", lambda *_args, **_kwargs: None)
+
+    monkeypatch.setattr(
+        pipeline,
+        "run_full_pipeline",
+        lambda **_kwargs: {
+            "title": "Yanlis Kanal DNA Basligi",
+            "upload_precheck": {
+                "status": "blocked",
+                "quarantine_reason": "channel_dna_mismatch",
+                "guard_reason_codes": ["channel_dna_mismatch", "upload_precheck_final_guard"],
+                "recoverable": True,
+            },
+        },
+    )
+
+    scheduler.render_and_schedule("demo_channel")
+
+    data = json.loads(queue_file.read_text(encoding="utf-8"))
+    entry = data["demo_channel"][0]
+    assert entry["status"] == "quarantined"
+    assert entry["quarantine_reason"] == "channel_dna_mismatch"
+    assert entry["recoverable"] is True
+    assert entry.get("video_id") is None

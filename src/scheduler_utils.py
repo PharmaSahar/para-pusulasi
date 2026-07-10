@@ -13,12 +13,20 @@ import os
 import re
 import shutil
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from dotenv import dotenv_values
 
 logger = logging.getLogger("SchedulerUtils")
+CHANNEL_REGISTRY_PATH = Path("channels/channel_registry.json")
+CORE_MARKET_NICHES = {"kisisel_finans", "borsa", "kripto"}
+ACTIVE_QUEUE_STATUSES = {"active", "restored"}
+QUARANTINE_TRAIL_PATH = Path("logs/queue_quarantine_decisions.jsonl")
+QUEUE_FORBIDDEN_MARKET_RE = re.compile(
+    r"\b(bist\w*|borsa\w*|hisse\w*|dolar\w*|usd\w*|try\w*|bitcoin\w*|ethereum\w*|btc\w*|eth\w*|kripto\w*|altin\w*|faiz\w*|enflasyon\w*|yatirim\w*|temettu\w*|portfoy\w*|teknik\s+analiz|temel\s+analiz|risk\s+yonetimi|finans\w*|doviz\w*|kur\w*)\b",
+    re.IGNORECASE,
+)
 
 PROVIDER_HEALTH_FILE = "output/state/provider_health.json"
 
@@ -905,7 +913,41 @@ def cleanup_stale_queue(queue: dict, tz, stale_hours: int = 3) -> tuple:
     for cid, entries in queue.items():
         valid = []
         removed = 0
-        for entry in entries:
+        for raw_entry in entries:
+            entry = _ensure_queue_entry_shape(raw_entry)
+            current_status = str(entry.get("status") or "active").strip().lower()
+
+            # Quarantined/rejected items are preserved; cleanup only evaluates publishable states.
+            if current_status not in ACTIVE_QUEUE_STATUSES:
+                valid.append(entry)
+                continue
+
+            if _is_misrouted_queue_entry(cid, entry):
+                removed += 1
+                _transition_queue_entry_status(
+                    entry,
+                    new_status="quarantined",
+                    reason="channel_dna_mismatch",
+                    guard_reason_codes=["channel_dna_mismatch", "title_market_mismatch"],
+                    recoverable=True,
+                )
+                _append_queue_quarantine_decision(
+                    {
+                        "event": "queue_entry_quarantined",
+                        "channel_id": cid,
+                        "queue_entry_id": entry.get("queue_entry_id"),
+                        "reason": "channel_dna_mismatch",
+                        "guard_reason_codes": ["channel_dna_mismatch", "title_market_mismatch"],
+                        "source": "cleanup_stale_queue",
+                        "title_preview": str(entry.get("title") or "")[:180],
+                    }
+                )
+                logger.info(
+                    f"[{cid}] Yanlis kanal kuyruk girisi quarantine: {str(entry.get('title') or '')[:80]}"
+                )
+                valid.append(entry)
+                continue
+
             publish_at_str = entry.get("publish_at", "")
             if not publish_at_str:
                 valid.append(entry)
@@ -919,7 +961,26 @@ def cleanup_stale_queue(queue: dict, tz, stale_hours: int = 3) -> tuple:
                 if age < stale_hours:
                     valid.append(entry)  # Henüz taze, tut
                 else:
-                    removed += 1  # Süresi geçmiş, at
+                    removed += 1
+                    _transition_queue_entry_status(
+                        entry,
+                        new_status="permanently_rejected",
+                        reason="stale_publish_window_expired",
+                        guard_reason_codes=["stale_publish_window_expired"],
+                        recoverable=False,
+                    )
+                    _append_queue_quarantine_decision(
+                        {
+                            "event": "queue_entry_rejected",
+                            "channel_id": cid,
+                            "queue_entry_id": entry.get("queue_entry_id"),
+                            "reason": "stale_publish_window_expired",
+                            "guard_reason_codes": ["stale_publish_window_expired"],
+                            "source": "cleanup_stale_queue",
+                            "title_preview": str(entry.get("title") or "")[:180],
+                        }
+                    )
+                    valid.append(entry)
             except Exception:
                 valid.append(entry)  # Parse edilemezse tut
 
@@ -929,4 +990,141 @@ def cleanup_stale_queue(queue: dict, tz, stale_hours: int = 3) -> tuple:
             logger.info(f"[{cid}] {removed} bayat kuyruk girişi temizlendi → yeni render tetiklenecek")
 
     return cleaned, freed_channels
+
+
+def _load_channel_registry() -> dict:
+    try:
+        if not CHANNEL_REGISTRY_PATH.exists():
+            return {}
+        payload = json.loads(CHANNEL_REGISTRY_PATH.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+
+def _is_misrouted_queue_entry(channel_id: str, entry: dict) -> bool:
+    registry = _load_channel_registry()
+    channels = dict(registry.get("channels") or {})
+    channel_cfg = dict(channels.get(channel_id) or {})
+    niche = str(channel_cfg.get("niche") or "").strip().lower()
+    if niche in CORE_MARKET_NICHES:
+        return False
+    title = str(entry.get("title") or "")
+    return bool(title and QUEUE_FORBIDDEN_MARKET_RE.search(title))
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _append_queue_quarantine_decision(entry: dict) -> None:
+    try:
+        payload = dict(entry)
+        payload.setdefault("created_at", _utc_now_iso())
+        QUARANTINE_TRAIL_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with QUARANTINE_TRAIL_PATH.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
+    except Exception:
+        return
+
+
+def _ensure_queue_entry_shape(entry: dict) -> dict:
+    data = dict(entry or {})
+    data.setdefault("queue_entry_id", _build_queue_entry_id(data))
+    status = str(data.get("status") or "active").strip().lower()
+    if status not in {"active", "quarantined", "restored", "permanently_rejected"}:
+        status = "active"
+    data["status"] = status
+    return data
+
+
+def _build_queue_entry_id(entry: dict) -> str:
+    base = "|".join(
+        [
+            str(entry.get("video_id") or ""),
+            str(entry.get("publish_at") or ""),
+            str(entry.get("title") or ""),
+            str(entry.get("rendered_at") or ""),
+        ]
+    )
+    if not base.strip("|"):
+        base = _utc_now_iso()
+    digest = __import__("hashlib").sha256(base.encode("utf-8")).hexdigest()[:16]
+    return f"qe_{digest}"
+
+
+def _transition_queue_entry_status(
+    entry: dict,
+    *,
+    new_status: str,
+    reason: str,
+    guard_reason_codes: list[str],
+    recoverable: bool,
+) -> dict:
+    status = str(new_status or "").strip().lower()
+    if status not in {"quarantined", "restored", "permanently_rejected", "active"}:
+        return entry
+    now_iso = _utc_now_iso()
+    entry["status"] = status
+    entry["quarantine_reason"] = reason
+    entry["guard_reason_codes"] = list(guard_reason_codes or [])
+    entry["recoverable"] = bool(recoverable)
+    if status == "quarantined":
+        entry["quarantined_at"] = now_iso
+    elif status == "restored":
+        entry["restored_at"] = now_iso
+    elif status == "permanently_rejected":
+        entry["rejected_at"] = now_iso
+    return entry
+
+
+def restore_quarantined_entry(
+    queue: dict,
+    *,
+    channel_id: str,
+    queue_entry_id: str,
+    reviewer: str = "manual",
+    review_note: str = "",
+) -> bool:
+    """Restore quarantined queue entry in-place. Idempotent and append-only audited."""
+    entries = list(queue.get(channel_id, []) or [])
+    changed = False
+    for idx, item in enumerate(entries):
+        entry = _ensure_queue_entry_shape(item)
+        entries[idx] = entry
+        if str(entry.get("queue_entry_id") or "") != str(queue_entry_id or ""):
+            continue
+        status = str(entry.get("status") or "").strip().lower()
+        if status == "restored":
+            return False
+        if status != "quarantined":
+            return False
+        _transition_queue_entry_status(
+            entry,
+            new_status="restored",
+            reason="manual_review_restored",
+            guard_reason_codes=["manual_review_restored"],
+            recoverable=True,
+        )
+        entry["review_status"] = "approved"
+        entry["reviewed_by"] = reviewer
+        entry["reviewed_at"] = _utc_now_iso()
+        if review_note:
+            entry["review_note"] = str(review_note)
+        _append_queue_quarantine_decision(
+            {
+                "event": "queue_entry_restored",
+                "channel_id": channel_id,
+                "queue_entry_id": entry.get("queue_entry_id"),
+                "reason": "manual_review_restored",
+                "guard_reason_codes": ["manual_review_restored"],
+                "reviewed_by": reviewer,
+            }
+        )
+        changed = True
+        break
+
+    if changed:
+        queue[channel_id] = entries
+    return changed
 

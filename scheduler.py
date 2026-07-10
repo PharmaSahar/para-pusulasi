@@ -26,12 +26,25 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytz
-import schedule
+try:
+    import schedule
+except ImportError:
+    class _MissingScheduleModule:
+        jobs = []
+
+        def __getattr__(self, _name):
+            raise RuntimeError(
+                "The 'schedule' package is required for daemon scheduling mode. "
+                "Install it to run continuous scheduler loops."
+            )
+
+    schedule = _MissingScheduleModule()
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -90,8 +103,15 @@ except ValueError:
 TZ = pytz.timezone("Europe/Istanbul")
 QUEUE_FILE = "output/queue/channel_queue.json"
 PID_FILE = Path("logs/production_scheduler.pid")
+RUNTIME_EVIDENCE_LATEST_FILE = Path("logs/runtime_optimization_evidence_latest.json")
+ACTIVATION_CONTROLLER_SCRIPT = Path("ops/activation_controller.py")
+FLEET_HEALTH_SCRIPT = Path("ops/fleet_health_report.py")
+BACKLOG_SCRIPT = Path("ops/optimization_backlog_engine.py")
+OPTIMIZATION_MEMORY_SCRIPT = Path("ops/optimization_memory_engine.py")
+GOVERNANCE_REFRESH_SCRIPT = Path("ops/refresh_governance_readiness.py")
 QUEUE_LOCK = threading.RLock()
 RENDER_LOCKS_LOCK = threading.Lock()
+RUNTIME_CYCLE_LOCK = threading.Lock()
 
 # Thread havuzu
 render_executor = ThreadPoolExecutor(max_workers=MAX_PARALLEL_RENDERS, thread_name_prefix="render")
@@ -200,6 +220,90 @@ def _write_pid_record() -> None:
         logger.warning("Scheduler pid record write failed (non-blocking): %s", e)
 
 
+def _load_json_file(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _run_json_script(command: list[str], *, timeout_seconds: int = 180) -> dict:
+    started_at = datetime.now(TZ).isoformat()
+    try:
+        proc = subprocess.run(
+            command,
+            cwd=os.getcwd(),
+            capture_output=True,
+            text=True,
+            timeout=max(10, int(timeout_seconds)),
+            check=False,
+        )
+    except subprocess.TimeoutExpired as e:
+        return {
+            "ok": False,
+            "error": "timeout",
+            "timed_out": True,
+            "timeout_seconds": max(10, int(timeout_seconds)),
+            "command": command,
+            "started_at": started_at,
+            "stderr_tail": "\n".join((e.stderr or "").splitlines()[-20:]) if isinstance(e.stderr, str) else "",
+            "stdout_tail": "\n".join((e.stdout or "").splitlines()[-20:]) if isinstance(e.stdout, str) else "",
+            "parsed": {},
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "error": str(e),
+            "command": command,
+            "started_at": started_at,
+        }
+
+    stdout = (proc.stdout or "").strip()
+    parsed = {}
+    if stdout:
+        start = stdout.find("{")
+        end = stdout.rfind("}")
+        if start >= 0 and end > start:
+            try:
+                parsed = json.loads(stdout[start : end + 1])
+            except Exception:
+                parsed = {}
+
+    return {
+        "ok": proc.returncode == 0,
+        "return_code": proc.returncode,
+        "command": command,
+        "started_at": started_at,
+        "stdout_tail": "\n".join(stdout.splitlines()[-20:]) if stdout else "",
+        "stderr_tail": "\n".join((proc.stderr or "").splitlines()[-20:]),
+        "parsed": parsed,
+    }
+
+
+def _write_json_atomic(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _is_publishable_queue_entry(entry: dict) -> bool:
+    status = str((entry or {}).get("status") or "active").strip().lower()
+    return status in {"active", "restored"}
+
+
+def _normalize_queue_entry(entry: dict) -> dict:
+    row = dict(entry or {})
+    row.setdefault("queue_entry_id", f"qe_{uuid.uuid4().hex[:16]}")
+    status = str(row.get("status") or "active").strip().lower()
+    if status not in {"active", "quarantined", "restored", "permanently_rejected"}:
+        status = "active"
+    row["status"] = status
+    return row
+
+
 def get_ready_channels() -> list:
     """Token'i olan tüm kanalları keşfet."""
     from src.channel_manager import list_channels, get_channel
@@ -259,6 +363,7 @@ def render_and_schedule(channel_id: str):
             check_disk_space, cleanup_old_renders, force_cleanup,
             get_provider_circuit_status, notify_upload, notify_error,
             record_provider_failure, record_provider_success, save_used_topic,
+            _append_queue_quarantine_decision,
         )
     except ImportError:
         def check_disk_space(**kw): return True
@@ -272,6 +377,7 @@ def render_and_schedule(channel_id: str):
         def record_provider_failure(*a, **kw): return {}
         def record_provider_success(*a, **kw): return {}
         def save_used_topic(*a): pass
+        def _append_queue_quarantine_decision(*a, **kw): pass
 
     channel_lock = _get_channel_render_lock(channel_id)
     acquired = channel_lock.acquire(blocking=False)
@@ -308,7 +414,11 @@ def render_and_schedule(channel_id: str):
 
         publish_at = get_next_upload_time(
             cfg,
-            skip_occupied=[e.get("publish_at","") for e in load_queue().get(channel_id, [])]
+            skip_occupied=[
+                e.get("publish_at", "")
+                for e in load_queue().get(channel_id, [])
+                if _is_publishable_queue_entry(e)
+            ]
         )
         logger.info(f"[{cfg.name}] Render başlıyor → {publish_at} için zamanlanacak")
 
@@ -351,13 +461,16 @@ def render_and_schedule(channel_id: str):
             def _append_entry(queue):
                 if channel_id not in queue:
                     queue[channel_id] = []
-                queue[channel_id].append({
+                queue[channel_id].append(_normalize_queue_entry({
+                    "queue_entry_id": f"qe_{uuid.uuid4().hex[:16]}",
                     "video_id": result["video_id"],
                     "title": result["title"],
                     "youtube_url": result.get("youtube_url", ""),
                     "publish_at": publish_at,
                     "rendered_at": datetime.now(TZ).isoformat(),
-                })
+                    "status": "active",
+                    "channel_id": channel_id,
+                }))
             update_queue(_append_entry)
             logger.info(f"[{cfg.name}] ✅ Zamanlandı: '{result['title'][:50]}' → {publish_at}")
 
@@ -378,6 +491,41 @@ def render_and_schedule(channel_id: str):
                 check_growth_milestones(new_video_count=1)
             except Exception:
                 pass
+        elif result and result.get("upload_precheck", {}).get("status") == "blocked":
+            precheck = dict(result.get("upload_precheck") or {})
+            reason_codes = list(precheck.get("guard_reason_codes") or ["channel_dna_mismatch"])
+
+            def _append_quarantined_entry(queue):
+                if channel_id not in queue:
+                    queue[channel_id] = []
+                queue[channel_id].append(_normalize_queue_entry({
+                    "queue_entry_id": f"qe_{uuid.uuid4().hex[:16]}",
+                    "video_id": None,
+                    "title": result.get("title", ""),
+                    "youtube_url": "",
+                    "publish_at": publish_at,
+                    "rendered_at": datetime.now(TZ).isoformat(),
+                    "status": "quarantined",
+                    "channel_id": channel_id,
+                    "quarantine_reason": str(precheck.get("quarantine_reason") or "channel_dna_mismatch"),
+                    "guard_reason_codes": reason_codes,
+                    "quarantined_at": datetime.now(TZ).isoformat(),
+                    "recoverable": bool(precheck.get("recoverable", True)),
+                    "review_status": "pending",
+                }))
+
+            update_queue(_append_quarantined_entry)
+            _append_queue_quarantine_decision(
+                {
+                    "event": "upload_precheck_blocked",
+                    "channel_id": channel_id,
+                    "reason": str(precheck.get("quarantine_reason") or "channel_dna_mismatch"),
+                    "guard_reason_codes": reason_codes,
+                    "title_preview": str(result.get("title") or "")[:180],
+                    "source": "scheduler.render_and_schedule",
+                }
+            )
+            logger.warning(f"[{cfg.name}] Upload precheck blocked; queue entry quarantined.")
         else:
             logger.error(f"[{cfg.name}] Video ID alınamadı!")
 
@@ -417,11 +565,19 @@ def on_upload_time(channel_id: str):
         published = {}
 
         def _pop_published(queue):
-            entries = queue.get(channel_id, [])
+            entries = list(queue.get(channel_id, []) or [])
+            publish_index = None
+            for idx, candidate in enumerate(entries):
+                if _is_publishable_queue_entry(candidate):
+                    publish_index = idx
+                    break
+            if publish_index is None:
+                return
+            published.update(entries.pop(publish_index))
             if entries:
-                published.update(entries.pop(0))
-                if not entries:
-                    queue.pop(channel_id, None)
+                queue[channel_id] = entries
+            else:
+                queue.pop(channel_id, None)
 
         update_queue(_pop_published)
 
@@ -471,7 +627,8 @@ def initial_fill():
 
     for cid in ready:
         # Bu kanalın kuyruğunda zaten video var mı?
-        if cid in queue and len(queue[cid]) > 0:
+        active_entries = [e for e in queue.get(cid, []) if _is_publishable_queue_entry(e)]
+        if active_entries:
             logger.info(f"[{cid}] Kuyrukta video mevcut, render atlandı.")
             continue
         # Kuyrugu bos — render baslât
@@ -492,6 +649,8 @@ def catch_up_overdue_queue_entries() -> dict[str, list[dict]]:
         entries = list(queue.get(channel_id, []) or [])
         overdue_entries = []
         for entry in entries:
+            if not _is_publishable_queue_entry(entry):
+                continue
             publish_at = str(entry.get("publish_at") or "").strip()
             if not publish_at:
                 continue
@@ -511,6 +670,9 @@ def catch_up_overdue_queue_entries() -> dict[str, list[dict]]:
             channel_entries = list(current_queue.get(channel_id, []) or [])
             remaining = []
             for item in channel_entries:
+                if not _is_publishable_queue_entry(item):
+                    remaining.append(item)
+                    continue
                 publish_at = str(item.get("publish_at") or "").strip()
                 try:
                     publish_dt = datetime.fromisoformat(publish_at) if publish_at else None
@@ -596,7 +758,7 @@ def show_status():
 
     for cid in ready:
         cfg = get_channel(cid)
-        q_count = len(queue.get(cid, []))
+        q_count = len([e for e in queue.get(cid, []) if _is_publishable_queue_entry(e)])
         next_t = get_next_upload_time(cfg).split("T")[1][:5]
         table.add_row(
             cfg.name,
@@ -740,6 +902,106 @@ def refresh_live_analytics_job():
         logger.warning("Live analytics refresh failed: %s", e)
 
 
+def run_optimization_runtime_cycle() -> dict:
+    """Run controller + fleet + backlog + memory and persist runtime evidence."""
+    ready_channels = get_ready_channels()
+    target_channel = os.getenv("ACTIVATION_CONTROLLER_CHANNEL", "").strip()
+    if not target_channel and ready_channels:
+        target_channel = ready_channels[0]
+
+    flags_path = Path("output/state/learning_activation_flags.json")
+    flags_before = _load_json_file(flags_path)
+
+    evidence = {
+        "generated_at": datetime.now(TZ).isoformat(),
+        "kind": "runtime_optimization_cycle",
+        "target_channel": target_channel,
+        "ready_channel_count": len(ready_channels),
+        "steps": {},
+        "flags_before": flags_before,
+    }
+
+    if not target_channel:
+        evidence["ok"] = False
+        evidence["error"] = "no_ready_channel"
+        return evidence
+
+    python_bin = sys.executable
+    activate_learning = _is_enabled(os.getenv("RUNTIME_POLICY_ACTIVATE", "false"))
+    skip_analytics_probe = _is_enabled(os.getenv("RUNTIME_POLICY_SKIP_ANALYTICS_PROBE", "true"))
+
+    activation_cmd = [
+        python_bin,
+        str(ACTIVATION_CONTROLLER_SCRIPT),
+        "--channel",
+        target_channel,
+    ]
+    if skip_analytics_probe:
+        activation_cmd.append("--skip-analytics-probe")
+    if activate_learning:
+        activation_cmd.append("--activate-learning")
+
+    evidence["steps"]["activation_controller"] = _run_json_script(activation_cmd)
+    evidence["steps"]["fleet_health"] = _run_json_script([python_bin, str(FLEET_HEALTH_SCRIPT)])
+    evidence["steps"]["optimization_backlog"] = _run_json_script([python_bin, str(BACKLOG_SCRIPT)])
+    evidence["steps"]["optimization_memory"] = _run_json_script([python_bin, str(OPTIMIZATION_MEMORY_SCRIPT)])
+
+    flags_after = _load_json_file(flags_path)
+    evidence["flags_after"] = flags_after
+    evidence["flag_changed"] = flags_before != flags_after
+
+    step_results = evidence["steps"].values()
+    evidence["ok"] = all(bool(item.get("ok")) for item in step_results)
+    return evidence
+
+
+def optimization_runtime_cycle_job():
+    """Manually triggerable runtime evidence producer for optimization layers."""
+    try:
+        evidence = run_optimization_runtime_cycle()
+
+        logs_dir = Path("logs")
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(TZ).strftime("%Y%m%d_%H%M%S")
+        stamped = logs_dir / f"runtime_optimization_evidence_{ts}.json"
+        _write_json_atomic(stamped, evidence)
+        _write_json_atomic(RUNTIME_EVIDENCE_LATEST_FILE, evidence)
+
+        logger.info(
+            "Runtime optimization cycle: ok=%s target_channel=%s flag_changed=%s",
+            evidence.get("ok"),
+            evidence.get("target_channel"),
+            evidence.get("flag_changed"),
+        )
+    except Exception as e:
+        logger.warning("Runtime optimization cycle failed: %s", e)
+
+
+def governance_refresh_job():
+    """Refresh governance artifacts and readiness markdown in one run."""
+    if not GOVERNANCE_REFRESH_SCRIPT.exists():
+        logger.warning("Governance refresh skipped: script missing (%s)", GOVERNANCE_REFRESH_SCRIPT)
+        return
+
+    lookback_rows = max(1, int(os.getenv("GOVERNANCE_REFRESH_LOOKBACK_ROWS", "500") or "500"))
+    python_bin = sys.executable
+    cmd = [
+        python_bin,
+        str(GOVERNANCE_REFRESH_SCRIPT),
+        "--lookback-rows",
+        str(lookback_rows),
+    ]
+    result = _run_json_script(cmd, timeout_seconds=300)
+    if result.get("ok"):
+        logger.info("Governance refresh completed: lookback_rows=%s", lookback_rows)
+    else:
+        logger.warning(
+            "Governance refresh failed: return_code=%s stderr=%s",
+            result.get("return_code"),
+            result.get("stderr_tail"),
+        )
+
+
 def process_likes_job():
     """Her 30 dk’da bir: zamanı gelen beğenileri işle."""
     logger.info("Cross-channel auto-like devre dışı (safe mode).")
@@ -817,8 +1079,8 @@ def fill_empty_queues_job():
             try:
                 from src.channel_manager import get_channel
                 cfg = get_channel(cid)
-                existing = queue.get(cid, [])
-                occupied = [e.get("publish_at","") for e in existing]
+                existing = [e for e in queue.get(cid, []) if _is_publishable_queue_entry(e)]
+                occupied = [e.get("publish_at", "") for e in existing]
                 needed_slots = len(cfg.upload_times)
 
                 to_render = needed_slots - len(existing)
@@ -843,6 +1105,8 @@ def _print_help() -> None:
     print("  python scheduler.py --health-check # Uretim hazirlik kontrolunu calistir")
     print("  python scheduler.py --skip-provider-preflight # Anthropic preflight kontrolunu atla")
     print("  python scheduler.py --sync-analytics-now # Canli YouTube Analytics sync ve optimizasyonu calistir")
+    print("  python scheduler.py --run-optimization-cycle-now # Controller+Fleet+Backlog+Memory runtime kanit dongusu")
+    print("  python scheduler.py --refresh-governance-now # P0/P1 metrics+bundle+readiness raporunu yenile")
     print("  python scheduler.py --help   # Bu yardim metnini goster")
 
 
@@ -880,7 +1144,6 @@ def run_live_analytics_sync_once() -> int:
     print(f"Live analytics sync: PASS (analytics_live_status={live_status})")
     return 0
 
-
 def _run_provider_preflight_check(*, skip_preflight: bool = False) -> tuple[bool, str]:
     if skip_preflight:
         return True, "skipped_by_flag"
@@ -897,6 +1160,59 @@ def _run_provider_preflight_check(*, skip_preflight: bool = False) -> tuple[bool
 
     ok, detail = run_anthropic_preflight(model=os.getenv("ANTHROPIC_MODEL", "claude-opus-4-5"))
     return ok, detail
+
+
+def run_optimization_cycle_once() -> int:
+    """Runtime optimization cycle'i bir kez calistir ve sonucu yazdir."""
+    if not RUNTIME_CYCLE_LOCK.acquire(blocking=False):
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": "lock_contention",
+                    "latest": str(RUNTIME_EVIDENCE_LATEST_FILE),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 2
+
+    try:
+        evidence = run_optimization_runtime_cycle()
+        _write_json_atomic(RUNTIME_EVIDENCE_LATEST_FILE, evidence)
+        print(
+            json.dumps(
+                {
+                    "ok": evidence.get("ok"),
+                    "target_channel": evidence.get("target_channel"),
+                    "flag_changed": evidence.get("flag_changed"),
+                    "latest": str(RUNTIME_EVIDENCE_LATEST_FILE),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0 if evidence.get("ok") else 1
+    finally:
+        RUNTIME_CYCLE_LOCK.release()
+
+
+def run_governance_refresh_once() -> int:
+    """Governance readiness artifact zincirini bir kez calistirir."""
+    governance_refresh_job()
+    latest = Path("logs/governance_refresh_run_latest.json")
+    print(
+        json.dumps(
+            {
+                "ok": latest.exists(),
+                "latest": str(latest),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0 if latest.exists() else 1
 
 def main():
     args = sys.argv[1:]
@@ -921,6 +1237,12 @@ def main():
 
     if "--sync-analytics-now" in args:
         sys.exit(run_live_analytics_sync_once())
+
+    if "--run-optimization-cycle-now" in args:
+        sys.exit(run_optimization_cycle_once())
+
+    if "--refresh-governance-now" in args:
+        sys.exit(run_governance_refresh_once())
 
     if "--list" in args or "--status" in args:
         show_status()
@@ -1002,6 +1324,11 @@ def main():
 
     # Günlük bakım (gece 03:00)
     schedule.every().day.at("03:00").do(maintenance_job)
+
+    # Governance readiness refresh (metrics + bundle + markdown)
+    governance_refresh_time = str(os.getenv("GOVERNANCE_REFRESH_TIME", "03:20")).strip() or "03:20"
+    schedule.every().day.at(governance_refresh_time).do(governance_refresh_job)
+    logger.info("Governance refresh job scheduled at %s", governance_refresh_time)
 
     # Her saatte boş kuyruğu olan kanalları doldur (restart güvencesi)
     schedule.every(1).hour.do(fill_empty_queues_job)

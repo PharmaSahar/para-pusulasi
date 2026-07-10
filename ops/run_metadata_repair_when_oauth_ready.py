@@ -8,13 +8,43 @@ import json
 import subprocess
 import sys
 import time
+import unicodedata
 from datetime import datetime
 from pathlib import Path
+
+from src.channel_manager import get_channel
+from src.youtube_auth import get_authenticated_service
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "channels/channel_registry.json"
 LOG_DIR = ROOT / "logs"
 VALIDATION_DIR = ROOT / "output/local_validation"
+
+
+def normalize_name(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value or "")
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    return "".join(ch for ch in ascii_text.lower() if ch.isalnum())
+
+
+def token_matches_channel(channel_id: str) -> tuple[bool, str | None, str | None]:
+    cfg = get_channel(channel_id)
+    try:
+        svc = get_authenticated_service(channel_cfg=cfg)
+        res = svc.channels().list(part="snippet,id", mine=True).execute()
+    except Exception as exc:
+        return False, None, f"auth_check_failed: {exc}"
+
+    items = res.get("items") or []
+    if not items:
+        return False, None, "auth_check_failed: no_channel_items"
+
+    actual_id = items[0].get("id") or ""
+    actual_name = items[0].get("snippet", {}).get("title", "")
+    expected_id = getattr(cfg, "youtube_channel_id", "") or ""
+    if expected_id:
+        return expected_id == actual_id, actual_name, actual_id
+    return normalize_name(cfg.name) == normalize_name(actual_name), actual_name, actual_id
 
 
 def load_pending_channels() -> list[str]:
@@ -39,6 +69,19 @@ def quota_like(text: str) -> bool:
 
 
 def process_channel(channel_id: str, max_videos: int, apply_limit: int, min_tags: int, min_seo: int) -> dict[str, object]:
+    matched, actual_name, actual_id = token_matches_channel(channel_id)
+    if not matched:
+        return {
+            "channel": channel_id,
+            "ready": False,
+            "status": "token_channel_mismatch",
+            "actual_name": actual_name,
+            "actual_id": actual_id,
+            "dry_report": None,
+            "apply_report": None,
+            "verify_report": None,
+        }
+
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     dry_report = LOG_DIR / f"metadata_repair_dryrun_{channel_id}_{stamp}.json"
     ids_file = VALIDATION_DIR / f"problematic_video_ids_{channel_id}_{stamp}.txt"

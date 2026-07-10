@@ -116,10 +116,61 @@ TOPIC_CATEGORIES = {
 }
 
 MARKET_SENSITIVE_NICHES = {"kisisel_finans", "borsa", "kripto", "gayrimenkul"}
+CORE_MARKET_NICHES = {"kisisel_finans", "borsa", "kripto"}
 
 
 def _is_market_sensitive_niche(niche: str | None) -> bool:
     return (niche or "").strip().lower() in MARKET_SENSITIVE_NICHES
+
+
+def _normalize_alignment_text(value: str | None) -> str:
+    raw = (value or "").strip().lower()
+    replacements = str.maketrans({
+        "ç": "c",
+        "ğ": "g",
+        "ı": "i",
+        "ö": "o",
+        "ş": "s",
+        "ü": "u",
+    })
+    cleaned = raw.translate(replacements)
+    return re.sub(r"[^a-z0-9\s]", " ", cleaned)
+
+
+def _extract_alignment_tokens(values: list[str]) -> set[str]:
+    tokens: set[str] = set()
+    for value in values:
+        for token in _normalize_alignment_text(value).split():
+            if len(token) >= 4:
+                tokens.add(token)
+    return tokens
+
+
+def _domain_anchor_tokens(
+    niche: str | None,
+    channel_topics: list[str] | None = None,
+    channel_name: str | None = None,
+) -> set[str]:
+    values = list(channel_topics or [])
+    if channel_name:
+        values.append(channel_name)
+    if niche:
+        values.append(str(niche))
+    values.extend(TOPIC_CATEGORIES.get((niche or "").strip().lower(), []))
+    return _extract_alignment_tokens(values)
+
+
+def _text_has_domain_anchor(
+    text: str,
+    niche: str | None,
+    channel_topics: list[str] | None = None,
+    channel_name: str | None = None,
+) -> bool:
+    anchors = _domain_anchor_tokens(niche, channel_topics, channel_name)
+    if not anchors:
+        return True
+    text_tokens = set(_normalize_alignment_text(text).split())
+    return bool(text_tokens & anchors)
 
 
 MARKET_TOPIC_RE = re.compile(
@@ -128,18 +179,50 @@ MARKET_TOPIC_RE = re.compile(
 )
 
 
+def _content_has_niche_mismatch(
+    data: dict,
+    niche: str | None,
+    channel_topics: list[str] | None = None,
+    channel_name: str | None = None,
+) -> bool:
+    normalized_niche = (niche or "").strip().lower()
+    if normalized_niche in CORE_MARKET_NICHES:
+        return False
+
+    combined_text = " ".join(
+        str(data.get(field, "")) for field in ("title", "description", "script", "thumbnail_prompt", "pexels_search")
+    )
+    has_market_keyword = bool(MARKET_TOPIC_RE.search(combined_text))
+    has_domain_anchor = _text_has_domain_anchor(
+        combined_text,
+        normalized_niche,
+        channel_topics,
+        channel_name,
+    )
+    return has_market_keyword or not has_domain_anchor
+
+
+def _niche_alignment_guidance(niche: str | None) -> str:
+    normalized = (niche or "").strip().lower() or "genel"
+    return (
+        f"Bu kanalın ana nişi {normalized}. Dolar, TL, borsa, hisse, faiz, enflasyon, bitcoin, kripto, altın, yatırım gibi finans terimlerini kullanma. "
+        "Konu kanalın kendi alanındaki temel prensiplere ve günlük örneklere odaklansın."
+    )
+
+
 def _filter_trending_topics_for_niche(
     topics: list[str],
     *,
     niche: str | None,
     channel_topics: list[str] | None = None,
+    channel_name: str | None = None,
 ) -> list[str]:
-    if _is_market_sensitive_niche(niche):
+    normalized_niche = (niche or "").strip().lower()
+    if normalized_niche in CORE_MARKET_NICHES:
         return topics
 
     filtered: list[str] = []
     seen: set[str] = set()
-    normalized_channel_topics = [topic.lower() for topic in (channel_topics or [])]
 
     for topic in topics:
         lowered = topic.strip().lower()
@@ -147,9 +230,7 @@ def _filter_trending_topics_for_niche(
             continue
         seen.add(lowered)
 
-        has_market_keyword = bool(MARKET_TOPIC_RE.search(topic))
-        mentions_channel_topic = any(token in lowered for token in normalized_channel_topics)
-        if has_market_keyword and not mentions_channel_topic:
+        if not _text_has_domain_anchor(topic, normalized_niche, channel_topics, channel_name):
             continue
         filtered.append(topic)
 
@@ -163,6 +244,7 @@ def _fallback_topics_for_niche(niche: str | None, channel_topics: list[str] | No
         fallback,
         niche=niche,
         channel_topics=channel_topics,
+        channel_name=None,
     )
 
 
@@ -497,7 +579,7 @@ Sadece JSON döndür:
   "tags": ["minimum 20 Türkçe/İngilizce etiket"],
   "script": "TAM SENARYO (2000+ kelime) — seçilen parametrelere göre ÖZGÜN yapı. Klişe bölüm başlıkları KULLANMA.",
   "next_video_teaser": "Bir cümle merak bırak: '{next_topic_hint}'",
-    "thumbnail_prompt": "Konuya ÖZGÜN İngilizce görsel: tek ana fikir, yüksek kontrast, mobilde okunur boş alan, net duygu, sinematik ışık, 1 odak nesne veya yüz ifadesi — 'business finance' gibi genel terimler KULLANMA",
+    "thumbnail_prompt": "Konuya OZGUN Ingilizce gorsel promptu: tek ana fikir, yuksek kontrast, sinematik isik, 1 odak nesne veya yuz ifadesi. Keep all text inside the central-left safe area. Do not place text near the bottom 22% or right 20% of the frame. Use maximum 2 short lines. Large readable Turkish title only. 'business finance' gibi genel terimler KULLANMA",
   "pexels_search": "Bu videonun KONUSUNA ÖZGÜ 3-5 kelimelik İngilizce Pexels arama terimi (örn: 'crypto trader phone night city' veya 'retirement couple beach sunset happy')",
   "chart_data": "Varsa bu videoda gösterilebilecek 1 finansal veri seti (JSON formatında): {{'type': 'bar|line|pie', 'title': 'Grafik başlığı', 'data': {{'labels': [...], 'values': [...]}}}}, yoksa null",
   "category_id": "27"
@@ -558,6 +640,7 @@ class ContentGenerator:
                 trending_from_web,
                 niche=self.niche,
                 channel_topics=self._channel_topics,
+                channel_name=self._channel_name,
             )
             logger.info(f"Google Trends: {trending_from_web[:2]}")
         except Exception:
@@ -598,6 +681,7 @@ class ContentGenerator:
             combined,
             niche=self.niche,
             channel_topics=self._channel_topics,
+            channel_name=self._channel_name,
         )
         if not combined:
             combined = _fallback_topics_for_niche(self.niche, self._channel_topics)
@@ -614,14 +698,6 @@ class ContentGenerator:
         topics = self.generate_topic_ideas(count=3)
         next_hint = topics[-1] if topics else "Yatirim hatalarından nasil kacinilir"
 
-        prompt = _build_content_prompt(
-            topic,
-            prev_title,
-            next_hint,
-            getattr(self, '_last_content_type', 'semi_evergreen'),
-            additional_guidance=additional_guidance,
-            niche=self.niche,
-        )
         logger.info("Icerik uretiliyor: " + topic)
 
         try:
@@ -636,29 +712,67 @@ class ContentGenerator:
             # Channel DNA is metadata-only and must never block generation.
             channel_dna_metadata = {}
 
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=8192,
-            system=self._system_prompt(),
-            messages=[{"role": "user", "content": prompt}],
-            temperature=1,  # Maksimum yaraticilik
-        )
-        raw = response.content[0].text.strip()
+        prompt_variants = [additional_guidance or ""]
+        if not _is_market_sensitive_niche(self.niche):
+            prompt_variants.append(
+                " ".join(
+                    part for part in [additional_guidance, _niche_alignment_guidance(self.niche)] if part
+                ).strip()
+            )
 
-        # Markdown kod blogu temizle
-        if raw.startswith("```"):
-            lines = raw.splitlines()
-            end = next((i for i, l in enumerate(lines[1:], 1) if l.startswith("```")), len(lines))
-            raw = "\n".join(lines[1:end])
+        data = None
+        raw_chart = None
+        last_error: Exception | None = None
+        for attempt, guidance in enumerate(prompt_variants[:2]):
+            prompt = _build_content_prompt(
+                topic,
+                prev_title,
+                next_hint,
+                getattr(self, '_last_content_type', 'semi_evergreen'),
+                additional_guidance=guidance or None,
+                niche=self.niche,
+            )
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=8192,
+                system=self._system_prompt(),
+                messages=[{"role": "user", "content": prompt}],
+                temperature=1,  # Maksimum yaraticilik
+            )
+            raw = response.content[0].text.strip()
 
-        data = json.loads(raw)
-        # chart_data string veya dict olabilir — parse et
-        raw_chart = data.get("chart_data")
-        if isinstance(raw_chart, str):
+            # Markdown kod blogu temizle
+            if raw.startswith("```"):
+                lines = raw.splitlines()
+                end = next((i for i, l in enumerate(lines[1:], 1) if l.startswith("```") ), len(lines))
+                raw = "\n".join(lines[1:end])
+
             try:
-                raw_chart = json.loads(raw_chart)
-            except Exception:
-                raw_chart = {}
+                candidate = json.loads(raw)
+            except Exception as exc:
+                last_error = exc
+                continue
+
+            if _content_has_niche_mismatch(
+                candidate,
+                self.niche,
+                channel_topics=self._channel_topics,
+                channel_name=self._channel_name,
+            ):
+                last_error = ValueError(f"niche_alignment_failed:{self.niche}")
+                continue
+
+            data = candidate
+            raw_chart = data.get("chart_data")
+            if isinstance(raw_chart, str):
+                try:
+                    raw_chart = json.loads(raw_chart)
+                except Exception:
+                    raw_chart = {}
+            break
+
+        if data is None:
+            raise ValueError(f"niche_alignment_failed:{self.niche}") from last_error
 
         try:
             quality_score_metadata = build_quality_scores(

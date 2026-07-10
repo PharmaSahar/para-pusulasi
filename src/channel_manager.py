@@ -10,6 +10,7 @@ from typing import Any
 
 REGISTRY_PATH = "channels/channel_registry.json"
 CHANNELS_DIR = "channels"
+ANALYTICS_TOKEN_POLICY_ENV = "ANALYTICS_TOKEN_POLICY"
 
 
 @dataclass
@@ -21,6 +22,7 @@ class ChannelConfig:
     upload_times: list[str]
     color_primary: list[int]
     color_bg: list[int]
+    youtube_channel_id: str = ""
 
     # Opsiyonel alanlar (yeni kanallar için default)
     slogan: str = ""
@@ -64,6 +66,14 @@ class ChannelConfig:
         else:
             # Ana .env'den yukle (ilk kanal icin)
             self._load_env(".env")
+
+        # Analytics token topolojisini tek policy ile belirle.
+        if not str(self.youtube_analytics_token_path or "").strip():
+            policy = str(os.getenv(ANALYTICS_TOKEN_POLICY_ENV, "channel_local") or "").strip().lower()
+            if policy == "shared":
+                self.youtube_analytics_token_path = "youtube_analytics_token.pickle"
+            else:
+                self.youtube_analytics_token_path = f"{self.base_dir}/youtube_analytics_token.pickle"
 
     def _load_env(self, path: str):
         from dotenv import dotenv_values

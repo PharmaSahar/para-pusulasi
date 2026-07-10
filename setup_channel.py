@@ -9,6 +9,8 @@ Kullanim:
 """
 import sys
 import os
+import unicodedata
+from datetime import datetime
 sys.path.insert(0, ".")
 os.chdir(os.path.dirname(os.path.abspath(__file__)) if "__file__" in dir() else ".")
 
@@ -18,6 +20,30 @@ from rich.table import Table
 from rich.panel import Panel
 
 console = Console()
+
+
+def _normalize_name(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value or "")
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    return "".join(ch for ch in ascii_text.lower() if ch.isalnum())
+
+
+def _channel_matches(cfg, yt_name: str, yt_id: str | None = None) -> bool:
+    expected_id = getattr(cfg, "youtube_channel_id", "") or ""
+    if expected_id and yt_id:
+        return expected_id == yt_id
+    return _normalize_name(cfg.name) == _normalize_name(yt_name)
+
+
+def _archive_mismatched_token(cfg, yt_name: str, yt_id: str | None = None) -> str:
+    src = Path(cfg.token_path)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    dst = src.with_name(f"{src.stem}.mismatch_{stamp}.pickle")
+    if src.exists():
+        src.rename(dst)
+    detail = yt_name if not yt_id else f"{yt_name} ({yt_id})"
+    console.print(f"[red]Yanlis kanal token'i algilandi ve arsivlendi: {detail} -> {dst}[/red]")
+    return str(dst)
 
 
 def setup_channel(channel_id: str):
@@ -35,17 +61,23 @@ def setup_channel(channel_id: str):
 
     if Path(cfg.token_path).exists():
         console.print(f"[green]✅ Token zaten mevcut: {cfg.token_path}[/green]")
-        _test_connection(cfg)
-        return
+        if _test_connection(cfg):
+            return
+        console.print("[yellow]Mevcut token bu kanal ile eslesmedigi icin yeniden yetkilendirme yapilacak.[/yellow]")
 
     console.print(f"\n[yellow]YouTube kimlik dogrulamasi baslatiliyor...[/yellow]")
     console.print(f"[dim]Not: {cfg.name} icin farkli bir Google hesabi kullanin![/dim]\n")
 
     try:
         svc = get_authenticated_service(channel_cfg=cfg)
-        ch = svc.channels().list(part="snippet", mine=True).execute()
+        ch = svc.channels().list(part="snippet,id", mine=True).execute()
         if ch.get("items"):
             yt_name = ch["items"][0]["snippet"]["title"]
+            yt_id = ch["items"][0].get("id")
+            if not _channel_matches(cfg, yt_name, yt_id):
+                _archive_mismatched_token(cfg, yt_name, yt_id)
+                console.print(f"[red]Beklenen kanal: {cfg.name} | Baglanan kanal: {yt_name}[/red]")
+                return
             console.print(f"[green]✅ Baglandi: YouTube Kanali = '{yt_name}'[/green]")
         else:
             console.print("[yellow]⚠️  Kanal bulunamadi, lutfen YouTube kanali olusturun.[/yellow]")
@@ -57,14 +89,20 @@ def _test_connection(cfg):
     from src.youtube_auth import get_authenticated_service
     try:
         svc = get_authenticated_service(channel_cfg=cfg)
-        ch = svc.channels().list(part="snippet,statistics", mine=True).execute()
+        ch = svc.channels().list(part="snippet,statistics,id", mine=True).execute()
         if ch.get("items"):
             item = ch["items"][0]
             name = item["snippet"]["title"]
+            yt_id = item.get("id")
+            if not _channel_matches(cfg, name, yt_id):
+                _archive_mismatched_token(cfg, name, yt_id)
+                return False
             subs = item["statistics"].get("subscriberCount", "?")
             console.print(f"  Kanal: {name} | Abone: {subs}")
+            return True
     except Exception as e:
         console.print(f"  [red]Baglanti hatasi: {e}[/red]")
+    return False
 
 
 def list_channels():

@@ -10,6 +10,7 @@ import gc
 import json
 import logging
 import os
+import re
 import shutil
 import time
 from datetime import datetime, timedelta
@@ -283,12 +284,101 @@ def notify_upload(channel_name: str, title: str, url: str, short_url: str = ""):
     )
 
 
-def notify_error(channel_name: str, error: str):
+def notify_error(channel_name: str, error: str) -> dict:
+    error_text = _summarize_error_for_telegram(error)
+    decision = _classify_error_decision(error_text)
+    alert_key = f"render_error::{channel_name.strip().lower()}::{decision['decision']}::{error_text.strip().lower()}"
+    cooldown_hours = 6 if decision["decision"] == "skip_current_item" else 2
+    if not _should_alert(alert_key, cooldown_hours=cooldown_hours):
+        logger.info("Telegram render error alert suppressed by cooldown: %s", alert_key)
+        return decision
+
     send_telegram(
         f"⚠️ <b>Render Hatası</b>\n"
         f"📺 Kanal: {channel_name}\n"
-        f"❌ {error[:200]}"
+        f"❌ {error_text}\n"
+        f"🧭 Karar: {decision['decision_label']}\n"
+        f"🔧 Aksiyon: {decision['action_label']}"
     )
+    _mark_alert_sent(alert_key)
+    return decision
+
+
+def _summarize_error_for_telegram(error: str, max_len: int = 220) -> str:
+    """Ham exception metnini Telegram için okunur bir özete indirger."""
+    raw = " ".join(str(error or "").split())
+    if not raw:
+        return "Bilinmeyen hata"
+
+    status_match = re.search(r"status_code:\s*(\d+)", raw)
+    status_code = status_match.group(1) if status_match else None
+
+    detail = None
+    for pattern in (
+        r"['\"]message['\"]:\s*['\"]([^'\"]+)['\"]",
+        r"['\"]code['\"]:\s*['\"]([^'\"]+)['\"]",
+    ):
+        m = re.search(pattern, raw)
+        if m:
+            detail = m.group(1)
+            break
+
+    cleaned = re.sub(r"headers:\s*\{.*?\},\s*", "", raw)
+    summary = cleaned
+    if status_code and detail:
+        summary = f"HTTP {status_code} - {detail}"
+    elif status_code:
+        summary = f"HTTP {status_code} - {cleaned}"
+    elif detail:
+        summary = detail
+
+    if len(summary) > max_len:
+        summary = summary[: max_len - 3] + "..."
+    return summary
+
+
+def _classify_error_decision(summary: str) -> dict:
+    """Render hatasından operasyon kararı türetir."""
+    txt = str(summary or "").lower()
+
+    if any(k in txt for k in ("invalid api key", "unauthorized", "http 401", "authentication")):
+        return {
+            "decision": "continue_without_provider",
+            "decision_label": "Uretim devam (problemli provider disi)",
+            "action_label": "API anahtari kontrol et; fallback TTS ile devam",
+            "retry": False,
+        }
+
+    if any(k in txt for k in ("quota", "credit balance", "http 429", "rate limit")):
+        return {
+            "decision": "continue_with_backoff",
+            "decision_label": "Uretim devam (bekleme/backoff)",
+            "action_label": "Kota/kredi yenilenene kadar yeniden deneme araligini artir",
+            "retry": True,
+        }
+
+    if any(k in txt for k in ("failed_fact_check", "fact check fail", "niche_alignment_failed")):
+        return {
+            "decision": "skip_current_item",
+            "decision_label": "Bu icerik atlandi, sonraki isleme gec",
+            "action_label": "Kanal ve topic policy kontrolu",
+            "retry": False,
+        }
+
+    if any(k in txt for k in ("timeout", "connection", "response ended prematurely", "dns", "chunkedencodingerror")):
+        return {
+            "decision": "retry_then_continue",
+            "decision_label": "Gecici hata: retry sonra devam",
+            "action_label": "Ag kararliligi kontrolu, fallback kullan",
+            "retry": True,
+        }
+
+    return {
+        "decision": "continue_with_monitoring",
+        "decision_label": "Uretim devam, izleme artirildi",
+        "action_label": "Ayni hata tekrarlarsa manuel inceleme",
+        "retry": True,
+    }
 
 
 def notify_startup(active_channels: int):

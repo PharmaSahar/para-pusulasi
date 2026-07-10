@@ -59,13 +59,15 @@ def _is_enabled(value: object) -> bool:
 def _resolve_live_collector_runtime() -> tuple[bool, str]:
     requested = _is_enabled(os.getenv("LIVE_COLLECTOR_ENABLED", "false"))
     api_go = _is_enabled(os.getenv("YOUTUBE_ANALYTICS_API_GO", "false"))
+    rollout_approved = _is_enabled(os.getenv("LIVE_COLLECTOR_ROLLOUT_APPROVED", "false"))
 
     if not api_go:
         return False, "no_go_api_not_enabled"
     if not requested:
         return False, "disabled_by_flag"
-    # Keep disabled by policy until explicit rollout approval.
-    return False, "disabled_by_policy"
+    if not rollout_approved:
+        return False, "disabled_by_policy"
+    return True, "go_enabled"
 
 
 def _resolve_git_head_short() -> str:
@@ -309,7 +311,8 @@ def render_and_schedule(channel_id: str):
                 if any(x in error_str for x in ["failed_fact_check", "credit balance", "quota", "invalid_request", "invalidtags", "authentication"]):
                     logger.error(f"[{cfg.name}] Fatal hata (retry yok): {e}")
                     if "failed_fact_check" not in error_str:
-                        notify_error(cfg.name, str(e)[:150])
+                        decision = notify_error(cfg.name, str(e))
+                        logger.info(f"[{cfg.name}] Telegram karar feedback: {decision.get('decision')}")
                     raise
                 if attempt < 3:
                     wait = 30 * attempt
@@ -364,7 +367,8 @@ def render_and_schedule(channel_id: str):
             from src.channel_manager import get_channel
             cfg = get_channel(channel_id)
             from src.scheduler_utils import notify_error
-            notify_error(cfg.name, str(e)[:150])
+            decision = notify_error(cfg.name, str(e))
+            logger.info(f"[{cfg.name}] Telegram karar feedback: {decision.get('decision')}")
         except Exception:
             pass
     finally:
@@ -449,6 +453,77 @@ def initial_fill():
         logger.info(f"[{cid}] On render basliyor (siraya eklendi)...")
         render_executor.submit(render_and_schedule, cid)
         time.sleep(5)  # Kilit çakışmasını önle — ThreadPoolExecutor zaten tek sırada çalıştırır
+
+
+def catch_up_overdue_queue_entries() -> dict[str, list[dict]]:
+    """Tarihi geçmiş publish kayıtlarını başlangıçta tüket ve tek render zinciri başlat."""
+    from src.channel_manager import get_channel
+
+    queue = load_queue()
+    now = datetime.now(TZ)
+    caught_up: dict[str, list[dict]] = {}
+
+    for channel_id in get_ready_channels():
+        entries = list(queue.get(channel_id, []) or [])
+        overdue_entries = []
+        for entry in entries:
+            publish_at = str(entry.get("publish_at") or "").strip()
+            if not publish_at:
+                continue
+            try:
+                publish_dt = datetime.fromisoformat(publish_at)
+            except Exception:
+                continue
+            if publish_dt <= now:
+                overdue_entries.append(entry)
+
+        if not overdue_entries:
+            continue
+
+        published_batch: list[dict] = []
+
+        def _pop_overdue(current_queue):
+            channel_entries = list(current_queue.get(channel_id, []) or [])
+            remaining = []
+            for item in channel_entries:
+                publish_at = str(item.get("publish_at") or "").strip()
+                try:
+                    publish_dt = datetime.fromisoformat(publish_at) if publish_at else None
+                except Exception:
+                    publish_dt = None
+                if publish_dt and publish_dt <= now:
+                    published_batch.append(item)
+                else:
+                    remaining.append(item)
+            if remaining:
+                current_queue[channel_id] = remaining
+            else:
+                current_queue.pop(channel_id, None)
+
+        update_queue(_pop_overdue)
+        if not published_batch:
+            continue
+
+        caught_up[channel_id] = published_batch
+        cfg = get_channel(channel_id)
+        logger.info("[%s] Startup catch-up: %s gecikmiş kuyruk girişi tüketildi", channel_id, len(published_batch))
+
+        try:
+            from src.scheduler_utils import send_telegram
+
+            for entry in published_batch:
+                send_telegram(
+                    f"🚀 <b>Yeni Video Yayında!</b>\n"
+                    f"📺 {cfg.name}\n"
+                    f"🎬 {str(entry.get('title') or '')[:60]}\n"
+                    f"🔗 {entry.get('youtube_url', '')}"
+                )
+        except Exception as e:
+            logger.warning("[%s] Startup catch-up bildirimi gönderilemedi: %s", channel_id, e)
+
+        render_executor.submit(render_and_schedule, channel_id)
+
+    return caught_up
 
 
 def setup_schedule():
@@ -867,6 +942,9 @@ def main():
 
     # Zamanlama kur
     ready_channels = setup_schedule()
+
+    # Restart sonrası geçmiş publish slotlarını tüket
+    catch_up_overdue_queue_entries()
 
     # Günlük bakım (gece 03:00)
     schedule.every().day.at("03:00").do(maintenance_job)

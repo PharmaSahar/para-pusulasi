@@ -891,6 +891,78 @@ def run_full_pipeline(
         _refresh_observability_fields()
         return result
 
+    # ── İÇERİK KALİTE KAPI (channel-topic fit + script freshness + metadata completeness) ─
+    # Runs before TTS/render/upload so blocked content never enters the expensive render path.
+    _cq_regeneration_count = 0
+    def _run_content_quality_gate() -> None:
+        nonlocal _cq_regeneration_count, content
+        try:
+            from .content_quality_guard import (
+                MetadataBundle, evaluate_content_quality,
+            )
+        except ImportError:
+            return  # guard not available — fail-open only on ImportError
+
+        def _make_bundle() -> MetadataBundle:
+            try:
+                desc = content.seo_description()[:500]
+            except Exception:
+                desc = getattr(content, "description", "") or ""
+            return MetadataBundle(
+                title=getattr(content, "title", ""),
+                description=desc,
+                tags=list(getattr(content, "tags", []) or []),
+                category_id=str(getattr(content, "category_id", "") or getattr(cfg, "category_id", "") or ""),
+                script=getattr(content, "script", ""),
+                thumbnail_prompt=getattr(content, "thumbnail_prompt", "") or "",
+                niche=str(getattr(cfg, "niche", "") or ""),
+                channel_id=str(result.get("channel", "")),
+            )
+
+        dec = evaluate_content_quality(
+            _make_bundle(),
+            getattr(content, "script", ""),
+            topic or getattr(content, "title", ""),
+            regeneration_count=_cq_regeneration_count,
+        )
+        if dec.publish_decision != "block":
+            logger.info("[%s] Content quality gate: ALLOW", result.get("channel"))
+            return
+
+        if _cq_regeneration_count >= 1:
+            logger.error(
+                "[%s] Content quality gate BLOCK after regeneration: %s",
+                result.get("channel"), dec.block_reasons,
+            )
+            raise RuntimeError(f"content_quality_blocked: {'; '.join(dec.block_reasons)}")
+
+        logger.warning(
+            "[%s] Content quality gate BLOCK (attempt 1) — regenerating: %s",
+            result.get("channel"), dec.block_reasons,
+        )
+        _cq_regeneration_count += 1
+        retry_guidance = (
+            f"Previous content was blocked: {'; '.join((dec.block_reasons or ['quality check'])[:2])}. "
+            "Generate a completely different topic and script that strictly matches the channel niche."
+        )
+        _generate_content(generator, generation_topic=None, additional_guidance=retry_guidance)
+        # Second attempt
+        dec2 = evaluate_content_quality(
+            _make_bundle(),
+            getattr(content, "script", ""),
+            topic or getattr(content, "title", ""),
+            regeneration_count=1,
+        )
+        if dec2.publish_decision == "block":
+            logger.error(
+                "[%s] Content quality gate BLOCK (final): %s",
+                result.get("channel"), dec2.block_reasons,
+            )
+            raise RuntimeError(f"content_quality_blocked: {'; '.join(dec2.block_reasons)}")
+        logger.info("[%s] Content quality gate: regenerated content ALLOW", result.get("channel"))
+
+    _run_content_quality_gate()
+
     try:
         _run_fact_check_guard("tts", content.script, suppress_retryable_alert=True)
     except RuntimeError as error:
@@ -1129,6 +1201,18 @@ def run_full_pipeline(
                 "privacy": privacy,
                 "publish_at": publish_at,
             }
+            # Register script fingerprint ONLY after confirmed upload
+            try:
+                from .content_quality_guard import register_published_script
+                register_published_script(
+                    channel_id=str(result.get("channel", "")),
+                    video_id=video_id,
+                    title=getattr(content, "title", ""),
+                    topic=topic or getattr(content, "title", ""),
+                    script=getattr(content, "script", ""),
+                )
+            except Exception as _reg_exc:
+                logger.debug("Script fingerprint registration failed (non-critical): %s", _reg_exc)
             try:
                 result["youtube_channel_stats"] = uploader.get_channel_stats()
             except Exception:

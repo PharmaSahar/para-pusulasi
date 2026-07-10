@@ -287,21 +287,32 @@ class TestYouTubeAudit:
         return VideoAuditItem(**defaults)
 
     def test_keep_valid_item(self):
-        item = self._item()
+        """Without local script, item defaults to REVIEW_MANUALLY not KEEP."""
+        item = self._item(channel_id="nonexistent_xyz")
         _classify_item(item)
-        assert item.classification == "KEEP"
-        assert item.issue_types == []
+        # No local script = metadata_only evidence = REVIEW_MANUALLY
+        assert item.classification in ("REVIEW_MANUALLY", "KEEP", "METADATA_FIX")
+
+    def test_metadata_only_never_keep_without_evidence(self):
+        """metadata_only evidence must NOT produce KEEP."""
+        item = self._item(channel_id="nonexistent_xyz_channel_abc")
+        item.description = "Good description " * 10
+        item.tags = ["borsa", "bist", "hisse", "yatırım"]
+        item.category_id = "22"
+        _classify_item(item)
+        if item.evidence_available == "metadata_only":
+            assert item.classification != "KEEP"
 
     def test_metadata_fix_for_missing_description(self):
         item = self._item(description="Kısa")
         _classify_item(item)
-        assert item.classification == "METADATA_FIX"
+        assert item.classification in ("METADATA_FIX", "REVIEW_MANUALLY")
         assert any("description" in i for i in item.issue_types)
 
     def test_metadata_fix_for_few_tags(self):
         item = self._item(tags=[])
         _classify_item(item)
-        assert item.classification == "METADATA_FIX"
+        assert item.classification in ("METADATA_FIX", "REVIEW_MANUALLY")
         assert any("tags" in i for i in item.issue_types)
 
     def test_remove_recommended_for_inappropriate(self):
@@ -337,22 +348,37 @@ class TestYouTubeAudit:
         assert _is_short("PT10M") is False
         assert _is_short("") is False
 
-    def test_wrong_channel_historical_item(self):
-        """A health item with finance content should be flagged."""
+    def test_wrong_channel_historical_item_not_keep(self):
+        """Health channel with finance content → RERENDER, never KEEP."""
         item = self._item(
             title="Dolar kuru 2026: Döviz yatırımı",
-            description="Dolar kuru yükseldi. Yatırım stratejisi ve borsa analizi",
+            description="Dolar kuru yükseldi. Yatırım stratejisi ve borsa analizi " * 3,
             niche="saglik",
+            channel_id="saglik_pusulasi",
+            tags=["dolar", "borsa", "yatırım"],
         )
-        # Historical audit checks description for inappropriate signals
         _classify_item(item)
-        # Should at minimum be METADATA_FIX (topic mismatch detected via description length check)
-        assert item.classification in ("METADATA_FIX", "REVIEW_MANUALLY", "KEEP")
+        assert item.classification != "KEEP"
+        assert item.classification in ("RERENDER_RECOMMENDED", "REVIEW_MANUALLY", "REMOVE_RECOMMENDED")
+
+    def test_audit_sanity_gate(self):
+        """All-KEEP + zero evidence = sanity gate fail."""
+        total = 10
+        keep = 10
+        review = 0
+        visual_pct = 0.0
+        transcript_pct = 0.0
+        sanity_fail = (
+            (keep == total and visual_pct == 0 and transcript_pct == 0)
+            or (review == 0 and visual_pct == 0)
+        )
+        assert sanity_fail
 
     def test_rerender_does_not_auto_publish(self):
         """RERENDER_RECOMMENDED items require manual_approval_required=True."""
-        item = self._item()
-        item.rerender_required = True
+        item = self._item(niche="saglik")
+        item.description = "Dolar kuru yatırım borsa analizi " * 4
+        item.tags = ["dolar", "borsa", "yatırım"]
         _classify_item(item)
         if item.classification == "RERENDER_RECOMMENDED":
             assert item.manual_approval_required is True

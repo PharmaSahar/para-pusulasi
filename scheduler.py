@@ -455,7 +455,7 @@ def render_and_schedule(channel_id: str):
     try:
         from src.scheduler_utils import (
             check_disk_space, cleanup_old_renders, force_cleanup,
-            get_provider_circuit_status, notify_upload, notify_error,
+            get_global_overload_pause_status, get_provider_circuit_status, notify_upload, notify_error,
             record_provider_failure, record_provider_success, save_used_topic,
             _append_queue_quarantine_decision,
         )
@@ -464,6 +464,8 @@ def render_and_schedule(channel_id: str):
         def cleanup_old_renders(**kw): return 0
         def force_cleanup():
             import gc; gc.collect()
+        def get_global_overload_pause_status():
+            return {"is_open": False, "retry_after_seconds": 0, "pause_until": "", "reason": ""}
         def get_provider_circuit_status(provider: str):
             return {"provider": provider, "is_open": False, "retry_after_seconds": 0, "state": {}}
         def notify_upload(*a, **kw): pass
@@ -484,6 +486,22 @@ def render_and_schedule(channel_id: str):
         from src.pipeline import run_full_pipeline
 
         cfg = get_channel(channel_id)
+
+        pause = get_global_overload_pause_status()
+        if pause.get("is_open"):
+            retry_after = int(pause.get("retry_after_seconds", 0))
+            reason = str(pause.get("reason") or "overload_storm")
+            logger.warning(
+                "[%s] Global overload pause OPEN. Render atlandi, retry_after=%ss, reason=%s",
+                cfg.name,
+                retry_after,
+                reason,
+            )
+            notify_error(
+                cfg.name,
+                f"Global overload pause open; provider cooling down ({retry_after}s)",
+            )
+            return
 
         # ── Provider circuit breaker kontrolü ────────────────────────
         circuit = get_provider_circuit_status("anthropic")
@@ -548,8 +566,14 @@ def render_and_schedule(channel_id: str):
                     "service unavailable",
                     "internal server error",
                 )
-                if any(token in error_str for token in provider_failure_tokens) and not getattr(e, "_provider_failure_recorded", False):
+                provider_related = any(token in error_str for token in provider_failure_tokens)
+                overloaded_signal = any(token in error_str for token in ("overloaded", "overloaded_error", "529"))
+                if provider_related and (overloaded_signal or not getattr(e, "_provider_failure_recorded", False)):
                     record_provider_failure("anthropic", error_text)
+
+                # 529 overload dalgasinda kanal-icinde tekrar denemek yerine global circuit'e birak.
+                if overloaded_signal:
+                    setattr(e, "_skip_scheduler_pipeline_retry", True)
                 # Kesinlikle retry yapma
                 if any(x in error_str for x in ["failed_fact_check", "credit balance", "quota", "invalid_request", "invalidtags", "authentication", "http 400", "http 401", "http 403"]):
                     logger.error(f"[{cfg.name}] Fatal hata (retry yok): {e}")

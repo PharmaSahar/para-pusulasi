@@ -30,6 +30,15 @@ QUEUE_FORBIDDEN_MARKET_RE = re.compile(
 
 PROVIDER_HEALTH_FILE = "output/state/provider_health.json"
 
+
+def _get_int_env(name: str, default: int) -> int:
+    raw = str(os.getenv(name, str(default))).strip()
+    try:
+        value = int(raw)
+    except Exception:
+        return default
+    return value if value > 0 else default
+
 # ─── BÜYÜME MİLESTONE TAKİBİ ─────────────────────────────────────────────────
 # Toplam yüklenen video sayısına göre otomatik yükseltme hatırlatması
 
@@ -453,6 +462,42 @@ def _extract_request_id(error_text: str) -> str:
     return match.group(1) if match else ""
 
 
+def _parse_iso_utc(value: str) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def _format_iso_utc(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def get_global_overload_pause_status() -> dict:
+    state = _load_provider_health_state()
+    pause_until_raw = str(state.get("global_overload_pause_until") or "").strip()
+    retry_after_seconds = 0
+    is_open = False
+    parsed = _parse_iso_utc(pause_until_raw)
+    if parsed is not None:
+        now_utc = _now_utc().replace(tzinfo=parsed.tzinfo)
+        if parsed > now_utc:
+            is_open = True
+            retry_after_seconds = max(0, int((parsed - now_utc).total_seconds()))
+
+    return {
+        "is_open": is_open,
+        "retry_after_seconds": retry_after_seconds,
+        "pause_until": pause_until_raw,
+        "reason": str(state.get("global_overload_pause_reason") or ""),
+        "window_seconds": _get_int_env("PROVIDER_OVERLOAD_WINDOW_SECONDS", 300),
+        "trigger_count": _get_int_env("PROVIDER_OVERLOAD_TRIGGER_COUNT", 3),
+    }
+
+
 def record_provider_failure(provider: str, error_text: str) -> dict:
     state = _load_provider_health_state()
     providers = state.setdefault("providers", {})
@@ -469,6 +514,34 @@ def record_provider_failure(provider: str, error_text: str) -> dict:
     open_until = ""
     if open_seconds > 0:
         open_until = (now + timedelta(seconds=open_seconds)).isoformat() + "Z"
+
+    if err_type == "overload":
+        window_seconds = _get_int_env("PROVIDER_OVERLOAD_WINDOW_SECONDS", 300)
+        trigger_count = _get_int_env("PROVIDER_OVERLOAD_TRIGGER_COUNT", 3)
+        pause_seconds = _get_int_env("PROVIDER_OVERLOAD_GLOBAL_PAUSE_SECONDS", 600)
+
+        cutoff = now - timedelta(seconds=window_seconds)
+        raw_events = list(state.get("overload_events") or [])
+        kept_events = []
+        for raw in raw_events:
+            parsed = _parse_iso_utc(raw)
+            if parsed is None:
+                continue
+            if parsed >= cutoff.replace(tzinfo=parsed.tzinfo):
+                kept_events.append(_format_iso_utc(parsed))
+        kept_events.append(_format_iso_utc(now.replace(tzinfo=timezone.utc)))
+        state["overload_events"] = kept_events[-100:]
+
+        if len(kept_events) >= trigger_count:
+            proposed_until = _format_iso_utc(now.replace(tzinfo=timezone.utc) + timedelta(seconds=pause_seconds))
+            existing_until_raw = str(state.get("global_overload_pause_until") or "")
+            existing_dt = _parse_iso_utc(existing_until_raw)
+            proposed_dt = _parse_iso_utc(proposed_until)
+            if proposed_dt is not None and (existing_dt is None or proposed_dt > existing_dt):
+                state["global_overload_pause_until"] = proposed_until
+                state["global_overload_pause_reason"] = (
+                    f"overload_storm:{len(kept_events)}/{window_seconds}s"
+                )
 
     provider_state.update(
         {

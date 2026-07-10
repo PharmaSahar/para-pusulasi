@@ -3,7 +3,22 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+
+@pytest.fixture(autouse=True)
+def _stub_provider_circuit_state(monkeypatch):
+    import src.scheduler_utils as scheduler_utils
+
+    monkeypatch.setattr(
+        scheduler_utils,
+        "get_provider_circuit_status",
+        lambda _provider: {"provider": "anthropic", "is_open": False, "retry_after_seconds": 0, "state": {}},
+    )
+    monkeypatch.setattr(scheduler_utils, "record_provider_success", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(scheduler_utils, "record_provider_failure", lambda *_args, **_kwargs: {})
 
 
 def test_build_quality_scores_is_deterministic_for_same_input():

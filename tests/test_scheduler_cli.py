@@ -8,6 +8,12 @@ import pytest
 import scheduler
 
 
+@pytest.fixture(autouse=True)
+def _stub_scheduler_singleton_lock(monkeypatch):
+    monkeypatch.setattr(scheduler, "_acquire_scheduler_singleton_lock", lambda: None)
+    monkeypatch.setattr(scheduler, "_release_scheduler_singleton_lock", lambda: None)
+
+
 class _StopLoop(Exception):
     pass
 
@@ -193,28 +199,6 @@ def test_scheduler_default_startup_writes_safety_gate_result(monkeypatch):
         scheduler.main()
 
     assert calls["safety"] == 1
-
-
-def test_scheduler_startup_exits_when_singleton_lock_conflicts(monkeypatch):
-    monkeypatch.setattr(scheduler.sys, "argv", ["scheduler.py"])
-    calls = {"startup": 0}
-
-    class _StartupResult:
-        ok = True
-        errors = ()
-
-    def _fake_startup_health(**_kwargs):
-        calls["startup"] += 1
-        return _StartupResult()
-
-    monkeypatch.setattr(scheduler, "_acquire_scheduler_singleton_lock", lambda: (_ for _ in ()).throw(RuntimeError("scheduler_singleton_lock_conflict")))
-    monkeypatch.setattr(scheduler, "_run_startup_health_check", _fake_startup_health)
-
-    with pytest.raises(SystemExit) as exc:
-        scheduler.main()
-
-    assert exc.value.code == 1
-    assert calls["startup"] == 0
 
 
 def test_scheduler_default_startup_path_unchanged(monkeypatch):

@@ -1,6 +1,6 @@
 {
   "controller": "activation_controller",
-  "generated_at_utc": "2026-07-10T14:46:39.985736+00:00",
+  "generated_at_utc": "2026-07-10T15:34:48.047379+00:00",
   "channel_id": "test_channel",
   "gates": {
     "analytics_api_probe": {
@@ -47,7 +47,7 @@
           "updated_at": "2026-07-09T00:00:00+00:00",
           "last_probe": {}
         },
-        "cache_path": "/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-212/test_activation_controller_act1/thumbnail_permission_cache.json"
+        "cache_path": "/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-235/test_activation_controller_act1/thumbnail_permission_cache.json"
       }
     }
   },
@@ -57,14 +57,14 @@
     "analytics_live_status": "go_enabled",
     "thumbnail_permission_status": "go_streak_met",
     "ready_for_learning_activation": true,
-    "generated_at_utc": "2026-07-10T14:46:39.985629+00:00",
+    "generated_at_utc": "2026-07-10T15:34:48.047278+00:00",
     "source": "activation_controller"
   },
   "activation": {
     "requested": true,
     "applied": true,
     "reason": "all_gates_go",
-    "flags_path": "/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-212/test_activation_controller_act1/flags.json"
+    "flags_path": "/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-235/test_activation_controller_act1/flags.json"
   },
   "system_status": "ready_for_learning_activation",
   "safety_policy": {
@@ -74,8 +74,8 @@
     "auto_code_generation": false
   },
   "report_paths": {
-    "report_path": "/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-212/test_activation_controller_act1/report.json",
-    "archive_stamped": "/Users/klara/Downloads/adsız klasör/output/state/activation_reports/2026-07-10T14-46-39.json",
+    "report_path": "/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-235/test_activation_controller_act1/report.json",
+    "archive_stamped": "/Users/klara/Downloads/adsız klasör/output/state/activation_reports/2026-07-10T15-34-48.json",
     "archive_latest": "/Users/klara/Downloads/adsız klasör/output/state/activation_reports/latest.json"
   }
 }

@@ -7,7 +7,18 @@ from types import SimpleNamespace
 import pytest
 
 import scheduler
-from src.scheduler_utils import _classify_error_decision, get_provider_circuit_status, record_provider_failure
+from src.scheduler_utils import (
+    _classify_error_decision,
+    get_global_overload_pause_status,
+    get_provider_circuit_status,
+    record_provider_failure,
+)
+
+
+@pytest.fixture(autouse=True)
+def _stub_scheduler_singleton_lock(monkeypatch):
+    monkeypatch.setattr(scheduler, "_acquire_scheduler_singleton_lock", lambda: None)
+    monkeypatch.setattr(scheduler, "_release_scheduler_singleton_lock", lambda: None)
 
 
 def test_main_exits_when_provider_preflight_fails(monkeypatch):
@@ -127,6 +138,47 @@ def test_render_and_schedule_skips_when_provider_circuit_open(monkeypatch):
     assert called["notify"] == 1
 
 
+def test_render_and_schedule_skips_when_global_overload_pause_open(monkeypatch):
+    import src.channel_manager as channel_manager
+    import src.scheduler_utils as scheduler_utils
+    import src.pipeline as pipeline
+
+    channel_cfg = SimpleNamespace(name="Demo Channel", upload_times=["10:00"])
+
+    monkeypatch.setattr(channel_manager, "get_channel", lambda _cid: channel_cfg)
+    monkeypatch.setattr(scheduler_utils, "check_disk_space", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        scheduler_utils,
+        "get_global_overload_pause_status",
+        lambda: {
+            "is_open": True,
+            "retry_after_seconds": 480,
+            "pause_until": "2099-01-01T00:00:00Z",
+            "reason": "overload_storm:3/300s",
+        },
+    )
+    monkeypatch.setattr(
+        scheduler_utils,
+        "get_provider_circuit_status",
+        lambda _provider: {"provider": "anthropic", "is_open": False, "retry_after_seconds": 0, "state": {}},
+    )
+
+    called = {"pipeline": 0, "notify": 0}
+
+    def _never_run_pipeline(**_kwargs):
+        called["pipeline"] += 1
+        raise AssertionError("pipeline should not run while global overload pause is open")
+
+    monkeypatch.setattr(pipeline, "run_full_pipeline", _never_run_pipeline)
+    monkeypatch.setattr(scheduler_utils, "notify_error", lambda *_args, **_kwargs: called.__setitem__("notify", called["notify"] + 1) or {})
+    monkeypatch.setattr(scheduler_utils, "force_cleanup", lambda: None)
+
+    scheduler.render_and_schedule("demo_channel")
+
+    assert called["pipeline"] == 0
+    assert called["notify"] == 1
+
+
 def test_render_and_schedule_quarantines_when_upload_precheck_blocked(monkeypatch, tmp_path):
     import src.channel_manager as channel_manager
     import src.scheduler_utils as scheduler_utils
@@ -200,6 +252,24 @@ def test_record_provider_failure_opens_circuit_for_overloaded(tmp_path, monkeypa
     assert state["last_error_type"] == "overload"
     assert circuit["is_open"] is True
     assert circuit["retry_after_seconds"] > 0
+
+
+def test_record_provider_failure_triggers_global_overload_pause(tmp_path, monkeypatch):
+    import src.scheduler_utils as scheduler_utils
+
+    health_file = tmp_path / "provider_health.json"
+    monkeypatch.setattr(scheduler_utils, "PROVIDER_HEALTH_FILE", str(health_file))
+    monkeypatch.setenv("PROVIDER_OVERLOAD_WINDOW_SECONDS", "300")
+    monkeypatch.setenv("PROVIDER_OVERLOAD_TRIGGER_COUNT", "2")
+    monkeypatch.setenv("PROVIDER_OVERLOAD_GLOBAL_PAUSE_SECONDS", "600")
+
+    record_provider_failure("anthropic", "HTTP 529 - Overloaded")
+    record_provider_failure("anthropic", "HTTP 529 - Overloaded")
+    pause = get_global_overload_pause_status()
+
+    assert pause["is_open"] is True
+    assert pause["retry_after_seconds"] > 0
+    assert pause["reason"].startswith("overload_storm:")
 
 
 def test_render_and_schedule_does_not_outer_retry_provider_handled_exception(monkeypatch):

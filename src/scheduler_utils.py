@@ -619,7 +619,12 @@ def run_anthropic_preflight(model: str = "claude-opus-4-5") -> tuple[bool, str]:
     try:
         from anthropic import Anthropic
 
-        client = Anthropic(api_key=key)
+        max_retries_raw = str(os.getenv("ANTHROPIC_MAX_RETRIES", "1")).strip()
+        try:
+            max_retries = int(max_retries_raw)
+        except Exception:
+            max_retries = 1
+        client = Anthropic(api_key=key, max_retries=max(0, max_retries))
         resp = client.messages.create(
             model=model,
             max_tokens=8,

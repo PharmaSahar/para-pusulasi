@@ -194,10 +194,12 @@ def test_render_and_schedule_quarantines_when_upload_precheck_blocked(monkeypatc
     queue_file = tmp_path / "channel_queue.json"
     queue_file.write_text("{}", encoding="utf-8")
     trail = tmp_path / "queue_quarantine_decisions.jsonl"
+    health_file = tmp_path / "provider_health.json"
 
     monkeypatch.setattr(scheduler, "QUEUE_FILE", str(queue_file))
     monkeypatch.setattr(channel_manager, "get_channel", lambda _cid: channel_cfg)
     monkeypatch.setattr(scheduler_utils, "QUARANTINE_TRAIL_PATH", trail)
+    monkeypatch.setattr(scheduler_utils, "PROVIDER_HEALTH_FILE", str(health_file))
     monkeypatch.setattr(scheduler_utils, "check_disk_space", lambda **_kwargs: True)
     monkeypatch.setattr(
         scheduler_utils,
@@ -272,13 +274,14 @@ def test_record_provider_failure_triggers_global_overload_pause(tmp_path, monkey
     assert pause["reason"].startswith("overload_storm:")
 
 
-def test_render_and_schedule_does_not_outer_retry_provider_handled_exception(monkeypatch):
+def test_render_and_schedule_does_not_outer_retry_provider_handled_exception(monkeypatch, tmp_path):
     import src.channel_manager as channel_manager
     import src.pipeline as pipeline
     import src.scheduler_utils as scheduler_utils
 
     channel_cfg = SimpleNamespace(name="Demo Channel", upload_times=["10:00"])
     calls = {"pipeline": 0, "notify": 0}
+    health_file = tmp_path / "provider_health.json"
 
     def _provider_handled_error(**_kwargs):
         calls["pipeline"] += 1
@@ -289,6 +292,7 @@ def test_render_and_schedule_does_not_outer_retry_provider_handled_exception(mon
         raise exc
 
     monkeypatch.setattr(channel_manager, "get_channel", lambda _cid: channel_cfg)
+    monkeypatch.setattr(scheduler_utils, "PROVIDER_HEALTH_FILE", str(health_file))
     monkeypatch.setattr(scheduler_utils, "check_disk_space", lambda **_kwargs: True)
     monkeypatch.setattr(scheduler_utils, "get_provider_circuit_status", lambda _provider: {"provider": "anthropic", "is_open": False, "retry_after_seconds": 0, "state": {}})
     monkeypatch.setattr(scheduler_utils, "notify_error", lambda *_args, **_kwargs: calls.__setitem__("notify", calls["notify"] + 1) or {})

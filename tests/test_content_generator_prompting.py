@@ -6,8 +6,12 @@ import src.content_generator as content_generator
 
 
 def test_system_prompt_uses_channel_persona_when_available(monkeypatch):
+    captured = {}
+
     class FakeAnthropicClient:
-        def __init__(self, api_key=None):
+        def __init__(self, api_key=None, max_retries=None):
+            captured["api_key"] = api_key
+            captured["max_retries"] = max_retries
             self.messages = object()
 
     class FakeConfig:
@@ -23,11 +27,13 @@ def test_system_prompt_uses_channel_persona_when_available(monkeypatch):
 
     assert prompt.startswith(FakeConfig.persona)
     assert "KANAL UYUMLULUK VE FACT-CHECK SINIRI" in prompt
+    assert captured["api_key"] == "key"
+    assert captured["max_retries"] == 1
 
 
 def test_system_prompt_falls_back_to_default_persona(monkeypatch):
     class FakeAnthropicClient:
-        def __init__(self, api_key=None):
+        def __init__(self, api_key=None, max_retries=None):
             self.messages = object()
 
     class FakeConfig:
@@ -94,7 +100,7 @@ def test_generate_topic_ideas_filters_finance_trends_for_non_finance_channel(mon
             return FakeResponse("1. Uyku kalitesini artırmanın yolları\n2. Stres yönetimi rutini\n3. Sağlıklı sabah alışkanlıkları")
 
     class FakeAnthropicClient:
-        def __init__(self, api_key=None):
+        def __init__(self, api_key=None, max_retries=None):
             self.messages = FakeMessages()
 
     class FakeConfig:
@@ -142,7 +148,7 @@ def test_generate_topic_ideas_filters_finance_ai_topics_for_non_finance_channel(
             )
 
     class FakeAnthropicClient:
-        def __init__(self, api_key=None):
+        def __init__(self, api_key=None, max_retries=None):
             self.messages = FakeMessages()
 
     class FakeConfig:
@@ -189,7 +195,7 @@ def test_generate_video_content_does_not_fetch_extra_topics(monkeypatch):
             return FakeResponse(__import__("json").dumps(payload, ensure_ascii=False))
 
     class FakeAnthropicClient:
-        def __init__(self, api_key=None):
+        def __init__(self, api_key=None, max_retries=None):
             self.messages = FakeMessages()
 
     class FakeConfig:
@@ -204,10 +210,76 @@ def test_generate_video_content_does_not_fetch_extra_topics(monkeypatch):
     monkeypatch.setattr(content_generator, "build_channel_dna_metadata", lambda **_kwargs: {})
     monkeypatch.setattr(content_generator, "build_quality_scores", lambda **_kwargs: {})
     monkeypatch.setattr(content_generator, "_content_has_niche_mismatch", lambda *_args, **_kwargs: False)
-    monkeypatch.setattr(content_generator, "_LAST_ANTHROPIC_CALL_AT", 0.0)
 
     generator = content_generator.ContentGenerator(channel_cfg=FakeConfig())
     content = generator.generate_video_content("Saglikli uyku duzeni")
 
     assert content.title == "Title"
-    assert generator.client.messages.calls == 1
+    assert generator.client.messages.calls == 2
+
+
+def test_generate_video_content_uses_niche_retry_guidance_after_mismatch(monkeypatch):
+    class FakeResponse:
+        def __init__(self, text: str):
+            self.content = [SimpleNamespace(text=text)]
+
+    class FakeMessages:
+        def __init__(self):
+            self.calls = 0
+            self.prompts = []
+
+        def create(self, **kwargs):
+            self.calls += 1
+            self.prompts.append(kwargs["messages"][0]["content"])
+            if self.calls == 1:
+                return FakeResponse("1. Uyku duzeni\n2. Beslenme rutini\n3. Stres yonetimi")
+            if self.calls == 2:
+                payload = {
+                    "title": "Genel Baslik",
+                    "description": "Description",
+                    "tags": ["a"],
+                    "script": "Script",
+                    "thumbnail_prompt": "Thumb",
+                    "category_id": "27",
+                    "hook": "Hook",
+                    "next_video_teaser": "Teaser",
+                    "pexels_search": "query",
+                    "chart_data": None,
+                }
+                return FakeResponse(__import__("json").dumps(payload, ensure_ascii=False))
+            payload = {
+                "title": "Saglik Odakli Baslik",
+                "description": "Description",
+                "tags": ["a"],
+                "script": "Uyku rutini ve beslenme",
+                "thumbnail_prompt": "Thumb",
+                "category_id": "27",
+                "hook": "Hook",
+                "next_video_teaser": "Teaser",
+                "pexels_search": "query",
+                "chart_data": None,
+            }
+            return FakeResponse(__import__("json").dumps(payload, ensure_ascii=False))
+
+    class FakeAnthropicClient:
+        def __init__(self, api_key=None, max_retries=None):
+            self.messages = FakeMessages()
+
+    class FakeConfig:
+        anthropic_api_key = "key"
+        niche = "saglik"
+        persona = "Sen Saglik Pusulasi icin yazan editor-sensin."
+        name = "Saglik Pusulasi"
+        topics = ["beslenme", "uyku", "stres"]
+
+    monkeypatch.setattr(content_generator.anthropic, "Anthropic", FakeAnthropicClient)
+    monkeypatch.setattr(content_generator, "build_prompt_metadata", lambda _prompt: {})
+    monkeypatch.setattr(content_generator, "build_channel_dna_metadata", lambda **_kwargs: {})
+    monkeypatch.setattr(content_generator, "build_quality_scores", lambda **_kwargs: {})
+    monkeypatch.setattr(content_generator, "_content_has_niche_mismatch", lambda data, *_args, **_kwargs: data.get("title") == "Genel Baslik")
+    generator = content_generator.ContentGenerator(channel_cfg=FakeConfig())
+    content = generator.generate_video_content("Saglikli uyku duzeni")
+
+    assert content.title == "Saglik Odakli Baslik"
+    assert generator.client.messages.calls == 3
+    assert "SON DENEME" in generator.client.messages.prompts[2]

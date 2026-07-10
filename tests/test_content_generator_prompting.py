@@ -215,7 +215,7 @@ def test_generate_video_content_does_not_fetch_extra_topics(monkeypatch):
     content = generator.generate_video_content("Saglikli uyku duzeni")
 
     assert content.title == "Title"
-    assert generator.client.messages.calls == 2
+    assert generator.client.messages.calls == 1
 
 
 def test_generate_video_content_uses_niche_retry_guidance_after_mismatch(monkeypatch):
@@ -232,8 +232,6 @@ def test_generate_video_content_uses_niche_retry_guidance_after_mismatch(monkeyp
             self.calls += 1
             self.prompts.append(kwargs["messages"][0]["content"])
             if self.calls == 1:
-                return FakeResponse("1. Uyku duzeni\n2. Beslenme rutini\n3. Stres yonetimi")
-            if self.calls == 2:
                 payload = {
                     "title": "Genel Baslik",
                     "description": "Description",
@@ -281,5 +279,5 @@ def test_generate_video_content_uses_niche_retry_guidance_after_mismatch(monkeyp
     content = generator.generate_video_content("Saglikli uyku duzeni")
 
     assert content.title == "Saglik Odakli Baslik"
-    assert generator.client.messages.calls == 3
-    assert "SON DENEME" in generator.client.messages.prompts[2]
+    assert generator.client.messages.calls == 2
+    assert "SON DENEME" in generator.client.messages.prompts[1]

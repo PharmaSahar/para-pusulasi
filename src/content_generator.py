@@ -7,6 +7,9 @@ import logging
 import os
 import random
 import re
+import threading
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -19,6 +22,8 @@ from .prompt_registry import build_prompt_metadata
 from .quality_scoring import build_quality_scores
 
 logger = logging.getLogger(__name__)
+_ANTHROPIC_GATE_LOCK = threading.Lock()
+_LAST_ANTHROPIC_CALL_AT = 0.0
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SISTEM PROMPTU - Kanal Kimligi ve Icerik Stratejisi
@@ -227,6 +232,79 @@ def _niche_alignment_retry_guidance(
         f"Başlık, hook ve script içinde bu alanı açıkça temsil eden en az iki somut işaret kullan: {anchor_text}. "
         "Genel motivasyon veya finans benzetmelerine kayma; konu doğrudan kanalın günlük yaşam/pratik alanında kalsın."
     )
+
+
+def _anthropic_error_text(exc: Exception) -> str:
+    response = getattr(exc, "response", None)
+    status_code = getattr(response, "status_code", None)
+    body = getattr(exc, "body", None)
+    body_text = ""
+    if isinstance(body, dict):
+        body_text = json.dumps(body, ensure_ascii=False)
+    elif body is not None:
+        body_text = str(body)
+    parts = [str(exc), body_text]
+    if status_code is not None:
+        parts.append(f"http {status_code}")
+    return " ".join(part for part in parts if part).strip()
+
+
+def _mark_provider_exception(exc: Exception, *, error_text: str, recorded: bool, skip_scheduler_retry: bool) -> Exception:
+    setattr(exc, "_provider_error_text", error_text)
+    setattr(exc, "_provider_failure_recorded", recorded)
+    setattr(exc, "_skip_scheduler_pipeline_retry", skip_scheduler_retry)
+    return exc
+
+
+def _is_retryable_anthropic_exception(exc: Exception, *, error_text: str) -> bool:
+    retryable_names = {
+        "RateLimitError",
+        "OverloadedError",
+        "InternalServerError",
+        "ServiceUnavailableError",
+        "APIConnectionError",
+        "APITimeoutError",
+    }
+    if exc.__class__.__name__ in retryable_names:
+        return True
+
+    status_code = getattr(getattr(exc, "response", None), "status_code", None)
+    if status_code in {429, 500, 503, 529}:
+        return True
+
+    txt = (error_text or str(exc) or "").lower()
+    return any(
+        token in txt
+        for token in (
+            "rate limit",
+            "too many",
+            "overloaded",
+            "overloaded_error",
+            "internalservererror",
+            "serviceunavailableerror",
+            "connection error",
+            "timeout",
+            "http 429",
+            "http 500",
+            "http 503",
+            "http 529",
+        )
+    )
+
+
+@contextmanager
+def _acquire_anthropic_rate_gate(min_interval_seconds: float):
+    global _LAST_ANTHROPIC_CALL_AT
+
+    with _ANTHROPIC_GATE_LOCK:
+        now = time.monotonic()
+        wait_seconds = max(0.0, float(min_interval_seconds) - max(0.0, now - float(_LAST_ANTHROPIC_CALL_AT)))
+        if wait_seconds > 0:
+            time.sleep(wait_seconds)
+        try:
+            yield
+        finally:
+            _LAST_ANTHROPIC_CALL_AT = time.monotonic()
 
 
 def _filter_trending_topics_for_niche(
@@ -650,8 +728,64 @@ class ContentGenerator:
         }
         return {key: value for key, value in candidate_fields.items() if value is not None}
 
+    def _anthropic_create(self, **kwargs):
+        from .scheduler_utils import get_provider_circuit_status, record_provider_failure, record_provider_success
+
+        try:
+            min_interval = max(0.0, float(os.getenv("ANTHROPIC_MIN_REQUEST_INTERVAL_SECONDS", "8")))
+        except ValueError:
+            min_interval = 8.0
+        try:
+            max_attempts = max(1, int(os.getenv("ANTHROPIC_MAX_RETRIES", "3")))
+        except ValueError:
+            max_attempts = 3
+
+        last_error: Exception | None = None
+        for attempt in range(1, max_attempts + 1):
+            circuit = get_provider_circuit_status("anthropic")
+            if circuit.get("is_open"):
+                retry_after = max(1, int(circuit.get("retry_after_seconds", 0) or 0))
+                circuit_error = RuntimeError(f"Anthropic circuit open; retry after {retry_after}s")
+                raise _mark_provider_exception(
+                    circuit_error,
+                    error_text=str(circuit_error),
+                    recorded=False,
+                    skip_scheduler_retry=True,
+                )
+
+            try:
+                with _acquire_anthropic_rate_gate(min_interval):
+                    response = self.client.messages.create(**kwargs)
+                record_provider_success("anthropic", note=f"messages_create_ok_attempt_{attempt}")
+                return response
+            except Exception as exc:
+                error_text = _anthropic_error_text(exc)
+                retryable = _is_retryable_anthropic_exception(exc, error_text=error_text)
+                last_error = exc
+                if retryable and attempt < max_attempts:
+                    continue
+
+                recorded = False
+                skip_scheduler_retry = retryable
+                if retryable or not getattr(exc, "_provider_failure_recorded", False):
+                    record_provider_failure("anthropic", error_text)
+                    recorded = True
+
+                raise _mark_provider_exception(
+                    exc,
+                    error_text=error_text,
+                    recorded=recorded,
+                    skip_scheduler_retry=skip_scheduler_retry,
+                )
+
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("Anthropic create failed without response")
+
     def generate_topic_ideas(self, count: int = 10) -> list[str]:
         used = _load_used_titles()
+        channel_topics = list(getattr(self, "_channel_topics", []) or [])
+        channel_name = getattr(self, "_channel_name", "Para Pusulasi")
 
         # Google Trends'den güncel konuları al
         trending_from_web = []
@@ -663,8 +797,8 @@ class ContentGenerator:
             trending_from_web = _filter_trending_topics_for_niche(
                 trending_from_web,
                 niche=self.niche,
-                channel_topics=self._channel_topics,
-                channel_name=self._channel_name,
+                channel_topics=channel_topics,
+                channel_name=channel_name,
             )
             logger.info(f"Google Trends: {trending_from_web[:2]}")
         except Exception:
@@ -683,12 +817,12 @@ class ContentGenerator:
             count,
             used,
             niche=self.niche,
-            channel_name=self._channel_name,
-            channel_topics=self._channel_topics,
+            channel_name=channel_name,
+            channel_topics=channel_topics,
         ) + trend_hint + avoid
         logger.info(f"'{self.niche}' icin {count} konu uretiliyor...")
 
-        response = self.client.messages.create(
+        response = self._anthropic_create(
             model=self.model,
             max_tokens=1024,
             system=self._system_prompt(),
@@ -704,11 +838,11 @@ class ContentGenerator:
         combined = _filter_trending_topics_for_niche(
             combined,
             niche=self.niche,
-            channel_topics=self._channel_topics,
-            channel_name=self._channel_name,
+            channel_topics=channel_topics,
+            channel_name=channel_name,
         )
         if not combined:
-            combined = _fallback_topics_for_niche(self.niche, self._channel_topics)
+            combined = _fallback_topics_for_niche(self.niche, channel_topics)
         logger.info(f"{len(combined[:count])} konu hazir.")
         return combined[:count]
 
@@ -717,24 +851,14 @@ class ContentGenerator:
         topic: str,
         prev_title: str | None = None,
         additional_guidance: str | None = None,
+        next_topic_hint: str | None = None,
     ) -> VideoContent:
-        # Bir sonraki video ipucu
-        topics = self.generate_topic_ideas(count=3)
-        next_hint = topics[-1] if topics else "Yatirim hatalarından nasil kacinilir"
+        channel_topics = list(getattr(self, "_channel_topics", []) or [])
+        channel_name = getattr(self, "_channel_name", "Para Pusulasi")
+        channel_dna_overrides = getattr(self, "_channel_dna_overrides", {})
+        next_hint = next_topic_hint or "Yatirim hatalarından nasil kacinilir"
 
         logger.info("Icerik uretiliyor: " + topic)
-
-        try:
-            prompt_metadata = build_prompt_metadata(prompt)
-        except Exception:
-            # Registry is metadata-only and must never block generation.
-            prompt_metadata = {}
-
-        try:
-            channel_dna_metadata = build_channel_dna_metadata(**self._channel_dna_overrides)
-        except Exception:
-            # Channel DNA is metadata-only and must never block generation.
-            channel_dna_metadata = {}
 
         prompt_variants = [additional_guidance or ""]
         if not _is_market_sensitive_niche(self.niche):
@@ -744,8 +868,8 @@ class ContentGenerator:
                     additional_guidance,
                     _niche_alignment_retry_guidance(
                         self.niche,
-                        self._channel_topics,
-                        self._channel_name,
+                        channel_topics,
+                        channel_name,
                     ),
                 ]
                 if part
@@ -758,6 +882,7 @@ class ContentGenerator:
         data = None
         raw_chart = None
         last_error: Exception | None = None
+        prompt = ""
         for attempt, guidance in enumerate(prompt_variants[:3]):
             prompt = _build_content_prompt(
                 topic,
@@ -767,7 +892,7 @@ class ContentGenerator:
                 additional_guidance=guidance or None,
                 niche=self.niche,
             )
-            response = self.client.messages.create(
+            response = self._anthropic_create(
                 model=self.model,
                 max_tokens=8192,
                 system=self._system_prompt(),
@@ -791,8 +916,8 @@ class ContentGenerator:
             if _content_has_niche_mismatch(
                 candidate,
                 self.niche,
-                channel_topics=self._channel_topics,
-                channel_name=self._channel_name,
+                channel_topics=channel_topics,
+                channel_name=channel_name,
             ):
                 last_error = ValueError(f"niche_alignment_failed:{self.niche}")
                 continue
@@ -808,6 +933,16 @@ class ContentGenerator:
 
         if data is None:
             raise ValueError(f"niche_alignment_failed:{self.niche}") from last_error
+
+        try:
+            prompt_metadata = build_prompt_metadata(prompt)
+        except Exception:
+            prompt_metadata = {}
+
+        try:
+            channel_dna_metadata = build_channel_dna_metadata(**channel_dna_overrides)
+        except Exception:
+            channel_dna_metadata = {}
 
         try:
             quality_score_metadata = build_quality_scores(
@@ -854,6 +989,7 @@ class ContentGenerator:
 
         # İçerik türünü belirle (evergreen/semi/trend dengesi)
         content_type = get_content_type_for_next_video(self.niche, config.scripts_dir)
+        next_topic_hint = None
 
         if not topic:
             if content_type == "evergreen":
@@ -871,10 +1007,16 @@ class ContentGenerator:
             if not topic:
                 topics = self.generate_topic_ideas(count=5)
                 topic = topics[0]
+                next_topic_hint = topics[1] if len(topics) > 1 else None
                 logger.info("Secilen konu: " + topic)
 
         prev_title = self._get_last_title()
-        content = self.generate_video_content(topic, prev_title, additional_guidance=additional_guidance)
+        content = self.generate_video_content(
+            topic,
+            prev_title,
+            additional_guidance=additional_guidance,
+            next_topic_hint=next_topic_hint,
+        )
         path = content.save()
 
         # Content type'ı kaydet

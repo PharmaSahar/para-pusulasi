@@ -1,6 +1,7 @@
 """Pexels Stok Video ve Gorsel Indirici"""
 import logging
 import os
+import re
 from pathlib import Path
 
 import requests
@@ -14,61 +15,179 @@ PEXELS_VIDEOS_URL = "https://api.pexels.com/videos/search"
 
 KEYWORD_MAP = {
     # Kişisel Finans
-    "yatirim": "investment growth financial success",
-    "portfoy": "investment portfolio stock chart",
-    "para": "money cash wealth abundance",
-    "birikim": "savings piggy bank coins",
-    "tasarruf": "saving money budget planning",
-    "butce": "budget finance planning spreadsheet",
-    "emeklilik": "retirement elderly happy sunset",
-    "maas": "salary paycheck income professional",
-    "gelir": "income money earning business",
-    "harcama": "shopping spending money purchase",
+    "yatirim": "investment portfolio chart graph documents desk",
+    "portfoy": "investment portfolio chart analysis spreadsheet",
+    "para": "money cash coins banknotes wallet finance",
+    "birikim": "savings jar coins piggy bank desk finance",
+    "tasarruf": "savings budget spreadsheet calculator finance desk",
+    "butce": "budget spreadsheet calculator finance planning desk",
+    "emeklilik": "retirement savings pension fund documents planning office",
+    "maas": "paycheck salary income documents finance desk",
+    "gelir": "income finance earnings chart graph",
+    "harcama": "budget expenses spreadsheet finance planning",
     # Borsa
-    "borsa": "stock market trading charts bull",
-    "hisse": "stock trading financial market",
-    "teknik analiz": "stock chart analysis trading",
-    "temetu": "dividend investment stocks profit",
-    "bist": "stock exchange trading finance",
+    "borsa": "stock market chart trading screen analysis desk",
+    "hisse": "stock chart trading screen monitor finance",
+    "teknik analiz": "stock chart technical analysis graph screen",
+    "temetu": "dividend stocks chart income finance documents",
+    "bist": "stock exchange chart trading screen monitor",
     # Kripto
-    "kripto": "cryptocurrency bitcoin blockchain digital",
-    "bitcoin": "bitcoin cryptocurrency trading chart",
-    "blockchain": "blockchain technology digital network",
-    "nft": "digital art nft technology",
-    "altcoin": "cryptocurrency exchange trading",
+    "kripto": "cryptocurrency bitcoin coin chart screen technology",
+    "bitcoin": "bitcoin coin chart cryptocurrency technology screen",
+    "blockchain": "blockchain technology network digital nodes",
+    "nft": "digital technology art blockchain screen",
+    "altcoin": "cryptocurrency coin chart trading screen",
     # Makro / Ekonomi
-    "enflasyon": "inflation economy prices rising",
-    "faiz": "interest rate bank central bank",
-    "dolar": "dollar currency exchange money",
-    "doviz": "currency exchange forex trading",
-    "altin": "gold bullion investment precious metal",
-    "ekonomi": "economy business financial news",
-    "merkez bankasi": "central bank finance economy",
+    "enflasyon": "inflation price rising chart economy graph",
+    "faiz": "interest rate bank finance chart graph",
+    "dolar": "dollar currency exchange chart finance banknote",
+    "doviz": "currency exchange forex chart trading screen",
+    "altin": "gold bullion coin bar precious metal finance",
+    "ekonomi": "economy finance chart graph analysis desk",
+    "merkez bankasi": "central bank finance economy building",
     # Gayrimenkul
-    "gayrimenkul": "real estate luxury property modern",
-    "konut": "house modern home real estate",
-    "kira": "apartment rental property urban",
+    "gayrimenkul": "real estate house building property architecture exterior",
+    "konut": "house building property architecture exterior",
+    "kira": "apartment building property exterior architecture",
     # Kariyer
-    "kariyer": "career professional success business",
-    "is hayati": "business professional office meeting",
-    "girisim": "startup entrepreneur innovation office",
-    "liderlik": "leadership business team meeting",
-    # Genel Finans
-    "finans": "finance business money professional",
-    "teknoloji": "technology innovation digital future",
-    "yapay zeka": "artificial intelligence technology robot",
-    "egitim": "education learning university student",
-    "psikoloji": "psychology mind mental health",
-    "saglik": "health wellness medical fitness",
+    "kariyer": "career office laptop desk planning professional",
+    "is hayati": "office workspace desk laptop planning",
+    "girisim": "startup office workspace desk laptop planning",
+    "liderlik": "office meeting room whiteboard planning",
+    # Genel
+    "finans": "finance chart money desk office planning",
+    "teknoloji": "technology computer screen code software digital",
+    "yapay zeka": "artificial intelligence technology computer circuit digital",
+    "egitim": "education books library desk classroom learning notebook",
+    "psikoloji": "psychology books desk therapy journal notebook",
+    "saglik": "health medical clinic equipment nutrition food",
 }
+
+# Pexels fotoğraf alt-text filtresi — insan/lifestyle içerenleri at
+PHOTO_REJECT_RE = re.compile(
+    r'\b(bikini|swimsuit|swimwear|lingerie|beachwear|'
+    r'woman|man|girl|boy|lady|female|male|person|people|portrait|'
+    r'model|fashion|glamour|sexy|sensual|beauty|attractive|'
+    r'vacation|holiday|resort|tropical|beach|pool|'
+    r'influencer|lifestyle|selfie|dating)\b',
+    re.IGNORECASE,
+)
+
+
+def _photo_is_safe(photo: dict) -> bool:
+    """Alt text veya URL'den uygunsuz/alakasız fotoğrafı filtrele."""
+    alt = str(photo.get("alt", "") or "")
+    url = str(photo.get("url", "") or "")
+    return not bool(PHOTO_REJECT_RE.search(f"{alt} {url}"))
+
+
+def _video_is_safe(video: dict) -> bool:
+    """Video metaverisinden uygunsuz içeriği filtrele."""
+    url = str(video.get("url", "") or "")
+    tags = " ".join(str(t) for t in (video.get("tags") or []))
+    return not bool(PHOTO_REJECT_RE.search(f"{url} {tags}"))
+
+
+RISKY_QUERY_PATTERNS = (
+    "bikini",
+    "swimsuit",
+    "lingerie",
+    "beachwear",
+    "sensual",
+    "sexy",
+    "glamour",
+    "nightlife",
+    "party girl",
+    "fashion model",
+)
+
+NICHE_RELEVANCE_KEYWORDS = {
+    "egitim": {"education", "learning", "study", "student", "teacher", "classroom", "school", "library", "book", "books", "notebook", "desk", "exam", "course"},
+    "kisisel_finans": {"finance", "money", "budget", "saving", "savings", "planning", "documents", "desk", "office", "calculator", "chart"},
+    "borsa": {"finance", "trading", "chart", "market", "investment", "stock", "office", "desk", "analysis"},
+    "kripto": {"crypto", "cryptocurrency", "bitcoin", "blockchain", "trading", "chart", "technology", "screen"},
+    "kariyer": {"career", "professional", "office", "work", "team", "meeting", "laptop", "planning", "presentation"},
+    "girisim": {"startup", "entrepreneur", "office", "team", "pitch", "laptop", "workspace", "planning", "innovation"},
+    "teknoloji": {"technology", "computer", "coding", "software", "digital", "device", "workspace", "screen", "innovation"},
+    "gayrimenkul": {"real", "estate", "property", "home", "house", "apartment", "interior", "architecture", "building"},
+    "saglik": {"health", "medical", "wellness", "clinic", "doctor", "fitness", "nutrition", "hospital", "therapy"},
+    "psikoloji": {"psychology", "mental", "mind", "therapy", "meditation", "journal", "wellness", "reflection", "counseling", "emotion"},
+}
+
+NICHE_ALIASES = {
+    "girisimcilik": "girisim",
+}
+
+SAFE_DEFAULT_QUERY_BY_NICHE = {
+    "kisisel_finans": "personal finance budgeting savings desk",
+    "borsa": "stock market analysis charts desk",
+    "kripto": "cryptocurrency blockchain trading screens",
+    "kariyer": "career professional office laptop planning",
+    "girisim": "startup entrepreneur team workspace planning",
+    "teknoloji": "technology software digital workspace screens",
+    "egitim": "education learning study books classroom",
+    "gayrimenkul": "real estate home interior property",
+    "saglik": "health wellness nutrition clinic fitness",
+    "psikoloji": "psychology mental wellness reflection journal",
+}
+
+
+def _normalize_niche(niche: str | None) -> str:
+    raw = str(niche or "").strip().lower()
+    return NICHE_ALIASES.get(raw, raw)
 
 
 class ImageFetcher:
     def __init__(self, channel_cfg=None):
         from .config import config as _cfg
         cfg = channel_cfg if channel_cfg else _cfg
+        self.channel_cfg = cfg
         self.api_key = os.getenv("PEXELS_API_KEY", "") if not channel_cfg else getattr(cfg, "pexels_api_key", os.getenv("PEXELS_API_KEY", ""))
         self.has_api = bool(self.api_key) and not self.api_key.startswith("your_")
+
+    def _fallback_query(self, title: str) -> str:
+        niche = _normalize_niche(getattr(self.channel_cfg, "niche", ""))
+        canonical = SAFE_DEFAULT_QUERY_BY_NICHE.get(niche, "business office planning desk")
+        configured = str(getattr(self.channel_cfg, "pexels_query", "") or "").strip()
+        if configured and self._is_query_allowed_for_niche(configured, niche=niche):
+            return configured
+        extracted = self._extract_query(title)
+        if self._is_query_allowed_for_niche(extracted, niche=niche):
+            return extracted
+        return canonical
+
+    def _is_query_allowed_for_niche(self, query: str | None, *, niche: str | None = None) -> bool:
+        raw = str(query or "").strip()
+        if not raw:
+            return False
+
+        normalized = re.sub(r"[^a-z0-9\s-]", " ", raw.lower())
+        normalized = " ".join(normalized.split())
+        if not normalized:
+            return False
+
+        if any(pattern in normalized for pattern in RISKY_QUERY_PATTERNS):
+            return False
+
+        normalized_niche = _normalize_niche(niche if niche is not None else getattr(self.channel_cfg, "niche", ""))
+        relevance_keywords = NICHE_RELEVANCE_KEYWORDS.get(normalized_niche)
+        if relevance_keywords:
+            tokens = set(normalized.split())
+            return bool(tokens.intersection(relevance_keywords))
+        return True
+
+    def _sanitize_query(self, query: str | None, title: str) -> str:
+        raw = str(query or "").strip()
+        fallback = self._fallback_query(title)
+        if not raw:
+            return fallback
+
+        if not self._is_query_allowed_for_niche(raw):
+            niche = _normalize_niche(getattr(self.channel_cfg, "niche", ""))
+            logger.warning("Unsafe or off-niche Pexels query rejected; fallback applied: niche=%s query=%s", niche, raw)
+            return fallback
+
+        return raw
 
     def fetch_video_clips(self, title: str, count: int = 6, output_dir: str = "", query_override: str = None) -> list:
         """Konuyla ilgili Pexels video klibi indir."""
@@ -76,7 +195,7 @@ class ImageFetcher:
             logger.warning("Pexels API anahtari yok! Statik arka plan kullanilacak.")
             return []
 
-        query = query_override if query_override else self._extract_query(title)
+        query = self._sanitize_query(query_override if query_override else self._extract_query(title), title)
         output_dir = output_dir or "output/clips"
         Path(output_dir).mkdir(parents=True, exist_ok=True)
 
@@ -93,6 +212,10 @@ class ImageFetcher:
             videos = resp.json().get("videos", [])
 
             for i, video in enumerate(videos):
+                # Uygunsuz/alakasız video filtresi
+                if not _video_is_safe(video):
+                    logger.debug(f"Video filtrelendi (içerik): {video.get('url', '')}")
+                    continue
                 files = sorted(
                     video.get("video_files", []),
                     key=lambda x: x.get("width", 0),
@@ -120,7 +243,7 @@ class ImageFetcher:
         """Yedek: fotograflari indir."""
         if not self.has_api:
             return []
-        query = self._extract_query(title)
+        query = self._sanitize_query(self._extract_query(title), title)
         output_dir = output_dir or f"{config.output_dir}/images"
         Path(output_dir).mkdir(parents=True, exist_ok=True)
         paths = []
@@ -133,6 +256,10 @@ class ImageFetcher:
             )
             resp.raise_for_status()
             for i, photo in enumerate(resp.json().get("photos", [])):
+                # Uygunsuz/alakasız fotoğraf filtresi
+                if not _photo_is_safe(photo):
+                    logger.debug(f"Fotoğraf filtrelendi (içerik): {photo.get('alt', '')}")
+                    continue
                 img_path = f"{output_dir}/img_{i:02d}.jpg"
                 self._download_file(photo["src"]["large2x"], img_path)
                 paths.append(img_path)
@@ -144,7 +271,7 @@ class ImageFetcher:
         """Thumbnail için konuya özel yüksek çözünürlüklü fotoğraf indir."""
         if not self.has_api:
             return None
-        query = self._extract_thumbnail_query(title)
+        query = self._sanitize_query(self._extract_thumbnail_query(title), title)
         if not output_path:
             import tempfile
             output_path = tempfile.mktemp(suffix="_thumb_bg.jpg")

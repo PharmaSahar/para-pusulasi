@@ -15,6 +15,7 @@ import json
 import os
 import re
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -22,6 +23,15 @@ ROOT = Path(__file__).resolve().parents[1]
 PID_FILE = ROOT / "logs" / "production_scheduler.pid"
 LOG_FILE = ROOT / "logs" / "production_scheduler.out"
 SCHEDULER_LOG_FILE = ROOT / "logs" / "scheduler.log"
+EQUIVALENCE_ARTIFACT = ROOT / "logs" / "approved_governance_equivalence_latest.json"
+APPROVED_COMMITS = (
+    "f184062a5f33b8e2ab11257716e7c7215de5a622",
+    "dbe543d8cf70beba2b07198c3fa9f371bf1a3305",
+    "bfc62663f099a14412fd2412fda441cb62813046",
+    "e2df46a9047c3208ca6a12f13dff2985ce745edc",
+)
+ALLOWED_EQUIVALENCE = {"EXACT_ANCESTOR", "PATCH_EQUIVALENT", "FUNCTIONALLY_SUPERSEDED"}
+MAX_EVIDENCE_AGE_SECONDS = 24 * 60 * 60
 
 
 def _run(cmd: list[str]) -> tuple[int, str]:
@@ -108,11 +118,164 @@ def _last_build_info() -> dict:
     return {"line": build_line, "sha": sha}
 
 
+def _is_ancestor(commit_sha: str) -> bool:
+    rc, _ = _run(["git", "-C", str(ROOT), "merge-base", "--is-ancestor", commit_sha, "HEAD"])
+    return rc == 0
+
+
+def _approved_commit_ancestry() -> dict[str, bool]:
+    return {commit: _is_ancestor(commit) for commit in APPROVED_COMMITS}
+
+
+def _artifact_age_seconds(generated_at_utc: str) -> float | None:
+    text = str(generated_at_utc or "").strip()
+    if not text:
+        return None
+    try:
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - dt.astimezone(timezone.utc)).total_seconds()
+
+
+def _extract_classifications(payload: dict) -> dict[str, str]:
+    direct = payload.get("classification_per_commit")
+    if isinstance(direct, dict):
+        return {str(k): str(v) for k, v in direct.items()}
+
+    as_list = payload.get("approved_equivalence")
+    if isinstance(as_list, list):
+        out: dict[str, str] = {}
+        for row in as_list:
+            if isinstance(row, dict):
+                sha = str(row.get("commit") or row.get("sha") or "").strip()
+                cls = str(row.get("classification") or "").strip()
+                if sha and cls:
+                    out[sha] = cls
+        return out
+
+    return {}
+
+
+def _tests_passed(payload: dict) -> bool:
+    import_ok = str(payload.get("import_integrity") or "").upper() == "PASS"
+    governance = payload.get("governance_tests")
+    if isinstance(governance, dict):
+        governance_ok = bool(governance.get("all_passed"))
+    else:
+        governance_ok = "PASS" in str(governance or "").upper()
+
+    full_suite = payload.get("full_suite")
+    if isinstance(full_suite, dict):
+        full_ok = bool(full_suite.get("all_passed"))
+    else:
+        full_ok = "PASS" in str(full_suite or "").upper()
+
+    return import_ok and governance_ok and full_ok
+
+
+def _evaluate_governance_equivalence(head_sha: str) -> dict:
+    ancestry = _approved_commit_ancestry()
+    if ancestry and all(ancestry.values()):
+        return {
+            "ok": True,
+            "mode": "exact_ancestry",
+            "ancestry": ancestry,
+            "artifact": str(EQUIVALENCE_ARTIFACT),
+            "checks": {
+                "artifact_present": EQUIVALENCE_ARTIFACT.exists(),
+                "artifact_valid": True,
+                "artifact_fresh": True,
+                "artifact_head_matches": True,
+                "artifact_tests_passed": True,
+                "classifications_complete": True,
+                "classifications_allowed": True,
+                "final_decision_allows_equivalence": True,
+            },
+        }
+
+    checks = {
+        "artifact_present": EQUIVALENCE_ARTIFACT.exists(),
+        "artifact_valid": False,
+        "artifact_fresh": False,
+        "artifact_head_matches": False,
+        "artifact_tests_passed": False,
+        "classifications_complete": False,
+        "classifications_allowed": False,
+        "final_decision_allows_equivalence": False,
+    }
+
+    payload = {}
+    if not EQUIVALENCE_ARTIFACT.exists():
+        return {
+            "ok": False,
+            "mode": "artifact_required",
+            "ancestry": ancestry,
+            "artifact": str(EQUIVALENCE_ARTIFACT),
+            "checks": checks,
+            "reason": "equivalence_artifact_missing",
+        }
+
+    try:
+        payload = json.loads(EQUIVALENCE_ARTIFACT.read_text(encoding="utf-8"))
+    except Exception:
+        return {
+            "ok": False,
+            "mode": "artifact_required",
+            "ancestry": ancestry,
+            "artifact": str(EQUIVALENCE_ARTIFACT),
+            "checks": checks,
+            "reason": "equivalence_artifact_invalid_json",
+        }
+
+    checks["artifact_valid"] = isinstance(payload, dict)
+    if not checks["artifact_valid"]:
+        return {
+            "ok": False,
+            "mode": "artifact_required",
+            "ancestry": ancestry,
+            "artifact": str(EQUIVALENCE_ARTIFACT),
+            "checks": checks,
+            "reason": "equivalence_artifact_invalid_payload",
+        }
+
+    age_seconds = _artifact_age_seconds(str(payload.get("generated_at_utc") or ""))
+    checks["artifact_fresh"] = age_seconds is not None and age_seconds <= MAX_EVIDENCE_AGE_SECONDS
+    checks["artifact_head_matches"] = str(payload.get("current_head") or "") == head_sha
+    checks["artifact_tests_passed"] = _tests_passed(payload)
+
+    classifications = _extract_classifications(payload)
+    checks["classifications_complete"] = all(commit in classifications for commit in APPROVED_COMMITS)
+    checks["classifications_allowed"] = checks["classifications_complete"] and all(
+        classifications.get(commit) in ALLOWED_EQUIVALENCE for commit in APPROVED_COMMITS
+    )
+    checks["final_decision_allows_equivalence"] = str(payload.get("final_equivalence_decision") or "") in {
+        "EQUIVALENT",
+        "PROVEN_EQUIVALENT",
+        "READY_FOR_CUTOVER",
+    }
+
+    ok = all(checks.values())
+    return {
+        "ok": ok,
+        "mode": "artifact_required",
+        "ancestry": ancestry,
+        "artifact": str(EQUIVALENCE_ARTIFACT),
+        "checks": checks,
+        "artifact_age_seconds": age_seconds,
+        "classifications": classifications,
+        "final_equivalence_decision": payload.get("final_equivalence_decision"),
+    }
+
+
 def main() -> int:
     pid = _read_pid()
     discovered_pids = _discover_scheduler_pids()
     head = _head_sha()
     build = _last_build_info()
+    equivalence = _evaluate_governance_equivalence(head)
 
     result = {
         "canonical_root": str(ROOT),
@@ -128,8 +291,10 @@ def main() -> int:
             "cwd_matches_root": False,
             "build_info_present": bool(build["line"]),
             "build_sha_matches_head": False,
+            "governance_equivalence_proven": bool(equivalence.get("ok")),
         },
         "build_info": build,
+        "governance_equivalence": equivalence,
     }
 
     candidates: list[int] = []
@@ -168,6 +333,7 @@ def main() -> int:
         "cwd_matches_root",
         "build_info_present",
         "build_sha_matches_head",
+        "governance_equivalence_proven",
     )
     result["ok"] = all(bool(result["checks"].get(name)) for name in required_checks)
 

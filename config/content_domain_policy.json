@@ -1,0 +1,58 @@
+{
+  "schema_version": "v1",
+  "updated_at": "2026-07-11T00:00:00Z",
+  "niches": {
+    "saglik": {
+      "forbidden_keywords": [
+        "bist",
+        "hisse",
+        "borsa",
+        "bitcoin",
+        "ethereum",
+        "kripto",
+        "usd",
+        "dolar",
+        "kur",
+        "temettu",
+        "yatirim"
+      ]
+    },
+    "borsa": {
+      "forbidden_keywords": [
+        "doktor",
+        "hastane",
+        "tedavi",
+        "diyet"
+      ]
+    },
+    "kripto": {
+      "forbidden_keywords": [
+        "doktor",
+        "hastane",
+        "tedavi",
+        "diyet"
+      ]
+    },
+    "kariyer": {
+      "forbidden_keywords": [
+        "bitcoin",
+        "bist",
+        "kripto"
+      ]
+    },
+    "egitim": {
+      "forbidden_keywords": [
+        "bitcoin",
+        "hisse",
+        "bist"
+      ]
+    },
+    "teknoloji": {
+      "forbidden_keywords": [
+        "diyet",
+        "hastane",
+        "ameliyat"
+      ]
+    }
+  }
+}

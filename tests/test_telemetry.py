@@ -93,9 +93,9 @@ def test_pipeline_emits_stage_events_and_ids(monkeypatch):
 
     class FakeConfig:
         channel_id = "test-channel"
-        output_dir = "/tmp"
-        scripts_dir = "/tmp"
-        videos_dir = "/tmp"
+        output_dir = "/tmp/channels/test-channel/output"
+        scripts_dir = "/tmp/channels/test-channel/scripts"
+        videos_dir = "/tmp/channels/test-channel/output/videos"
         prompt_version = "prompt-v1"
         channel_dna_version = "dna-v2"
         thumbnail_strategy = "thumb-a"
@@ -106,10 +106,16 @@ def test_pipeline_emits_stage_events_and_ids(monkeypatch):
 
     class FakeGenerator:
         def __init__(self, channel_cfg=None):
+            self.channel_cfg = channel_cfg
             self.model = "fake-model"
 
         def generate_and_save(self, topic):
-            return FakeContent()
+            content = FakeContent()
+            script_path = Path(self.channel_cfg.scripts_dir) / f"{content.created_at[:10]}_{content.title[:30]}.json"
+            script_path.parent.mkdir(parents=True, exist_ok=True)
+            script_path.write_text("{}", encoding="utf-8")
+            content.saved_path = str(script_path)
+            return content
 
     class FakeTTS:
         def __init__(self, channel_cfg=None):
@@ -130,13 +136,19 @@ def test_pipeline_emits_stage_events_and_ids(monkeypatch):
 
     class FakeCreator:
         def __init__(self, channel_cfg=None):
-            pass
+            self.channel_cfg = channel_cfg
 
         def create_video(self, audio_path, title, image_paths=None, script=None):
-            return "/tmp/video.mp4"
+            video_path = Path(self.channel_cfg.videos_dir) / "video.mp4"
+            video_path.parent.mkdir(parents=True, exist_ok=True)
+            video_path.write_bytes(b"video")
+            return str(video_path)
 
         def create_thumbnail(self, title, image_path=None):
-            return "/tmp/thumb-out.jpg"
+            thumb_path = Path(self.channel_cfg.videos_dir) / "thumb-out.jpg"
+            thumb_path.parent.mkdir(parents=True, exist_ok=True)
+            thumb_path.write_bytes(b"thumb")
+            return str(thumb_path)
 
     class FakeUploader:
         def __init__(self, channel_cfg=None):
@@ -213,7 +225,12 @@ def test_pipeline_stage_failed_event_emitted(monkeypatch):
             pass
 
         def generate_and_save(self, topic):
-            return FakeContent()
+            content = FakeContent()
+            script_path = Path("/tmp") / f"{content.created_at[:10]}_{content.title[:30]}.json"
+            script_path.parent.mkdir(parents=True, exist_ok=True)
+            script_path.write_text("{}", encoding="utf-8")
+            content.saved_path = str(script_path)
+            return content
 
     class BrokenTTS:
         def __init__(self, channel_cfg=None):
@@ -275,7 +292,12 @@ def test_pipeline_telemetry_fail_open(monkeypatch):
             pass
 
         def generate_and_save(self, topic):
-            return FakeContent()
+            content = FakeContent()
+            script_path = Path("/tmp") / f"{content.created_at[:10]}_{content.title[:30]}.json"
+            script_path.parent.mkdir(parents=True, exist_ok=True)
+            script_path.write_text("{}", encoding="utf-8")
+            content.saved_path = str(script_path)
+            return content
 
     class FakeTTS:
         def __init__(self, channel_cfg=None):

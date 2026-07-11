@@ -7,11 +7,12 @@ import logging
 import os
 import random
 import re
+import hashlib
 import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import anthropic
@@ -126,6 +127,94 @@ CORE_MARKET_NICHES = {"kisisel_finans", "borsa", "kripto"}
 
 def _is_market_sensitive_niche(niche: str | None) -> bool:
     return (niche or "").strip().lower() in MARKET_SENSITIVE_NICHES
+
+
+class TopicDomainBlockedError(RuntimeError):
+    """Raised when no domain-valid topic candidate can be selected."""
+
+    def __init__(self, message: str, *, trace: dict | None = None):
+        super().__init__(message)
+        self.trace = trace or {}
+        setattr(self, "_skip_scheduler_pipeline_retry", True)
+
+
+def _json_sha256(payload: object) -> str:
+    blob = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _slugify(value: str) -> str:
+    normalized = _normalize_alignment_text(value)
+    compact = re.sub(r"\s+", "-", normalized).strip("-")
+    return compact or "unknown"
+
+
+def _validate_topic_candidate(
+    topic: str,
+    *,
+    niche: str | None,
+    channel_topics: list[str] | None = None,
+    channel_name: str | None = None,
+) -> tuple[bool, list[str]]:
+    reasons: list[str] = []
+    normalized_niche = (niche or "").strip().lower()
+    has_market_term = bool(MARKET_TOPIC_RE.search(topic or ""))
+    has_domain_anchor = _text_has_domain_anchor(
+        topic,
+        normalized_niche,
+        channel_topics,
+        channel_name,
+    )
+
+    if normalized_niche in CORE_MARKET_NICHES:
+        if not has_market_term and not has_domain_anchor:
+            reasons.append("missing_market_domain_anchor")
+    else:
+        if has_market_term:
+            reasons.append("market_term_not_allowed_for_non_market_niche")
+        if not has_domain_anchor:
+            reasons.append("missing_expected_domain_anchor")
+
+    return len(reasons) == 0, reasons
+
+
+def _filter_candidates_with_reasons(
+    candidates: list[str],
+    *,
+    niche: str | None,
+    channel_topics: list[str] | None = None,
+    channel_name: str | None = None,
+    stage: str,
+) -> tuple[list[str], list[dict]]:
+    approved: list[str] = []
+    rejected: list[dict] = []
+    seen: set[str] = set()
+
+    for raw in candidates or []:
+        topic = str(raw or "").strip()
+        lowered = topic.lower()
+        if not topic or lowered in seen:
+            continue
+        seen.add(lowered)
+
+        ok, reasons = _validate_topic_candidate(
+            topic,
+            niche=niche,
+            channel_topics=channel_topics,
+            channel_name=channel_name,
+        )
+        if ok:
+            approved.append(topic)
+            continue
+        rejected.append(
+            {
+                "stage": stage,
+                "candidate": topic,
+                "reasons": reasons,
+            }
+        )
+
+    return approved, rejected
 
 
 def _normalize_alignment_text(value: str | None) -> str:
@@ -314,29 +403,19 @@ def _filter_trending_topics_for_niche(
     channel_topics: list[str] | None = None,
     channel_name: str | None = None,
 ) -> list[str]:
-    normalized_niche = (niche or "").strip().lower()
-    if normalized_niche in CORE_MARKET_NICHES:
-        return topics
-
-    filtered: list[str] = []
-    seen: set[str] = set()
-
-    for topic in topics:
-        lowered = topic.strip().lower()
-        if not lowered or lowered in seen:
-            continue
-        seen.add(lowered)
-
-        if not _text_has_domain_anchor(topic, normalized_niche, channel_topics, channel_name):
-            continue
-        filtered.append(topic)
-
-    return filtered
+    approved, _ = _filter_candidates_with_reasons(
+        list(topics or []),
+        niche=niche,
+        channel_topics=channel_topics,
+        channel_name=channel_name,
+        stage="legacy_filter",
+    )
+    return approved
 
 
 def _fallback_topics_for_niche(niche: str | None, channel_topics: list[str] | None = None) -> list[str]:
+    # Fail-closed: fallback is channel-scoped only.
     fallback = list(channel_topics or [])
-    fallback.extend(TOPIC_CATEGORIES.get((niche or "").strip().lower(), []))
     return _filter_trending_topics_for_niche(
         fallback,
         niche=niche,
@@ -441,6 +520,10 @@ class VideoContent:
             path = f"{config.scripts_dir}/{ts}_{safe_title}.json"
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         Path(path).write_text(json.dumps(self.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+        try:
+            setattr(self, "saved_path", path)
+        except Exception:
+            pass
         logger.info("Script kaydedildi: " + path)
         return path
 
@@ -686,7 +769,7 @@ Sadece JSON döndür:
 
 # ─────────────────────────────────────────────────────────────────────────────
 class ContentGenerator:
-    def __init__(self, channel_cfg=None):
+    def __init__(self, channel_cfg=None, provenance_context: dict | None = None):
         from .config import config as _cfg
         cfg = channel_cfg if channel_cfg else _cfg
         max_retries_raw = str(os.getenv("ANTHROPIC_MAX_RETRIES", "1")).strip()
@@ -706,6 +789,8 @@ class ContentGenerator:
             self._channel_name = "Para Pusulasi"
 
         self._channel_topics = list(getattr(channel_cfg, "topics", []) or [])
+        self._provenance_context = dict(provenance_context or {})
+        self._last_topic_trace: dict = {}
 
         self._channel_dna_overrides = self._extract_channel_dna_overrides(channel_cfg)
 
@@ -786,20 +871,71 @@ class ContentGenerator:
         used = _load_used_titles()
         channel_topics = list(getattr(self, "_channel_topics", []) or [])
         channel_name = getattr(self, "_channel_name", "Para Pusulasi")
+        normalized_niche = (self.niche or "").strip().lower()
+
+        trace = {
+            "provider": "unknown",
+            "raw_provider_rows": [],
+            "normalized_provider_rows": [],
+            "pre_filter_candidates": [],
+            "rejected_candidates": [],
+            "post_filter_candidates": [],
+            "fallback_invoked": False,
+            "fallback_source": None,
+            "fallback_candidates": [],
+            "final_ranked_list": [],
+            "selected_index": None,
+            "selected_topic": None,
+            "expected_niche": normalized_niche,
+        }
 
         # Google Trends'den güncel konuları al
         trending_from_web = []
         try:
-            from .trends_fetcher import get_trending_topics, get_seasonal_boost_topics
-            trending_from_web = get_trending_topics(self.niche, count=4)
-            seasonal = get_seasonal_boost_topics(self.niche)
-            trending_from_web = (seasonal + trending_from_web)[:4]
-            trending_from_web = _filter_trending_topics_for_niche(
-                trending_from_web,
+            trends_module = None
+            trend_getter = globals().get("get_trending_topics_with_metadata")
+            seasonal_getter = globals().get("get_seasonal_boost_topics")
+            legacy_trend_getter = globals().get("get_trending_topics")
+            if not callable(trend_getter) or not callable(seasonal_getter):
+                from . import trends_fetcher as trends_module
+
+                trend_getter = trend_getter if callable(trend_getter) else getattr(trends_module, "get_trending_topics_with_metadata", None)
+                seasonal_getter = seasonal_getter if callable(seasonal_getter) else getattr(trends_module, "get_seasonal_boost_topics", None)
+                legacy_trend_getter = legacy_trend_getter if callable(legacy_trend_getter) else getattr(trends_module, "get_trending_topics", None)
+            if not callable(trend_getter) or not callable(seasonal_getter):
+                raise RuntimeError("trend_provider_unavailable")
+
+            trend_meta = trend_getter(self.niche, count=4)
+            trace["provider"] = str(trend_meta.get("provider") or "unknown")
+            trace["raw_provider_rows"] = list(trend_meta.get("raw_provider_rows") or [])
+            trace["normalized_provider_rows"] = list(trend_meta.get("normalized_provider_rows") or [])
+            trending_from_web = list(trend_meta.get("topics") or [])
+
+            # Compatibility path for legacy tests/callers that patch get_trending_topics.
+            if trace["provider"] == "static_fallback" and callable(legacy_trend_getter):
+                legacy_topics = list(legacy_trend_getter(self.niche, count=4) or [])
+                if legacy_topics != trending_from_web:
+                    trending_from_web = legacy_topics
+                    trace["normalized_provider_rows"] = list(legacy_topics)
+                    trace["raw_provider_rows"] = [
+                        {"keyword": str(self.niche or "").strip().lower(), "query": item, "value": None}
+                        for item in legacy_topics
+                    ]
+                    trace["provider"] = "legacy_trends_override"
+
+            seasonal = seasonal_getter(self.niche)
+            pre_filter = (list(seasonal or []) + trending_from_web)[:4]
+            trace["pre_filter_candidates"] = list(pre_filter)
+
+            trending_from_web, rejected = _filter_candidates_with_reasons(
+                pre_filter,
                 niche=self.niche,
                 channel_topics=channel_topics,
                 channel_name=channel_name,
+                stage="provider_pre_filter",
             )
+            trace["rejected_candidates"].extend(rejected)
+            trace["post_filter_candidates"] = list(trending_from_web)
             logger.info(f"Google Trends: {trending_from_web[:2]}")
         except Exception:
             pass
@@ -834,17 +970,165 @@ class ContentGenerator:
             for line in raw.strip().splitlines()
             if line.strip() and not line.strip().startswith("#")
         ]
-        combined = trending_from_web[:2] + [t for t in ai_topics if t not in trending_from_web]
-        combined = _filter_trending_topics_for_niche(
-            combined,
+
+        # Non-market channels remain provider-anchored (fail-closed).
+        # Market-sensitive channels can still blend AI suggestions after trend anchors.
+        if _is_market_sensitive_niche(self.niche):
+            ranked_candidates = list(trending_from_web[:2]) + [t for t in ai_topics if t not in trending_from_web]
+        else:
+            ranked_candidates = list(trending_from_web[:count])
+        trace["final_ranked_list"] = list(ranked_candidates)
+
+        combined, rejected = _filter_candidates_with_reasons(
+            ranked_candidates,
             niche=self.niche,
             channel_topics=channel_topics,
             channel_name=channel_name,
+            stage="final_candidate_filter",
         )
+        trace["rejected_candidates"].extend(rejected)
+
         if not combined:
+            trace["fallback_invoked"] = True
+            trace["fallback_source"] = "channel_scoped"
             combined = _fallback_topics_for_niche(self.niche, channel_topics)
+
+            fallback_candidates, fallback_rejected = _filter_candidates_with_reasons(
+                list(channel_topics or []),
+                niche=self.niche,
+                channel_topics=channel_topics,
+                channel_name=channel_name,
+                stage="channel_scoped_fallback",
+            )
+            trace["fallback_candidates"] = list(fallback_candidates)
+            trace["rejected_candidates"].extend(fallback_rejected)
+
+        if not combined and _is_market_sensitive_niche(self.niche):
+            market_fallback = [item for item in ai_topics if str(item).strip()]
+            if market_fallback:
+                trace["fallback_invoked"] = True
+                trace["fallback_source"] = "market_ai_fallback"
+                trace["fallback_candidates"] = list(market_fallback)
+                combined = list(market_fallback)
+
+        if not combined:
+            trace["post_filter_candidates"] = []
+            self._last_topic_trace = trace
+            raise TopicDomainBlockedError(
+                f"topic_domain_blocked:no_valid_candidate niche={normalized_niche}",
+                trace=trace,
+            )
+
+        trace["post_filter_candidates"] = list(combined)
+        self._last_topic_trace = trace
         logger.info(f"{len(combined[:count])} konu hazir.")
         return combined[:count]
+
+    def _topic_provenance_path(self) -> Path | None:
+        provenance_ctx = dict(getattr(self, "_provenance_context", {}) or {})
+        run_id = str(provenance_ctx.get("run_id") or "").strip()
+        content_id = str(provenance_ctx.get("content_id") or "").strip()
+        channel_id = str(provenance_ctx.get("channel_id") or provenance_ctx.get("channel_slug") or "").strip()
+        if not run_id or not content_id or not channel_id:
+            return None
+        output_root = str(provenance_ctx.get("output_dir") or "output").strip() or "output"
+        return Path(output_root) / "topic_provenance" / channel_id / run_id / f"{content_id}.json"
+
+    def _persist_topic_provenance(self, *, selected_index: int, selected_topic: str, final_topics: list[str]) -> None:
+        path = self._topic_provenance_path()
+        if path is None:
+            return
+
+        provenance_ctx = dict(getattr(self, "_provenance_context", {}) or {})
+        trace = dict(getattr(self, "_last_topic_trace", {}) or {})
+        trace["selected_index"] = selected_index
+        trace["selected_topic"] = selected_topic
+        trace["final_ranked_list"] = list(trace.get("final_ranked_list") or final_topics)
+
+        runtime_identity = dict(provenance_ctx.get("runtime_build_identity") or {})
+        payload = {
+            "run_id": provenance_ctx.get("run_id"),
+            "content_id": provenance_ctx.get("content_id"),
+            "channel_id": provenance_ctx.get("channel_id"),
+            "channel_slug": provenance_ctx.get("channel_slug") or _slugify(str(self._channel_name or "")),
+            "expected_niche": self.niche,
+            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+            "provider_name": trace.get("provider"),
+            "raw_provider_rows": trace.get("raw_provider_rows") or [],
+            "normalized_provider_rows": trace.get("normalized_provider_rows") or [],
+            "pre_filter_candidates": trace.get("pre_filter_candidates") or [],
+            "rejected_candidates": trace.get("rejected_candidates") or [],
+            "post_filter_candidates": trace.get("post_filter_candidates") or [],
+            "fallback_invoked": bool(trace.get("fallback_invoked", False)),
+            "fallback_source": trace.get("fallback_source"),
+            "fallback_candidates": trace.get("fallback_candidates") or [],
+            "final_ranked_list": list(final_topics),
+            "selected_index": selected_index,
+            "selected_topic": selected_topic,
+            "runtime_build_identity": runtime_identity,
+        }
+        payload["hashes"] = {
+            "raw_provider_rows": _json_sha256(payload["raw_provider_rows"]),
+            "normalized_provider_rows": _json_sha256(payload["normalized_provider_rows"]),
+            "pre_filter_candidates": _json_sha256(payload["pre_filter_candidates"]),
+            "rejected_candidates": _json_sha256(payload["rejected_candidates"]),
+            "post_filter_candidates": _json_sha256(payload["post_filter_candidates"]),
+            "final_ranked_list": _json_sha256(payload["final_ranked_list"]),
+            "runtime_build_identity": _json_sha256(payload["runtime_build_identity"]),
+        }
+        payload["hashes"]["payload"] = _json_sha256(payload)
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists():
+            raise TopicDomainBlockedError(
+                f"topic_provenance_collision:{path}",
+                trace={"path": str(path)},
+            )
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def _validate_explicit_topic_or_block(self, topic: str) -> tuple[str, bool]:
+        """Validate an explicitly supplied topic (retry/resume/manual) before generation."""
+        channel_topics = list(getattr(self, "_channel_topics", []) or [])
+        channel_name = getattr(self, "_channel_name", "Para Pusulasi")
+        approved, rejected = _filter_candidates_with_reasons(
+            [topic],
+            niche=self.niche,
+            channel_topics=channel_topics,
+            channel_name=channel_name,
+            stage="explicit_topic_validation",
+        )
+        if approved:
+            return approved[0], False
+
+        fallback, fallback_rejected = _filter_candidates_with_reasons(
+            list(channel_topics or []),
+            niche=self.niche,
+            channel_topics=channel_topics,
+            channel_name=channel_name,
+            stage="explicit_topic_fallback",
+        )
+        self._last_topic_trace = {
+            "provider": "explicit_input",
+            "raw_provider_rows": [{"query": topic}],
+            "normalized_provider_rows": [topic],
+            "pre_filter_candidates": [topic],
+            "rejected_candidates": list(rejected) + list(fallback_rejected),
+            "post_filter_candidates": list(fallback),
+            "fallback_invoked": True,
+            "fallback_source": "channel_scoped",
+            "fallback_candidates": list(fallback),
+            "final_ranked_list": list(fallback),
+            "selected_index": None,
+            "selected_topic": None,
+            "expected_niche": (self.niche or "").strip().lower(),
+        }
+        if fallback:
+            return fallback[0], True
+
+        raise TopicDomainBlockedError(
+            f"topic_domain_blocked:explicit_topic_invalid niche={(self.niche or '').strip().lower()}",
+            trace=self._last_topic_trace,
+        )
 
     def generate_video_content(
         self,
@@ -990,6 +1274,14 @@ class ContentGenerator:
         # İçerik türünü belirle (evergreen/semi/trend dengesi)
         content_type = get_content_type_for_next_video(self.niche, config.scripts_dir)
         next_topic_hint = None
+        selected_index = 0
+        selected_from_topic_ideas = False
+
+        if topic:
+            topic, fallback_used = self._validate_explicit_topic_or_block(str(topic))
+            selected_index = 0
+            if fallback_used:
+                next_topic_hint = None
 
         if not topic:
             if content_type == "evergreen":
@@ -1006,9 +1298,35 @@ class ContentGenerator:
 
             if not topic:
                 topics = self.generate_topic_ideas(count=5)
-                topic = topics[0]
-                next_topic_hint = topics[1] if len(topics) > 1 else None
+                selected_from_topic_ideas = True
+                selected_index = 0
+                topic = topics[selected_index]
+                next_topic_hint = topics[selected_index + 1] if len(topics) > (selected_index + 1) else None
                 logger.info("Secilen konu: " + topic)
+
+        current_trace = dict(getattr(self, "_last_topic_trace", {}) or {})
+        if (not selected_from_topic_ideas) and (not current_trace.get("raw_provider_rows")):
+            self._last_topic_trace = {
+                "provider": "internal_topic_source",
+                "raw_provider_rows": [{"query": str(topic)}],
+                "normalized_provider_rows": [str(topic)],
+                "pre_filter_candidates": [str(topic)],
+                "rejected_candidates": [],
+                "post_filter_candidates": [str(topic)],
+                "fallback_invoked": False,
+                "fallback_source": None,
+                "fallback_candidates": [],
+                "final_ranked_list": [str(topic)],
+                "selected_index": selected_index,
+                "selected_topic": str(topic),
+                "expected_niche": (self.niche or "").strip().lower(),
+            }
+
+        self._persist_topic_provenance(
+            selected_index=selected_index,
+            selected_topic=str(topic),
+            final_topics=list((getattr(self, "_last_topic_trace", {}) or {}).get("post_filter_candidates") or [topic]),
+        )
 
         prev_title = self._get_last_title()
         content = self.generate_video_content(

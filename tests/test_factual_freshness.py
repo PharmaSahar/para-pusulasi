@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from pathlib import Path
 
 import pytest
 
@@ -100,9 +101,10 @@ def test_pipeline_fact_check_prevents_tts_render_upload_and_sends_alert(monkeypa
 
     class FakeConfig:
         channel_id = "test_channel"
-        scripts_dir = str(tmp_path / "scripts")
-        output_dir = str(tmp_path / "output")
-        videos_dir = str(tmp_path / "videos")
+        scripts_dir = str(tmp_path / "channels" / "test_channel" / "scripts")
+        output_dir = str(tmp_path / "channels" / "test_channel" / "output")
+        audio_dir = str(tmp_path / "channels" / "test_channel" / "output" / "audio")
+        videos_dir = str(tmp_path / "channels" / "test_channel" / "output" / "videos")
         prompt_version = "test"
         channel_dna_version = "test"
         thumbnail_strategy = "test"
@@ -136,7 +138,12 @@ def test_pipeline_fact_check_prevents_tts_render_upload_and_sends_alert(monkeypa
             pass
 
         def generate_and_save(self, topic=None):
-            return FakeContent()
+            content = FakeContent()
+            script_path = Path(tmp_path) / "channels" / "test_channel" / "scripts" / f"{content.created_at[:10]}_{content.title[:30]}.json"
+            script_path.parent.mkdir(parents=True, exist_ok=True)
+            script_path.write_text("{}", encoding="utf-8")
+            content.saved_path = str(script_path)
+            return content
 
     class FailIfCalledTTSEngine:
         def __init__(self, *args, **kwargs):
@@ -193,9 +200,10 @@ def test_pipeline_retries_once_for_unverifiable_claim_and_continues(monkeypatch,
 
     class FakeConfig:
         channel_id = "test_channel"
-        scripts_dir = str(tmp_path / "scripts")
-        output_dir = str(tmp_path / "output")
-        videos_dir = str(tmp_path / "videos")
+        scripts_dir = str(tmp_path / "channels" / "test_channel" / "scripts")
+        output_dir = str(tmp_path / "channels" / "test_channel" / "output")
+        audio_dir = str(tmp_path / "channels" / "test_channel" / "output" / "audio")
+        videos_dir = str(tmp_path / "channels" / "test_channel" / "output" / "videos")
         prompt_version = "test"
         channel_dna_version = "test"
         thumbnail_strategy = "test"
@@ -236,15 +244,24 @@ def test_pipeline_retries_once_for_unverifiable_claim_and_continues(monkeypatch,
         def generate_and_save(self, topic=None, additional_guidance=None):
             self.calls.append((topic, additional_guidance))
             if len(self.calls) == 1:
-                return FakeContent("First title", "BIST 100 bugun yukseliyor")
-            return FakeContent("Retry title", "Uzun vadeli veri odakli yorum")
+                content = FakeContent("First title", "BIST 100 bugun yukseliyor")
+            else:
+                content = FakeContent("Retry title", "Uzun vadeli veri odakli yorum")
+            script_path = Path(tmp_path) / "channels" / "test_channel" / "scripts" / f"{content.created_at[:10]}_{content.title[:30]}.json"
+            script_path.parent.mkdir(parents=True, exist_ok=True)
+            script_path.write_text("{}", encoding="utf-8")
+            content.saved_path = str(script_path)
+            return content
 
     class FakeTTS:
         def __init__(self, channel_cfg=None):
-            pass
+            self.channel_cfg = channel_cfg
 
         def generate_audio(self, script):
-            return str(tmp_path / "audio.mp3")
+            audio_path = Path(self.channel_cfg.audio_dir) / "audio.mp3"
+            audio_path.parent.mkdir(parents=True, exist_ok=True)
+            audio_path.write_bytes(b"audio")
+            return str(audio_path)
 
     class FakeFetcher:
         def __init__(self, channel_cfg=None):
@@ -258,13 +275,19 @@ def test_pipeline_retries_once_for_unverifiable_claim_and_continues(monkeypatch,
 
     class FakeCreator:
         def __init__(self, channel_cfg=None):
-            pass
+            self.channel_cfg = channel_cfg
 
         def create_video(self, audio_path, title, image_paths=None, script=None):
-            return str(tmp_path / "video.mp4")
+            video_path = Path(self.channel_cfg.videos_dir) / "video.mp4"
+            video_path.parent.mkdir(parents=True, exist_ok=True)
+            video_path.write_bytes(b"video")
+            return str(video_path)
 
         def create_thumbnail(self, title, image_path=None):
-            return str(tmp_path / "thumb-out.jpg")
+            thumb_path = Path(self.channel_cfg.videos_dir) / "thumb-out.jpg"
+            thumb_path.parent.mkdir(parents=True, exist_ok=True)
+            thumb_path.write_bytes(b"thumb")
+            return str(thumb_path)
 
     class FakeUploader:
         def __init__(self, channel_cfg=None):
@@ -363,9 +386,9 @@ def test_pipeline_keeps_fail_closed_when_unverifiable_retry_also_fails(monkeypat
 
     class FakeConfig:
         channel_id = "test_channel"
-        scripts_dir = str(tmp_path / "scripts")
-        output_dir = str(tmp_path / "output")
-        videos_dir = str(tmp_path / "videos")
+        scripts_dir = str(tmp_path / "channels" / "test_channel" / "scripts")
+        output_dir = str(tmp_path / "channels" / "test_channel" / "output")
+        videos_dir = str(tmp_path / "channels" / "test_channel" / "output" / "videos")
         prompt_version = "test"
         channel_dna_version = "test"
         thumbnail_strategy = "test"
@@ -400,7 +423,12 @@ def test_pipeline_keeps_fail_closed_when_unverifiable_retry_also_fails(monkeypat
 
         def generate_and_save(self, topic=None, additional_guidance=None):
             self.calls += 1
-            return FakeContent()
+            content = FakeContent()
+            script_path = Path(tmp_path) / "channels" / "test_channel" / "scripts" / f"{content.created_at[:10]}_{content.title[:30]}.json"
+            script_path.parent.mkdir(parents=True, exist_ok=True)
+            script_path.write_text("{}", encoding="utf-8")
+            content.saved_path = str(script_path)
+            return content
 
     class FailIfCalledTTSEngine:
         def __init__(self, *args, **kwargs):

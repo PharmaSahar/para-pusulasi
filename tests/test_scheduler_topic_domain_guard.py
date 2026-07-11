@@ -1,0 +1,74 @@
+from __future__ import annotations
+
+import json
+from types import SimpleNamespace
+
+import scheduler
+
+
+def test_scheduler_quarantines_topic_domain_block(monkeypatch, tmp_path):
+    import src.channel_manager as channel_manager
+    import src.pipeline as pipeline
+    import src.scheduler_utils as scheduler_utils
+
+    channel_cfg = SimpleNamespace(name="Demo Channel", upload_times=["10:00"], niche="saglik")
+
+    queue_file = tmp_path / "channel_queue.json"
+    queue_file.write_text("{}", encoding="utf-8")
+    trail = tmp_path / "queue_quarantine_decisions.jsonl"
+    health_file = tmp_path / "provider_health.json"
+
+    monkeypatch.setattr(scheduler, "QUEUE_FILE", str(queue_file))
+    monkeypatch.setattr(channel_manager, "get_channel", lambda _cid: channel_cfg)
+    monkeypatch.setattr(scheduler_utils, "QUARANTINE_TRAIL_PATH", trail)
+    monkeypatch.setattr(scheduler_utils, "PROVIDER_HEALTH_FILE", str(health_file))
+    monkeypatch.setattr(scheduler_utils, "check_disk_space", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        scheduler_utils,
+        "get_provider_circuit_status",
+        lambda _provider: {"provider": "anthropic", "is_open": False, "retry_after_seconds": 0, "state": {}},
+    )
+    monkeypatch.setattr(scheduler_utils, "notify_error", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(scheduler_utils, "force_cleanup", lambda: None)
+
+    def _raise_domain_block(**_kwargs):
+        raise RuntimeError("topic_domain_blocked:no_valid_candidate niche=saglik")
+
+    monkeypatch.setattr(pipeline, "run_full_pipeline", _raise_domain_block)
+
+    scheduler.render_and_schedule("demo_channel")
+
+    data = json.loads(queue_file.read_text(encoding="utf-8"))
+    entry = data["demo_channel"][0]
+    assert entry["status"] == "quarantined"
+    assert entry["quarantine_reason"] == "topic_domain_blocked"
+    assert "topic_domain_blocked" in entry.get("guard_reason_codes", [])
+
+
+def test_scheduler_topic_domain_block_is_not_retried(monkeypatch):
+    import src.channel_manager as channel_manager
+    import src.pipeline as pipeline
+    import src.scheduler_utils as scheduler_utils
+
+    channel_cfg = SimpleNamespace(name="Demo Channel", upload_times=["10:00"], niche="saglik")
+    calls = {"pipeline": 0}
+
+    monkeypatch.setattr(channel_manager, "get_channel", lambda _cid: channel_cfg)
+    monkeypatch.setattr(scheduler_utils, "check_disk_space", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        scheduler_utils,
+        "get_provider_circuit_status",
+        lambda _provider: {"provider": "anthropic", "is_open": False, "retry_after_seconds": 0, "state": {}},
+    )
+    monkeypatch.setattr(scheduler_utils, "notify_error", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(scheduler_utils, "force_cleanup", lambda: None)
+
+    def _raise_domain_block(**_kwargs):
+        calls["pipeline"] += 1
+        raise RuntimeError("topic_domain_blocked:no_valid_candidate niche=saglik")
+
+    monkeypatch.setattr(pipeline, "run_full_pipeline", _raise_domain_block)
+
+    scheduler.render_and_schedule("demo_channel")
+
+    assert calls["pipeline"] == 1

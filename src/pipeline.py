@@ -40,6 +40,7 @@ from .thumbnail_experiment_registry_binding import register_thumbnail_variant_bi
 from .thumbnail_selection_policy import select_thumbnail_candidate
 from .tts_engine import TTSEngine
 from .video_creator_pro import VideoCreator
+from .upload_precheck import evaluate_upload_precheck, persist_ownership_manifest
 from .youtube_uploader import YouTubeUploader
 from .production_quality_platform import (
     build_idempotency_key,
@@ -56,6 +57,7 @@ from .production_quality_platform import (
 )
 
 logger = logging.getLogger(__name__)
+_PIPELINE_PROCESS_STARTED_AT_UTC = datetime.now(timezone.utc).isoformat()
 
 _FACT_CHECK_RETRY_GUIDANCE = (
     "FACT-CHECK SAFE MODE: Yalnizca dogrulanabilir, kaynaklanabilir ve tarihsel baglami net olan veriler kullan. "
@@ -201,6 +203,31 @@ def _resolve_git_head_short() -> str:
         return output or "unknown"
     except Exception:
         return "unknown"
+
+
+def _resolve_git_head_full() -> str:
+    try:
+        output = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        return output or "unknown"
+    except Exception:
+        return "unknown"
+
+
+def _build_runtime_build_identity() -> dict:
+    full_sha = _resolve_git_head_full()
+    short_sha = _resolve_git_head_short()
+    return {
+        "git_sha_full": full_sha,
+        "git_sha_short": short_sha,
+        "process_pid": os.getpid(),
+        "process_started_at_utc": _PIPELINE_PROCESS_STARTED_AT_UTC,
+        "python_executable": os.path.realpath(str(os.sys.executable)),
+        "working_directory": os.getcwd(),
+    }
 
 
 def _classify_upload_failure(error_text: str) -> str:
@@ -378,9 +405,11 @@ def run_full_pipeline(
     cfg.ensure_directories()
     result = {"channel": getattr(cfg, "channel_id", "default")}
     result["started_at"] = datetime.now(timezone.utc).isoformat()
-    result["build_sha"] = _resolve_git_head_short()
-    result["commit_sha"] = result["build_sha"]
-    result["scheduler_pid"] = os.getpid()
+    runtime_build_identity = _build_runtime_build_identity()
+    result["runtime_build_identity"] = runtime_build_identity
+    result["build_sha"] = runtime_build_identity.get("git_sha_short", "unknown")
+    result["commit_sha"] = runtime_build_identity.get("git_sha_full", result["build_sha"])
+    result["scheduler_pid"] = int(runtime_build_identity.get("process_pid") or os.getpid())
     result["thumbnail_metadata"] = {}
     result["rejection_reasons"] = []
     slot = posting_slot or _resolve_posting_slot(publish_at)
@@ -417,6 +446,7 @@ def run_full_pipeline(
         "thumbnail_strategy": getattr(cfg, "thumbnail_strategy", None) or os.getenv("THUMBNAIL_STRATEGY"),
         "tts_strategy": getattr(cfg, "tts_strategy", None) or os.getenv("TTS_STRATEGY"),
         "model_version": os.getenv("MODEL_VERSION"),
+        "runtime_build_identity": runtime_build_identity,
     }
 
     def _record_warning(field: str, *, code: str, message: str, extra: dict | None = None):
@@ -479,6 +509,13 @@ def run_full_pipeline(
             merged_payload["analytics_warning"] = result.get("analytics_warning")
             merged_payload["analytics_live_status"] = result.get("analytics_live_status")
             merged_payload["live_collector_enabled"] = bool(result.get("live_collector_enabled", False))
+            merged_payload["runtime_build_identity"] = dict(runtime_build_identity)
+            merged_payload["git_sha_full"] = runtime_build_identity.get("git_sha_full")
+            merged_payload["git_sha_short"] = runtime_build_identity.get("git_sha_short")
+            merged_payload["process_pid"] = runtime_build_identity.get("process_pid")
+            merged_payload["process_started_at_utc"] = runtime_build_identity.get("process_started_at_utc")
+            merged_payload["python_executable"] = runtime_build_identity.get("python_executable")
+            merged_payload["working_directory"] = runtime_build_identity.get("working_directory")
             envelope = build_event_envelope(
                 content_id=result["content_id"],
                 run_id=result["run_id"],
@@ -832,7 +869,7 @@ def run_full_pipeline(
             except TypeError:
                 content = generator.generate_and_save(generation_topic)
         result["title"] = content.title
-        result["script_path"] = f"{cfg.scripts_dir}/{content.created_at[:10]}_{content.title[:30]}.json"
+        result["script_path"] = str(getattr(content, "saved_path", "") or f"{cfg.scripts_dir}/{content.created_at[:10]}_{content.title[:30]}.json")
 
     @contextmanager
     def _stage(stage: str, start_payload: dict | None = None, complete_payload_fn=None):
@@ -860,7 +897,25 @@ def run_full_pipeline(
         start_payload={"generate_only": generate_only},
         complete_payload_fn=lambda: {"title": result.get("title", "")[:120]},
     ):
-        generator = ContentGenerator(channel_cfg=cfg)
+        generator_kwargs = {
+            "channel_cfg": cfg,
+            "provenance_context": {
+                "run_id": result.get("run_id"),
+                "content_id": result.get("content_id"),
+                "channel_id": result.get("channel"),
+                "channel_slug": str(result.get("channel") or "").strip().lower(),
+                "expected_niche": getattr(cfg, "niche", None),
+                "runtime_build_identity": runtime_build_identity,
+                "output_dir": getattr(cfg, "output_dir", "output"),
+            },
+        }
+        try:
+            generator = ContentGenerator(**generator_kwargs)
+        except TypeError as e:
+            if "unexpected keyword argument 'provenance_context'" in str(e):
+                generator = ContentGenerator(channel_cfg=cfg)
+            else:
+                raise
         telemetry_metadata["model_version"] = telemetry_metadata.get("model_version") or getattr(generator, "model", None)
         content: VideoContent
         live_optimization_state = {}
@@ -1390,103 +1445,153 @@ def run_full_pipeline(
     logger.info("=" * 60)
     uploader = YouTubeUploader(channel_cfg=cfg)
     upload_error = None
-    try:
-        with _stage(
+    idempotency_key = build_idempotency_key(
+        channel=str(result.get("channel", "default")),
+        generation_id=str(result.get("content_id", "")),
+        publish_at=publish_at,
+        title=str(getattr(content, "title", "")),
+    )
+    ownership_manifest_path = persist_ownership_manifest(
+        channel_id=str(result.get("channel", "")),
+        content_id=str(result.get("content_id", "")),
+        run_id=str(result.get("run_id", "")),
+        niche=str(getattr(cfg, "niche", "")),
+        title=str(getattr(content, "title", "")),
+        topic=str(topic or getattr(content, "title", "")),
+        script=str(getattr(content, "script", "")),
+        script_path=str(result.get("script_path", "")),
+        video_path=str(video_path),
+        thumbnail_path=str(thumbnail_path) if thumbnail_path else None,
+    )
+    precheck = evaluate_upload_precheck(
+        channel_id=str(result.get("channel", "")),
+        content_id=str(result.get("content_id", "")),
+        run_id=str(result.get("run_id", "")),
+        niche=str(getattr(cfg, "niche", "")),
+        title=str(getattr(content, "title", "")),
+        topic=str(topic or getattr(content, "title", "")),
+        script=str(getattr(content, "script", "")),
+        script_path=str(result.get("script_path", "")),
+        video_path=str(video_path),
+        thumbnail_path=str(thumbnail_path) if thumbnail_path else None,
+        manifest_path=ownership_manifest_path,
+    )
+    result["upload_precheck"] = precheck
+    if precheck.get("status") == "blocked":
+        result["upload_metadata"] = {
+            "experiment_id": resolved_experiment_id,
+            "video_id": None,
+            "privacy": privacy,
+            "publish_at": publish_at,
+            "idempotency_key": idempotency_key,
+            "ownership_manifest_path": str(ownership_manifest_path or ""),
+            "precheck_blocked": True,
+            "guard_reason_codes": list(precheck.get("guard_reason_codes") or []),
+        }
+        _emit(
             "upload",
-            start_payload={"privacy": privacy, "publish_at": publish_at},
-            complete_payload_fn=lambda: {"video_id": str(result.get("video_id", ""))},
-        ):
-            idempotency_key = build_idempotency_key(
-                channel=str(result.get("channel", "default")),
-                generation_id=str(result.get("content_id", "")),
-                publish_at=publish_at,
-                title=str(getattr(content, "title", "")),
-            )
-            existing_upload = get_registered_upload(idempotency_key)
-            if existing_upload and str(existing_upload.get("video_id") or "").strip():
-                video_id = str(existing_upload.get("video_id"))
+            "stage_failed",
+            {
+                "error": "upload_precheck_blocked",
+                "guard_reason_codes": list(precheck.get("guard_reason_codes") or []),
+            },
+        )
+        logger.error("Upload precheck blocked: %s", precheck)
+    else:
+        try:
+            with _stage(
+                "upload",
+                start_payload={"privacy": privacy, "publish_at": publish_at},
+                complete_payload_fn=lambda: {"video_id": str(result.get("video_id", ""))},
+            ):
+                existing_upload = get_registered_upload(idempotency_key)
+                if existing_upload and str(existing_upload.get("video_id") or "").strip():
+                    video_id = str(existing_upload.get("video_id"))
+                    result["upload_metadata"] = {
+                        "experiment_id": resolved_experiment_id,
+                        "video_id": video_id,
+                        "privacy": privacy,
+                        "publish_at": publish_at,
+                        "idempotency_key": idempotency_key,
+                          "ownership_manifest_path": str(ownership_manifest_path),
+                        "duplicate_prevented": True,
+                    }
+                else:
+                    def _upload_once():
+                        return uploader.upload_video(
+                            video_path=video_path,
+                            content=content,
+                            thumbnail_path=thumbnail_path,
+                            privacy=privacy,
+                            publish_at=publish_at,
+                        )
+
+                    def _on_upload_retry(attempt: int, _exc: Exception) -> None:
+                        result["upload_retry_count"] = int(result.get("upload_retry_count", 0)) + 1
+
+                    video_id, recovery = run_stage_with_recovery(
+                        stage="upload",
+                        fn=_upload_once,
+                        max_attempts=1,
+                        base_backoff_seconds=4.0,
+                        on_retry=_on_upload_retry,
+                    )
+                    if not str(video_id or "").strip():
+                        raise RuntimeError("upload_response_missing_id")
+                    result["upload_recovery"] = recovery
+                    register_upload(
+                        idempotency_key,
+                        {
+                            "video_id": video_id,
+                            "channel": result.get("channel"),
+                            "title": getattr(content, "title", ""),
+                            "youtube_url": f"https://youtube.com/watch?v={video_id}",
+                        },
+                    )
+                result["video_id"] = video_id
+                result["youtube_url"] = f"https://youtube.com/watch?v={video_id}"
                 result["upload_metadata"] = {
                     "experiment_id": resolved_experiment_id,
                     "video_id": video_id,
                     "privacy": privacy,
                     "publish_at": publish_at,
                     "idempotency_key": idempotency_key,
-                    "duplicate_prevented": True,
+                      "ownership_manifest_path": str(ownership_manifest_path),
                 }
-            else:
-                def _upload_once():
-                    return uploader.upload_video(
-                        video_path=video_path,
-                        content=content,
-                        thumbnail_path=thumbnail_path,
-                        privacy=privacy,
-                        publish_at=publish_at,
+                # Register script fingerprint ONLY after confirmed upload
+                try:
+                    from .content_quality_guard import register_published_script
+                    register_published_script(
+                        channel_id=str(result.get("channel", "")),
+                        video_id=video_id,
+                        title=getattr(content, "title", ""),
+                        topic=topic or getattr(content, "title", ""),
+                        script=getattr(content, "script", ""),
                     )
-
-                def _on_upload_retry(attempt: int, _exc: Exception) -> None:
-                    result["upload_retry_count"] = int(result.get("upload_retry_count", 0)) + 1
-
-                video_id, recovery = run_stage_with_recovery(
-                    stage="upload",
-                    fn=_upload_once,
-                    max_attempts=1,
-                    base_backoff_seconds=4.0,
-                    on_retry=_on_upload_retry,
-                )
-                if not str(video_id or "").strip():
-                    raise RuntimeError("upload_response_missing_id")
-                result["upload_recovery"] = recovery
-                register_upload(
-                    idempotency_key,
-                    {
-                        "video_id": video_id,
-                        "channel": result.get("channel"),
-                        "title": getattr(content, "title", ""),
-                        "youtube_url": f"https://youtube.com/watch?v={video_id}",
-                    },
-                )
-            result["video_id"] = video_id
-            result["youtube_url"] = f"https://youtube.com/watch?v={video_id}"
+                except Exception as _reg_exc:
+                    logger.debug("Script fingerprint registration failed (non-critical): %s", _reg_exc)
+                try:
+                    result["youtube_channel_stats"] = uploader.get_channel_stats()
+                except Exception:
+                    result["youtube_channel_stats"] = {}
+        except Exception as e:
+            upload_error = e
+            result["upload_error"] = str(e)
+            failure_kind = _classify_upload_failure(str(e))
             result["upload_metadata"] = {
                 "experiment_id": resolved_experiment_id,
-                "video_id": video_id,
+                "video_id": None,
                 "privacy": privacy,
                 "publish_at": publish_at,
-                "idempotency_key": idempotency_key,
+                "error": str(e),
+                "failure_kind": failure_kind,
+                  "ownership_manifest_path": str(ownership_manifest_path),
             }
-            # Register script fingerprint ONLY after confirmed upload
-            try:
-                from .content_quality_guard import register_published_script
-                register_published_script(
-                    channel_id=str(result.get("channel", "")),
-                    video_id=video_id,
-                    title=getattr(content, "title", ""),
-                    topic=topic or getattr(content, "title", ""),
-                    script=getattr(content, "script", ""),
-                )
-            except Exception as _reg_exc:
-                logger.debug("Script fingerprint registration failed (non-critical): %s", _reg_exc)
-            try:
-                result["youtube_channel_stats"] = uploader.get_channel_stats()
-            except Exception:
-                result["youtube_channel_stats"] = {}
-    except Exception as e:
-        upload_error = e
-        result["upload_error"] = str(e)
-        failure_kind = _classify_upload_failure(str(e))
-        result["upload_metadata"] = {
-            "experiment_id": resolved_experiment_id,
-            "video_id": None,
-            "privacy": privacy,
-            "publish_at": publish_at,
-            "error": str(e),
-            "failure_kind": failure_kind,
-        }
-        logger.error(
-            "Upload başarısız, snapshot yine kaydedilecek: %s (failure_kind=%s)",
-            e,
-            failure_kind,
-        )
+            logger.error(
+                "Upload başarısız, snapshot yine kaydedilecek: %s (failure_kind=%s)",
+                e,
+                failure_kind,
+            )
 
     # ─── ADIM 4.5: Short Yukle ────────────────────────────────────────────────
     _emit("shorts_upload", "stage_started")
@@ -1494,6 +1599,8 @@ def run_full_pipeline(
     short_upload_skipped_reason = None
     if upload_error:
         short_upload_skipped_reason = "main_upload_failed"
+    elif result.get("upload_precheck", {}).get("status") == "blocked":
+        short_upload_skipped_reason = "main_upload_blocked"
     elif result.get("short_path"):
         try:
             from .content_generator import VideoContent as VC
@@ -1706,6 +1813,8 @@ def run_full_pipeline(
     result["finished_at"] = datetime.now(timezone.utc).isoformat()
     if result.get("video_id"):
         result["final_status"] = "success"
+    elif result.get("upload_precheck", {}).get("status") == "blocked":
+        result["final_status"] = "blocked"
     elif result.get("upload_error"):
         result["final_status"] = "failed"
     else:

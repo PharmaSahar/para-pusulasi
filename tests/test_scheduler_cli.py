@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import sys
 from types import SimpleNamespace
 
@@ -252,3 +253,21 @@ def test_scheduler_default_startup_path_unchanged(monkeypatch):
     assert calls["thread_start"] == 1
     assert calls["cleanup"] == 1
     assert calls["notify"] == 1
+
+
+def test_scheduler_import_exits_without_resource_warning():
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-W",
+            "error::ResourceWarning",
+            "-c",
+            "import scheduler",
+        ],
+        capture_output=True,
+        text=True,
+        cwd="/Users/klara/Downloads/adsız klasör",
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr

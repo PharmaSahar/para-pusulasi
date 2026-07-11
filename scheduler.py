@@ -20,6 +20,7 @@ KULLANIM:
   python scheduler.py --status # Kuyruk durumunu göster
 """
 import json
+import atexit
 import logging
 import os
 import subprocess
@@ -60,15 +61,36 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 # Loglama
 Path("logs").mkdir(exist_ok=True)
+_SCHEDULER_LOG_FILE_HANDLER = logging.FileHandler("logs/scheduler.log", encoding="utf-8")
+_SCHEDULER_LOG_STREAM_HANDLER = logging.StreamHandler(sys.stdout)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
-        logging.FileHandler("logs/scheduler.log", encoding="utf-8"),
-        logging.StreamHandler(sys.stdout),
+        _SCHEDULER_LOG_FILE_HANDLER,
+        _SCHEDULER_LOG_STREAM_HANDLER,
     ],
 )
 logger = logging.getLogger("Scheduler")
+
+
+def _close_scheduler_logging_handlers() -> None:
+    for handler in (_SCHEDULER_LOG_FILE_HANDLER, _SCHEDULER_LOG_STREAM_HANDLER):
+        try:
+            handler.flush()
+        except Exception:
+            pass
+        try:
+            handler.close()
+        except Exception:
+            pass
+        try:
+            logging.getLogger().removeHandler(handler)
+        except Exception:
+            pass
+
+
+atexit.register(_close_scheduler_logging_handlers)
 
 
 def _is_enabled(value: object) -> bool:

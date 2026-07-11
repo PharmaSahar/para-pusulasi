@@ -71,7 +71,7 @@ def test_scheduler_singleton_lock_blocks_second_process_and_releases_after_exit(
         assert "scheduler_singleton_lock_conflict" in probe.stdout
     finally:
         proc1.terminate()
-        proc1.wait(timeout=5)
+        proc1.communicate(timeout=5)
 
     proc3 = _run_lock_probe(lock_path, meta_path, mode="once")
     out, err = proc3.communicate(timeout=10)

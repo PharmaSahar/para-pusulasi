@@ -12,7 +12,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -319,7 +319,7 @@ def register_published_script(
             "topic": topic,
             "script_preview": script[:400],
             "fingerprint": hashlib.sha256(script.encode()).hexdigest()[:16],
-            "registered_at": datetime.utcnow().isoformat(),
+            "registered_at": datetime.now(timezone.utc).isoformat(),
         })
         # Keep last 20 per channel
         data[channel_id] = entries[-20:]
@@ -350,14 +350,14 @@ def _record_quality_evidence(dec: ContentQualityDecision) -> None:
         "publish_decision": dec.publish_decision,
         "block_reasons": dec.block_reasons,
         "scores": dec.scores,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     _EVIDENCE_HISTORY.append(entry)
 
     try:
         _EVIDENCE_PATH.parent.mkdir(parents=True, exist_ok=True)
         artifact = {
-            "last_updated": datetime.utcnow().isoformat(),
+            "last_updated": datetime.now(timezone.utc).isoformat(),
             "total_evaluated": len(_EVIDENCE_HISTORY),
             "blocked": sum(1 for e in _EVIDENCE_HISTORY if e["publish_decision"] == "block"),
             "allowed": sum(1 for e in _EVIDENCE_HISTORY if e["publish_decision"] == "allow"),

@@ -413,7 +413,7 @@ def _classify_error_decision(summary: str) -> dict:
 
 
 def _now_utc() -> datetime:
-    return datetime.utcnow()
+    return datetime.now(timezone.utc)
 
 
 def _load_provider_health_state() -> dict:
@@ -513,7 +513,7 @@ def record_provider_failure(provider: str, error_text: str) -> dict:
 
     open_until = ""
     if open_seconds > 0:
-        open_until = (now + timedelta(seconds=open_seconds)).isoformat() + "Z"
+        open_until = _format_iso_utc(now + timedelta(seconds=open_seconds))
 
     if err_type == "overload":
         window_seconds = _get_int_env("PROVIDER_OVERLOAD_WINDOW_SECONDS", 300)
@@ -547,7 +547,7 @@ def record_provider_failure(provider: str, error_text: str) -> dict:
         {
             "provider": provider,
             "consecutive_failures": failure_count,
-            "last_failed_at": now.isoformat() + "Z",
+            "last_failed_at": _format_iso_utc(now),
             "last_error": _summarize_error_for_telegram(error_text, max_len=400),
             "last_error_type": err_type,
             "last_request_id": _extract_request_id(error_text),
@@ -567,7 +567,7 @@ def record_provider_success(provider: str, note: str = "") -> dict:
         {
             "provider": provider,
             "consecutive_failures": 0,
-            "last_success_at": now.isoformat() + "Z",
+            "last_success_at": _format_iso_utc(now),
             "last_success_note": note,
             "open_until": "",
         }

@@ -176,6 +176,20 @@ def _tests_passed(payload: dict) -> bool:
     return import_ok and governance_ok and full_ok
 
 
+def _head_matches(artifact_head: str, current_head: str) -> bool:
+    artifact = str(artifact_head or "").strip().lower()
+    current = str(current_head or "").strip().lower()
+    if not artifact or not current:
+        return False
+    if artifact == current:
+        return True
+    if len(artifact) >= 7 and current.startswith(artifact):
+        return True
+    if len(current) >= 7 and artifact.startswith(current):
+        return True
+    return False
+
+
 def _evaluate_governance_equivalence(head_sha: str) -> dict:
     ancestry = _approved_commit_ancestry()
     if ancestry and all(ancestry.values()):
@@ -243,7 +257,7 @@ def _evaluate_governance_equivalence(head_sha: str) -> dict:
 
     age_seconds = _artifact_age_seconds(str(payload.get("generated_at_utc") or ""))
     checks["artifact_fresh"] = age_seconds is not None and age_seconds <= MAX_EVIDENCE_AGE_SECONDS
-    checks["artifact_head_matches"] = str(payload.get("current_head") or "") == head_sha
+    checks["artifact_head_matches"] = _head_matches(str(payload.get("current_head") or ""), head_sha)
     checks["artifact_tests_passed"] = _tests_passed(payload)
 
     classifications = _extract_classifications(payload)

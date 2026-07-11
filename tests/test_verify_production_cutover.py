@@ -107,6 +107,23 @@ def test_functionally_superseded_passes_with_complete_evidence(tmp_path, monkeyp
     assert result["ok"] is True
 
 
+def test_full_head_in_artifact_matches_short_runtime_head(tmp_path, monkeypatch):
+    artifact = tmp_path / "approved_governance_equivalence_latest.json"
+    monkeypatch.setattr(cutover, "EQUIVALENCE_ARTIFACT", artifact)
+    monkeypatch.setattr(cutover, "_approved_commit_ancestry", lambda: {c: False for c in cutover.APPROVED_COMMITS})
+    _write_payload(
+        artifact,
+        _equivalence_payload(
+            head_sha="469c7997ffc429fa999e1bddea9d61d1ab2285ce",
+            classification="FUNCTIONALLY_SUPERSEDED",
+        ),
+    )
+
+    result = cutover._evaluate_governance_equivalence("469c799")
+
+    assert result["ok"] is True
+
+
 def test_missing_capability_fails(tmp_path, monkeypatch):
     artifact = tmp_path / "approved_governance_equivalence_latest.json"
     monkeypatch.setattr(cutover, "EQUIVALENCE_ARTIFACT", artifact)

@@ -25,6 +25,9 @@ BUNDLE_PATH = ROOT / "logs" / "p0_p1_artifacts_bundle_latest.json"
 GOVERNANCE_RUN_PATH = ROOT / "logs" / "governance_refresh_run_latest.json"
 STRICT_EVIDENCE_PATH = ROOT / "logs" / "strict_evidence_report_latest.md"
 BRIDGE_LAYER_PATH = ROOT / "logs" / "governance_dashboard_bridge_latest.json"
+CONTENT_PLATFORM_HEALTH_PATH = ROOT / "logs" / "content_platform_health_latest.json"
+CONTENT_PLATFORM_RECOMMENDATIONS_PATH = ROOT / "logs" / "content_platform_recommendations_latest.json"
+CONTENT_PLATFORM_EXPERIMENTS_PATH = ROOT / "logs" / "content_platform_experiments_latest.json"
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -499,6 +502,9 @@ def build_dashboard() -> dict[str, Any]:
     activation = _read_json(ACTIVATION_PATH)
     bundle = _read_json(BUNDLE_PATH)
     governance_run = _read_json(GOVERNANCE_RUN_PATH)
+    content_platform_health = _read_json(CONTENT_PLATFORM_HEALTH_PATH)
+    content_platform_recommendations = _read_json(CONTENT_PLATFORM_RECOMMENDATIONS_PATH)
+    content_platform_experiments = _read_json(CONTENT_PLATFORM_EXPERIMENTS_PATH)
 
     runtime_steps = dict(runtime_evidence.get("steps") or {})
     backlog_items = list(backlog.get("backlog") or [])
@@ -577,6 +583,33 @@ def build_dashboard() -> dict[str, Any]:
         "top_growth_blockers": blockers,
         "expected_business_impact": business_impact,
         "strict_evidence_bridge_layer": strict_evidence_bridge,
+        "content_platform_control_loop": {
+            "health": {
+                "path": str(CONTENT_PLATFORM_HEALTH_PATH),
+                "exists": CONTENT_PLATFORM_HEALTH_PATH.exists(),
+                "system_health_score": ((content_platform_health.get("channel_health") or {}).get("system_health_score")),
+                "channels_scored": len(dict(((content_platform_health.get("channel_health") or {}).get("channel_scores") or {}))),
+                "triggered_regressions": sum(
+                    1 for item in list(content_platform_health.get("regressions") or []) if bool(item.get("triggered"))
+                ),
+            },
+            "recommendations": {
+                "path": str(CONTENT_PLATFORM_RECOMMENDATIONS_PATH),
+                "exists": CONTENT_PLATFORM_RECOMMENDATIONS_PATH.exists(),
+                "recommendation_count": len(list(content_platform_recommendations.get("recommendations") or [])),
+                "stages": dict(content_platform_recommendations.get("separation_of_stages") or {}),
+            },
+            "experiments": {
+                "path": str(CONTENT_PLATFORM_EXPERIMENTS_PATH),
+                "exists": CONTENT_PLATFORM_EXPERIMENTS_PATH.exists(),
+                "tracked_experiments": len(list(content_platform_experiments.get("experiments") or [])),
+                "rollback_triggered": sum(
+                    1
+                    for item in list(content_platform_experiments.get("experiments") or [])
+                    if str(((item.get("rollback") or {}).get("status") or "none")) == "triggered"
+                ),
+            },
+        },
         "governance": {
             "rule": "new module accepted only with runtime evidence and decision impact",
             "claim_discipline": [

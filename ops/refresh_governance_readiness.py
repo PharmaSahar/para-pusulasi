@@ -136,6 +136,10 @@ def _build_readiness_markdown(*, generated_at: str, lookback_rows: int, steps: l
         "## Secondary Summary Layer",
         "",
         "- Strict evidence bridge artifact: `logs/governance_dashboard_bridge_latest.json`",
+        "- Content platform health artifact: `logs/content_platform_health_latest.json`",
+        "- Content platform recommendations artifact: `logs/content_platform_recommendations_latest.json`",
+        "- Content platform experiments artifact: `logs/content_platform_experiments_latest.json`",
+        "- Content platform weekly review: `docs/content_platform_weekly_review.md`",
         "- Purpose: channel-level P0 thumbnail auth follow-up + P1 VALIDATION_QUEUE exit worklist.",
         "",
         "## Entry Point",
@@ -170,6 +174,13 @@ def run_refresh(*, lookback_rows: int) -> dict[str, Any]:
             "required": False,
             "fail_open": True,
             "artifact": LOGS / "executive_dashboard.json",
+        },
+        {
+            "name": "content_platform_control_loop",
+            "command": [python_bin, "ops/content_platform_control_loop.py"],
+            "required": False,
+            "fail_open": True,
+            "artifact": LOGS / "content_platform_health_latest.json",
         },
     ]
 
@@ -262,6 +273,10 @@ def run_refresh(*, lookback_rows: int) -> dict[str, Any]:
             "bundle": str((LOGS / "p0_p1_artifacts_bundle_latest.json").resolve()),
             "executive_dashboard": str((LOGS / "executive_dashboard.json").resolve()),
             "strict_evidence_bridge": str((LOGS / "governance_dashboard_bridge_latest.json").resolve()),
+            "content_platform_health": str((LOGS / "content_platform_health_latest.json").resolve()),
+            "content_platform_recommendations": str((LOGS / "content_platform_recommendations_latest.json").resolve()),
+            "content_platform_experiments": str((LOGS / "content_platform_experiments_latest.json").resolve()),
+            "content_platform_weekly_review": str((ROOT / "docs" / "content_platform_weekly_review.md").resolve()),
             "readiness_markdown": str(readiness_markdown.resolve()),
         },
     }

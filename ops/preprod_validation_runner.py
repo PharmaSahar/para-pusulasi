@@ -29,6 +29,7 @@ class PhaseSpec:
     timeout_seconds: int
     cwd: str | None = None
     category: str = "pytest"
+    env_overrides: dict[str, str | None] | None = None
 
 
 @dataclass
@@ -45,6 +46,90 @@ class PhaseResult:
     stdout_tail: str
     stderr_tail: str
     heartbeat_count: int
+
+
+def _build_runtime_identity_script() -> str:
+    return """
+import importlib.util
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+detached = Path(sys.argv[1]).resolve()
+expected_full = sys.argv[2].strip()
+expected_short = sys.argv[3].strip()
+expected_python = str(Path(sys.argv[4]).resolve())
+
+cwd_path = Path.cwd().resolve()
+import scheduler
+scheduler_file = Path(getattr(scheduler, '__file__', '')).resolve()
+head_full = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+head_short = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'], text=True).strip()
+pid = os.getpid()
+build_info = (
+    f"BUILD_INFO scheduler git_sha_full={head_full} git_sha={head_short} "
+    f"pid={pid} cwd={cwd_path} python={sys.executable}"
+)
+
+payload = {
+    'detached_worktree': str(detached),
+    'cwd': str(cwd_path),
+    'scheduler_file': str(scheduler_file),
+    'sys_path0': sys.path[0] if sys.path else None,
+    'sys_path': sys.path,
+    'sys_argv': sys.argv,
+    'sys_executable': sys.executable,
+    'git_head_full': head_full,
+    'git_head_short': head_short,
+    'build_info': build_info,
+    'runtime_pid': pid,
+    'scheduler_spec_origin': importlib.util.find_spec('scheduler').origin,
+}
+
+def _starts_with_path(child: Path, parent: Path) -> bool:
+    child_s = str(child)
+    parent_s = str(parent)
+    return child_s == parent_s or child_s.startswith(parent_s + os.sep)
+
+checks = {
+    'cwd_is_detached': cwd_path == detached,
+    'scheduler_under_detached': _starts_with_path(scheduler_file, detached),
+    'head_full_matches': head_full == expected_full,
+    'head_short_matches': head_short == expected_short,
+    'runtime_pid_present': bool(pid > 0),
+    'python_matches_configured': str(Path(sys.executable).resolve()) == expected_python,
+}
+payload['checks'] = checks
+payload['status'] = 'PASS' if all(checks.values()) else 'FAIL'
+
+print(build_info, flush=True)
+print(json.dumps(payload, ensure_ascii=False), flush=True)
+
+if payload['status'] != 'PASS':
+    raise SystemExit(9)
+""".strip()
+
+
+def build_runtime_identity_phase(detached_worktree: Path, candidate_sha: str, python_executable: str) -> PhaseSpec:
+    script = _build_runtime_identity_script()
+    return PhaseSpec(
+        name="runtime_identity_probe",
+        command=[
+            python_executable,
+            "-c",
+            script,
+            str(detached_worktree),
+            candidate_sha,
+            candidate_sha[:7],
+            python_executable,
+        ],
+        timeout_seconds=60,
+        cwd=str(detached_worktree),
+        category="runtime",
+        env_overrides={"PYTHONPATH": None},
+    )
 
 
 def utc_now() -> str:
@@ -211,10 +296,18 @@ def _terminate_process_group(proc: subprocess.Popen[str], grace_seconds: float =
             pass
 
 
-def run_phase(phase: PhaseSpec, run_id: str, phase_log: Path) -> PhaseResult:
+def run_phase(phase: PhaseSpec, run_id: str, phase_log: Path, default_cwd: Path) -> PhaseResult:
     started = time.time()
     started_iso = utc_now()
-    cwd = str(PROJECT_ROOT if phase.cwd is None else Path(phase.cwd))
+    cwd = str(default_cwd if phase.cwd is None else Path(phase.cwd))
+
+    env = dict(os.environ)
+    if phase.env_overrides:
+        for key, value in phase.env_overrides.items():
+            if value is None:
+                env.pop(key, None)
+            else:
+                env[key] = value
 
     _append_jsonl(
         phase_log,
@@ -240,6 +333,7 @@ def run_phase(phase: PhaseSpec, run_id: str, phase_log: Path) -> PhaseResult:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         start_new_session=True,
+        env=env,
     )
 
     timed_out = False
@@ -299,14 +393,17 @@ def _default_python() -> str:
     return str(preferred if preferred.exists() else Path(sys.executable))
 
 
-def default_mini_phases() -> list[PhaseSpec]:
+def default_mini_phases(detached_worktree: Path | None = None) -> list[PhaseSpec]:
     py = _default_python()
+    worktree = str(detached_worktree or PROJECT_ROOT)
     return [
         PhaseSpec(
             name="identity_probe",
             command=[py, "-c", "import os,sys; print('identity_ok', os.getcwd(), sys.executable)"],
             timeout_seconds=20,
+            cwd=worktree,
             category="runtime",
+            env_overrides={"PYTHONPATH": None},
         ),
         PhaseSpec(
             name="targeted_preprod_tests",
@@ -319,36 +416,39 @@ def default_mini_phases() -> list[PhaseSpec]:
                 "tests/test_upload_precheck.py",
             ],
             timeout_seconds=120,
+            cwd=worktree,
             category="pytest",
+            env_overrides={"PYTHONPATH": None},
         ),
     ]
 
 
-def default_full_phases() -> list[PhaseSpec]:
+def default_full_phases(detached_worktree: Path | None = None, candidate_sha: str | None = None) -> list[PhaseSpec]:
     py = _default_python()
+    worktree = detached_worktree or PROJECT_ROOT
+    full_sha = candidate_sha or subprocess.check_output(["git", "-C", str(worktree), "rev-parse", "HEAD"], text=True).strip()
     return [
-        PhaseSpec(
-            name="runtime_probe",
-            command=[py, "-c", "import scheduler; print('runtime_probe_ok')"],
-            timeout_seconds=30,
-            category="runtime",
-        ),
+        build_runtime_identity_phase(worktree, full_sha, py),
         PhaseSpec(
             name="full_pytest_wdefault",
             command=[py, "-m", "pytest", "-q", "-W", "default"],
             timeout_seconds=900,
+            cwd=str(worktree),
             category="full_pytest",
+            env_overrides={"PYTHONPATH": None},
         ),
         PhaseSpec(
             name="full_pytest_normal",
             command=[py, "-m", "pytest", "-q"],
             timeout_seconds=900,
+            cwd=str(worktree),
             category="full_pytest",
+            env_overrides={"PYTHONPATH": None},
         ),
     ]
 
 
-def run_validation(phases: list[PhaseSpec], run_id: str, artifacts_dir: Path, state_root: Path, stop_on_tracked_mutation: bool = True) -> dict[str, Any]:
+def run_validation(phases: list[PhaseSpec], run_id: str, artifacts_dir: Path, state_root: Path, repo_root: Path = PROJECT_ROOT, stop_on_tracked_mutation: bool = True) -> dict[str, Any]:
     _validate_phase_order(phases)
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     run_state_dir = state_root / run_id
@@ -357,7 +457,7 @@ def run_validation(phases: list[PhaseSpec], run_id: str, artifacts_dir: Path, st
     phase_log = artifacts_dir / "preprod_runner_phase_log.jsonl"
 
     store = StateStore(state_path)
-    baseline_tracked = set(_tracked_mutations(PROJECT_ROOT))
+    baseline_tracked = set(_tracked_mutations(repo_root))
     store.update(
         status="running",
         current_phase=None,
@@ -367,11 +467,11 @@ def run_validation(phases: list[PhaseSpec], run_id: str, artifacts_dir: Path, st
     all_results: list[PhaseResult] = []
     for phase in phases:
         store.update(current_phase=phase.name)
-        result = run_phase(phase=phase, run_id=run_id, phase_log=phase_log)
+        result = run_phase(phase=phase, run_id=run_id, phase_log=phase_log, default_cwd=repo_root)
         store.append_phase_result(result)
         all_results.append(result)
 
-        tracked_now = set(_tracked_mutations(PROJECT_ROOT))
+        tracked_now = set(_tracked_mutations(repo_root))
         new_tracked = sorted(tracked_now - baseline_tracked)
         if new_tracked:
             store.update(tracked_mutations=new_tracked)
@@ -537,11 +637,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p_mini.add_argument("--run-id", default=f"mini_{uuid.uuid4().hex[:8]}")
     p_mini.add_argument("--artifacts-dir", default=str(DEFAULT_ARTIFACTS_DIR))
     p_mini.add_argument("--state-root", default=str(DEFAULT_STATE_ROOT))
+    p_mini.add_argument("--detached-worktree", default=str(PROJECT_ROOT))
 
     p_full = sub.add_parser("full", help="Run full validation")
     p_full.add_argument("--run-id", default=f"full_{uuid.uuid4().hex[:8]}")
     p_full.add_argument("--artifacts-dir", default=str(DEFAULT_ARTIFACTS_DIR))
     p_full.add_argument("--state-root", default=str(DEFAULT_STATE_ROOT))
+    p_full.add_argument("--detached-worktree", default=str(PROJECT_ROOT))
+    p_full.add_argument("--candidate-sha", default=None)
+
+    p_runtime = sub.add_parser("runtime-identity", help="Run detached runtime identity probe only")
+    p_runtime.add_argument("--run-id", default=f"runtime_identity_{uuid.uuid4().hex[:8]}")
+    p_runtime.add_argument("--artifacts-dir", default=str(DEFAULT_ARTIFACTS_DIR))
+    p_runtime.add_argument("--state-root", default=str(DEFAULT_STATE_ROOT))
+    p_runtime.add_argument("--detached-worktree", required=True)
+    p_runtime.add_argument("--candidate-sha", required=True)
 
     return parser.parse_args(argv)
 
@@ -585,14 +695,31 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, indent=2))
         return 0 if result["status"] == "PASS" else 1
 
-    if args.command in {"mini", "full"}:
+    if args.command in {"mini", "full", "runtime-identity"}:
         artifacts_dir = Path(args.artifacts_dir)
         state_root = Path(args.state_root)
         run_id = args.run_id
-        phases = default_mini_phases() if args.command == "mini" else default_full_phases()
-        result = run_validation(phases=phases, run_id=run_id, artifacts_dir=artifacts_dir, state_root=state_root)
+        detached = Path(getattr(args, "detached_worktree", str(PROJECT_ROOT))).resolve()
+
+        if args.command == "mini":
+            phases = default_mini_phases(detached_worktree=detached)
+        elif args.command == "full":
+            phases = default_full_phases(detached_worktree=detached, candidate_sha=args.candidate_sha)
+        else:
+            phases = [build_runtime_identity_phase(detached, args.candidate_sha, _default_python())]
+
+        result = run_validation(
+            phases=phases,
+            run_id=run_id,
+            artifacts_dir=artifacts_dir,
+            state_root=state_root,
+            repo_root=detached,
+        )
+
         if args.command == "mini":
             write_validation_markdown(artifacts_dir / "preprod_runner_mini_validation.md", "Preprod Runner Mini Validation", result)
+        elif args.command == "runtime-identity":
+            write_validation_markdown(artifacts_dir / "preprod_runner_runtime_identity_validation.md", "Preprod Runner Runtime Identity Validation", result)
         else:
             write_validation_markdown(artifacts_dir / "preprod_runner_final_validation.md", "Preprod Runner Final Validation", result)
         print(json.dumps(result, indent=2))

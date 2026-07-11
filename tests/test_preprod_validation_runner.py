@@ -84,7 +84,7 @@ def test_heartbeat_writer_emits_rows(tmp_path: Path) -> None:
 def test_run_phase_success(tmp_path: Path) -> None:
     log_path = tmp_path / "phase_log.jsonl"
     phase = runner.PhaseSpec(name="ok", command=[sys.executable, "-c", "print('ok')"], timeout_seconds=3)
-    res = runner.run_phase(phase=phase, run_id="r1", phase_log=log_path)
+    res = runner.run_phase(phase=phase, run_id="r1", phase_log=log_path, default_cwd=tmp_path)
     assert res.status == "pass"
     assert res.returncode == 0
 
@@ -92,7 +92,7 @@ def test_run_phase_success(tmp_path: Path) -> None:
 def test_run_phase_timeout(tmp_path: Path) -> None:
     log_path = tmp_path / "phase_log.jsonl"
     phase = runner.PhaseSpec(name="slow", command=[sys.executable, "-c", "import time; time.sleep(2)"], timeout_seconds=1)
-    res = runner.run_phase(phase=phase, run_id="r1", phase_log=log_path)
+    res = runner.run_phase(phase=phase, run_id="r1", phase_log=log_path, default_cwd=tmp_path)
     assert res.status == "timeout"
     assert res.returncode == 124
 
@@ -106,7 +106,7 @@ def test_run_validation_all_pass(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         runner.PhaseSpec(name="a", command=[sys.executable, "-c", "print('a')"], timeout_seconds=2),
         runner.PhaseSpec(name="b", command=[sys.executable, "-c", "print('b')"], timeout_seconds=2),
     ]
-    out = runner.run_validation(phases, run_id="run1", artifacts_dir=artifacts, state_root=state_root)
+    out = runner.run_validation(phases, run_id="run1", artifacts_dir=artifacts, state_root=state_root, repo_root=tmp_path)
     assert out["status"] == "passed"
     state_path = Path(out["state_path"])
     assert state_path.exists()
@@ -118,7 +118,7 @@ def test_run_validation_fails_on_nonzero_phase(tmp_path: Path, monkeypatch: pyte
     phases = [
         runner.PhaseSpec(name="bad", command=[sys.executable, "-c", "import sys; sys.exit(5)"], timeout_seconds=2),
     ]
-    out = runner.run_validation(phases, run_id="run2", artifacts_dir=tmp_path / "art", state_root=tmp_path / "state")
+    out = runner.run_validation(phases, run_id="run2", artifacts_dir=tmp_path / "art", state_root=tmp_path / "state", repo_root=tmp_path)
     assert out["status"] == "failed"
     assert out["failed_phase"] == "bad"
 
@@ -133,7 +133,7 @@ def test_run_validation_fails_on_tracked_mutation(tmp_path: Path, monkeypatch: p
             timeout_seconds=2,
         ),
     ]
-    out = runner.run_validation(phases, run_id="run3", artifacts_dir=tmp_path / "art", state_root=tmp_path / "state")
+    out = runner.run_validation(phases, run_id="run3", artifacts_dir=tmp_path / "art", state_root=tmp_path / "state", repo_root=tmp_path)
     assert out["status"] == "failed"
     assert out["reason"] == "tracked_mutation_detected"
 
@@ -145,7 +145,7 @@ def test_run_validation_ignores_preexisting_dirty_baseline(tmp_path: Path, monke
     phases = [
         runner.PhaseSpec(name="noop", command=[sys.executable, "-c", "print('noop')"], timeout_seconds=2),
     ]
-    out = runner.run_validation(phases, run_id="run4", artifacts_dir=tmp_path / "art", state_root=tmp_path / "state")
+    out = runner.run_validation(phases, run_id="run4", artifacts_dir=tmp_path / "art", state_root=tmp_path / "state", repo_root=tmp_path)
     assert out["status"] == "passed"
 
 
@@ -160,3 +160,63 @@ def test_audit_external_runner_discovers_subprocess_calls(tmp_path: Path) -> Non
     audit = runner.audit_external_runner(script)
     assert audit["exists"] is True
     assert len(audit["calls"]) == 2
+
+
+def test_runtime_identity_phase_has_explicit_detached_cwd() -> None:
+    detached = Path("/tmp/preprod_runtime_target6_c5a7d35")
+    phase = runner.build_runtime_identity_phase(detached, "c5a7d3573999683e4419793d1724eb59b4ac71c0", sys.executable)
+    assert phase.cwd == str(detached)
+    assert phase.env_overrides == {"PYTHONPATH": None}
+
+
+def test_run_phase_clears_canonical_pythonpath(tmp_path: Path) -> None:
+    log_path = tmp_path / "phase_log.jsonl"
+    phase = runner.PhaseSpec(
+        name="py_path_probe",
+        command=[sys.executable, "-c", "import os; print(os.environ.get('PYTHONPATH', '<none>'))"],
+        timeout_seconds=3,
+        env_overrides={"PYTHONPATH": None},
+    )
+    res = runner.run_phase(phase=phase, run_id="r1", phase_log=log_path, default_cwd=tmp_path)
+    assert res.status == "pass"
+    assert "<none>" in res.stdout_tail
+
+
+def test_runtime_identity_blocks_wrong_cwd(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path)
+    detached = tmp_path / "detached"
+    detached.mkdir(parents=True, exist_ok=True)
+    (detached / "scheduler.py").write_text("x=1\n", encoding="utf-8")
+    phase = runner.build_runtime_identity_phase(detached, "c5a7d3573999683e4419793d1724eb59b4ac71c0", sys.executable)
+    res = runner.run_phase(phase=phase, run_id="r1", phase_log=tmp_path / "log.jsonl", default_cwd=tmp_path)
+    assert res.status == "fail"
+
+
+def test_runtime_identity_blocks_wrong_scheduler_file(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir(parents=True, exist_ok=True)
+    _init_git_repo(repo)
+    detached = repo / "detached"
+    detached.mkdir(parents=True, exist_ok=True)
+    (detached / "scheduler.py").write_text("raise RuntimeError('bad scheduler import')\n", encoding="utf-8")
+    phase = runner.build_runtime_identity_phase(detached, "c5a7d3573999683e4419793d1724eb59b4ac71c0", sys.executable)
+    res = runner.run_phase(phase=phase, run_id="r2", phase_log=repo / "log.jsonl", default_cwd=repo)
+    assert res.status == "fail"
+
+
+def test_runtime_identity_blocks_wrong_sha(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path)
+    (tmp_path / "scheduler.py").write_text("x=1\n", encoding="utf-8")
+    phase = runner.build_runtime_identity_phase(tmp_path, "0000000000000000000000000000000000000000", sys.executable)
+    res = runner.run_phase(phase=phase, run_id="r3", phase_log=tmp_path / "log.jsonl", default_cwd=tmp_path)
+    assert res.status == "fail"
+
+
+def test_runtime_identity_valid_detached_launch_passes(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path)
+    (tmp_path / "scheduler.py").write_text("x=1\n", encoding="utf-8")
+    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=str(tmp_path), text=True).strip()
+    phase = runner.build_runtime_identity_phase(tmp_path, head, sys.executable)
+    res = runner.run_phase(phase=phase, run_id="r4", phase_log=tmp_path / "log.jsonl", default_cwd=tmp_path)
+    assert res.status == "pass"
+    assert "BUILD_INFO scheduler" in res.stdout_tail

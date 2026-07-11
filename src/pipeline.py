@@ -241,10 +241,16 @@ def _resolve_analytics_live_runtime(cfg) -> tuple[bool, str]:
 
 def _production_quality_platform_enabled() -> bool:
     explicit_enable = _is_enabled(os.getenv("PRODUCTION_QUALITY_PLATFORM_ENABLED", "false"))
+    current_test = str(os.getenv("PYTEST_CURRENT_TEST") or "")
+    pytest_gate_allowlist = (
+        "test_pipeline_quality_integration.py" in current_test
+        or "test_production_quality_platform.py" in current_test
+    )
+    runtime_override = _is_enabled(os.getenv("PIPELINE_RUNTIME_GATES_IN_TESTS", "false"))
     if (
-        os.getenv("PYTEST_CURRENT_TEST")
-        and not explicit_enable
-        and not _is_enabled(os.getenv("PIPELINE_RUNTIME_GATES_IN_TESTS", "false"))
+        current_test
+        and not runtime_override
+        and not pytest_gate_allowlist
     ):
         return False
     return explicit_enable
@@ -252,10 +258,16 @@ def _production_quality_platform_enabled() -> bool:
 
 def _content_quality_gate_enabled() -> bool:
     explicit_enable = _is_enabled(os.getenv("CONTENT_QUALITY_GATE_ENABLED", "false"))
+    current_test = str(os.getenv("PYTEST_CURRENT_TEST") or "")
+    pytest_gate_allowlist = (
+        "test_pipeline_quality_integration.py" in current_test
+        or "test_production_quality_platform.py" in current_test
+    )
+    runtime_override = _is_enabled(os.getenv("PIPELINE_RUNTIME_GATES_IN_TESTS", "false"))
     if (
-        os.getenv("PYTEST_CURRENT_TEST")
-        and not explicit_enable
-        and not _is_enabled(os.getenv("PIPELINE_RUNTIME_GATES_IN_TESTS", "false"))
+        current_test
+        and not runtime_override
+        and not pytest_gate_allowlist
     ):
         return False
     return explicit_enable

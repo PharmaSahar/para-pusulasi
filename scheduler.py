@@ -33,6 +33,11 @@ from pathlib import Path
 from typing import TextIO
 
 import pytz
+from src.production_quality_platform import (
+    canary_gate_decision,
+    record_dead_letter,
+    update_production_dashboard,
+)
 try:
     import fcntl
 except ImportError:  # pragma: no cover
@@ -486,6 +491,19 @@ def render_and_schedule(channel_id: str):
         from src.pipeline import run_full_pipeline
 
         cfg = get_channel(channel_id)
+        os.environ.setdefault("PRODUCTION_QUALITY_PLATFORM_ENABLED", "true")
+        os.environ.setdefault("CONTENT_QUALITY_GATE_ENABLED", "true")
+
+        canary = canary_gate_decision(channel_id)
+        if not canary.get("allow", True):
+            logger.warning("[%s] Canary gate blocked run: %s", cfg.name, canary.get("reason"))
+            update_production_dashboard(
+                scheduler_status="canary_blocked",
+                build_sha=_resolve_git_head_short(),
+                scheduler_pid=os.getpid(),
+                last_error=str(canary.get("reason") or "canary_blocked"),
+            )
+            return
 
         pause = get_global_overload_pause_status()
         if pause.get("is_open"):
@@ -629,6 +647,15 @@ def render_and_schedule(channel_id: str):
                 check_growth_milestones(new_video_count=1)
             except Exception:
                 pass
+            try:
+                update_production_dashboard(
+                    scheduler_status="active",
+                    build_sha=_resolve_git_head_short(),
+                    scheduler_pid=os.getpid(),
+                    last_error=None,
+                )
+            except Exception:
+                pass
         elif result and result.get("upload_precheck", {}).get("status") == "blocked":
             precheck = dict(result.get("upload_precheck") or {})
             reason_codes = list(precheck.get("guard_reason_codes") or ["channel_dna_mismatch"])
@@ -664,8 +691,39 @@ def render_and_schedule(channel_id: str):
                 }
             )
             logger.warning(f"[{cfg.name}] Upload precheck blocked; queue entry quarantined.")
+            try:
+                update_production_dashboard(
+                    scheduler_status="active_with_blocks",
+                    build_sha=_resolve_git_head_short(),
+                    scheduler_pid=os.getpid(),
+                    last_error="upload_precheck_blocked",
+                )
+            except Exception:
+                pass
         else:
-            logger.error(f"[{cfg.name}] Video ID alınamadı!")
+            upload_error_text = str((result or {}).get("upload_error") or "")
+            upload_meta = dict((result or {}).get("upload_metadata") or {})
+            failure_kind = str(upload_meta.get("failure_kind") or "unknown")
+            if not failure_kind or failure_kind == "unknown":
+                lower = upload_error_text.lower()
+                if any(token in lower for token in ("quota", "ratelimit", "rate limit", "401", "403", "credential", "permission")):
+                    failure_kind = "auth_or_quota"
+                elif any(token in lower for token in ("validation", "invalid", "metadata", "400")):
+                    failure_kind = "metadata_rejection"
+                elif any(token in lower for token in ("idempot", "duplicate", "conflict", "409")):
+                    failure_kind = "duplicate_or_idempotency"
+                elif any(token in lower for token in ("missing_id", "video id", "response")):
+                    failure_kind = "missing_response_id"
+                elif any(token in lower for token in ("timeout", "dns", "network", "server", "5")):
+                    failure_kind = "api_error"
+
+            logger.error(
+                "[%s] Video ID alınamadı! failure_kind=%s upload_error=%s upload_metadata=%s",
+                cfg.name,
+                failure_kind,
+                upload_error_text[:500] or "none",
+                upload_meta,
+            )
 
     except Exception as e:
         routed_error_text = str(getattr(e, "_provider_error_text", str(e)))
@@ -688,6 +746,23 @@ def render_and_schedule(channel_id: str):
         )) and not getattr(e, "_provider_failure_recorded", False):
             record_provider_failure("anthropic", routed_error_text)
         logger.error(f"[{channel_id}] Render hatası: {e}", exc_info=True)
+        try:
+            record_dead_letter(
+                {
+                    "channel_id": channel_id,
+                    "stage": "scheduler_render_and_schedule",
+                    "error": str(e),
+                    "retry_count": 3,
+                }
+            )
+            update_production_dashboard(
+                scheduler_status="degraded",
+                build_sha=_resolve_git_head_short(),
+                scheduler_pid=os.getpid(),
+                last_error=str(e),
+            )
+        except Exception:
+            pass
         try:
             if "failed_fact_check" in routed_error_text.lower():
                 return

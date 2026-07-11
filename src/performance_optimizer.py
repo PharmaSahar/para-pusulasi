@@ -57,6 +57,30 @@ def derive_channel_optimization_state(snapshots: list[dict[str, Any]]) -> dict:
     avg_watch_time = mean(watch_time_values) if watch_time_values else None
     avg_thumbnail = mean(thumbnail_values) if thumbnail_values else None
     avg_hook = mean(hook_values) if hook_values else None
+    total_impressions = sum(float(item.get("impressions") or 0.0) for item in snapshots if isinstance(item.get("impressions"), (int, float)))
+    sample_count = len(snapshots)
+
+    min_samples = 5
+    min_impressions = 1000.0
+    weak_sample = sample_count < min_samples or total_impressions < min_impressions
+
+    if weak_sample:
+        return {
+            "mode": "balanced",
+            "focus": ["observe"],
+            "avg_ctr": avg_ctr,
+            "avg_retention": avg_retention,
+            "avg_watch_time_hours": avg_watch_time,
+            "avg_thumbnail_attention_score": avg_thumbnail,
+            "avg_hook_score": avg_hook,
+            "sample_count": sample_count,
+            "total_impressions": total_impressions,
+            "weak_sample": True,
+            "guidance": (
+                "Insufficient statistical evidence for automatic optimization. "
+                "Keep current strategy and continue collecting performance data."
+            ),
+        }
 
     focus: list[str] = []
     if avg_ctr is None or avg_ctr < 0.04:
@@ -103,6 +127,9 @@ def derive_channel_optimization_state(snapshots: list[dict[str, Any]]) -> dict:
         "avg_watch_time_hours": avg_watch_time,
         "avg_thumbnail_attention_score": avg_thumbnail,
         "avg_hook_score": avg_hook,
+        "sample_count": sample_count,
+        "total_impressions": total_impressions,
+        "weak_sample": False,
         "guidance": " ".join(guidance_parts),
     }
 

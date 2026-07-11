@@ -15,6 +15,7 @@ def test_derive_channel_optimization_state_prioritizes_thumbnail_and_retention()
                 "watch_time_hours": 1.2,
                 "thumbnail_attention_score": 58,
                 "hook_score": 63,
+                "impressions": 900,
             },
             {
                 "click_through_rate": 0.032,
@@ -22,6 +23,31 @@ def test_derive_channel_optimization_state_prioritizes_thumbnail_and_retention()
                 "watch_time_hours": 1.7,
                 "thumbnail_attention_score": 61,
                 "hook_score": 67,
+                "impressions": 900,
+            },
+            {
+                "click_through_rate": 0.029,
+                "average_view_percentage": 44.0,
+                "watch_time_hours": 1.5,
+                "thumbnail_attention_score": 60,
+                "hook_score": 66,
+                "impressions": 900,
+            },
+            {
+                "click_through_rate": 0.027,
+                "average_view_percentage": 45.0,
+                "watch_time_hours": 1.4,
+                "thumbnail_attention_score": 59,
+                "hook_score": 65,
+                "impressions": 900,
+            },
+            {
+                "click_through_rate": 0.03,
+                "average_view_percentage": 47.0,
+                "watch_time_hours": 1.6,
+                "thumbnail_attention_score": 62,
+                "hook_score": 68,
+                "impressions": 900,
             },
         ]
     )
@@ -31,6 +57,24 @@ def test_derive_channel_optimization_state_prioritizes_thumbnail_and_retention()
     assert "retention" in state["focus"]
     assert "Hook" in state["guidance"] or "Hook:" in state["guidance"]
     assert "Thumbnail" in state["guidance"] or "Thumbnail:" in state["guidance"]
+
+
+def test_derive_channel_optimization_state_weak_sample_is_observe_only():
+    from src.performance_optimizer import derive_channel_optimization_state
+
+    state = derive_channel_optimization_state(
+        [
+            {
+                "click_through_rate": 0.11,
+                "average_view_percentage": 73.0,
+                "watch_time_hours": 8.2,
+                "impressions": 120,
+            },
+        ]
+    )
+
+    assert state["weak_sample"] is True
+    assert state["focus"] == ["observe"]
 
 
 def test_build_optimization_guidance_emits_metric_summary():

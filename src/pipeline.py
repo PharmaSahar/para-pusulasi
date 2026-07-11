@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import json
+import subprocess
 from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -40,6 +41,19 @@ from .thumbnail_selection_policy import select_thumbnail_candidate
 from .tts_engine import TTSEngine
 from .video_creator_pro import VideoCreator
 from .youtube_uploader import YouTubeUploader
+from .production_quality_platform import (
+    build_idempotency_key,
+    evaluate_automatic_qa,
+    evaluate_thumbnail_intelligence,
+    get_registered_upload,
+    record_production_event,
+    register_upload,
+    run_stage_with_recovery,
+    score_script_quality,
+    update_production_dashboard,
+    update_production_observability_latest,
+    write_production_evidence,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -177,6 +191,35 @@ def _resolve_posting_slot(publish_at: str | None) -> str:
     return "morning" if now_local.hour < 15 else "evening"
 
 
+def _resolve_git_head_short() -> str:
+    try:
+        output = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        return output or "unknown"
+    except Exception:
+        return "unknown"
+
+
+def _classify_upload_failure(error_text: str) -> str:
+    text = str(error_text or "").lower()
+    if any(token in text for token in ("quota", "ratelimit", "rate limit", "rate_limited")):
+        return "auth_or_quota"
+    if any(token in text for token in ("credential", "permission", "http 401", "http 403")):
+        return "auth_or_quota"
+    if any(token in text for token in ("validation", "invalid", "metadata", "http 400")):
+        return "metadata_rejection"
+    if any(token in text for token in ("conflict", "idempot", "duplicate", "http 409")):
+        return "duplicate_or_idempotency"
+    if any(token in text for token in ("timeout", "server_error", "service unavailable", "http 5", "network", "dns")):
+        return "api_error"
+    if "missing_id" in text:
+        return "missing_response_id"
+    return "unknown"
+
+
 def _resolve_analytics_live_runtime(cfg) -> tuple[bool, str]:
     """Resolve analytics-live runtime mode with strict production no-go guard.
 
@@ -194,6 +237,14 @@ def _resolve_analytics_live_runtime(cfg) -> tuple[bool, str]:
         return False, "disabled_by_flag"
     # Keep disabled by policy even if requested, until explicit rollout approval.
     return False, "disabled_by_policy"
+
+
+def _production_quality_platform_enabled() -> bool:
+    return _is_enabled(os.getenv("PRODUCTION_QUALITY_PLATFORM_ENABLED", "false"))
+
+
+def _content_quality_gate_enabled() -> bool:
+    return _is_enabled(os.getenv("CONTENT_QUALITY_GATE_ENABLED", "false"))
 
 
 def _attach_audio_mix_metadata(result: dict, creator: object) -> None:
@@ -300,6 +351,10 @@ def run_full_pipeline(
     cfg = channel_cfg if channel_cfg else _default_config
     cfg.ensure_directories()
     result = {"channel": getattr(cfg, "channel_id", "default")}
+    result["started_at"] = datetime.now(timezone.utc).isoformat()
+    result["build_sha"] = _resolve_git_head_short()
+    result["commit_sha"] = result["build_sha"]
+    result["scheduler_pid"] = os.getpid()
     result["thumbnail_metadata"] = {}
     result["rejection_reasons"] = []
     slot = posting_slot or _resolve_posting_slot(publish_at)
@@ -323,6 +378,9 @@ def run_full_pipeline(
     result["audio_metadata"] = {}
     result["audio_warning"] = None
     result["analytics_warning"] = None
+    result["pipeline_retry_count"] = 0
+    result["upload_retry_count"] = 0
+    result["final_status"] = "in_progress"
     _invoke_fact_bundle_pipeline_adapter(cfg, result)
 
     telemetry_metadata = {
@@ -411,6 +469,36 @@ def run_full_pipeline(
                 model_version=telemetry_metadata.get("model_version"),
             )
             emit_event(envelope, logger=logger)
+            try:
+                obs_payload = {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "channel": result.get("channel"),
+                    "topic": topic or result.get("title"),
+                    "generation_id": result.get("content_id"),
+                    "stage": stage,
+                    "event_type": event_type,
+                    "selected_topic_reason": str(result.get("optimization_guidance") or "")[:300],
+                    "selected_visuals": result.get("selected_visuals") or [],
+                    "rejection_reasons": result.get("rejection_reasons") or [],
+                    "quality_guard_decisions": {
+                        "content_quality": result.get("content_quality"),
+                        "automatic_qa": result.get("automatic_qa"),
+                        "script_quality": result.get("script_quality"),
+                    },
+                    "render_result": result.get("render_metrics") or {},
+                    "upload_result": {
+                        "video_id": result.get("video_id"),
+                        "youtube_url": result.get("youtube_url"),
+                        "error": result.get("upload_error"),
+                    },
+                    "retry_count": int(result.get("pipeline_retry_count", 0) or 0) + int(result.get("upload_retry_count", 0) or 0),
+                    "failure_stage": stage if event_type == "stage_failed" else None,
+                    "final_status": result.get("final_status"),
+                    "content_type": "video",
+                }
+                record_production_event(obs_payload)
+            except Exception:
+                pass
         except Exception as e:
             # Telemetry must be fail-open and never affect production flow.
             warning = _record_warning(
@@ -765,6 +853,39 @@ def run_full_pipeline(
             additional_guidance=optimization_guidance or None,
         )
 
+    if _production_quality_platform_enabled():
+        _script_quality_regeneration_count = 0
+        script_quality = score_script_quality(
+            title=getattr(content, "title", ""),
+            script=getattr(content, "script", ""),
+            description=getattr(content, "description", ""),
+            topic=topic or getattr(content, "title", ""),
+            cta_text=getattr(content, "next_video_teaser", ""),
+            recent_scripts=[],
+        )
+        result["script_quality"] = script_quality
+        while script_quality.get("overall_score", 0.0) < float(script_quality.get("threshold", 62.0)):
+            if _script_quality_regeneration_count >= 1:
+                raise RuntimeError(
+                    f"script_quality_blocked: score={script_quality.get('overall_score')} threshold={script_quality.get('threshold')}"
+                )
+            _script_quality_regeneration_count += 1
+            result["pipeline_retry_count"] = int(result.get("pipeline_retry_count", 0)) + 1
+            retry_guidance = (
+                "Script quality below production threshold. Regenerate with stronger hook, "
+                "higher information density, clearer structure, and a concrete CTA."
+            )
+            _generate_content(generator, generation_topic=topic, additional_guidance=retry_guidance)
+            script_quality = score_script_quality(
+                title=getattr(content, "title", ""),
+                script=getattr(content, "script", ""),
+                description=getattr(content, "description", ""),
+                topic=topic or getattr(content, "title", ""),
+                cta_text=getattr(content, "next_video_teaser", ""),
+                recent_scripts=[],
+            )
+            result["script_quality"] = script_quality
+
     try:
         _append_pipeline_run_registry_event(
             experiment_id=resolved_experiment_id,
@@ -925,6 +1046,13 @@ def run_full_pipeline(
             topic or getattr(content, "title", ""),
             regeneration_count=_cq_regeneration_count,
         )
+        result["content_quality"] = {
+            "publish_decision": dec.publish_decision,
+            "block_reasons": list(dec.block_reasons or []),
+            "scores": dict(dec.scores or {}),
+            "script_similarity": dec.script_similarity,
+            "regeneration_count": _cq_regeneration_count,
+        }
         if dec.publish_decision != "block":
             logger.info("[%s] Content quality gate: ALLOW", result.get("channel"))
             return
@@ -961,7 +1089,8 @@ def run_full_pipeline(
             raise RuntimeError(f"content_quality_blocked: {'; '.join(dec2.block_reasons)}")
         logger.info("[%s] Content quality gate: regenerated content ALLOW", result.get("channel"))
 
-    _run_content_quality_gate()
+    if _content_quality_gate_enabled() or _production_quality_platform_enabled():
+        _run_content_quality_gate()
 
     try:
         _run_fact_check_guard("tts", content.script, suppress_retryable_alert=True)
@@ -1045,6 +1174,39 @@ def run_full_pipeline(
         except Exception as e:
             logger.warning(f"Grafik oluşturulamadı: {e}")
 
+        result["selected_visuals"] = [str(item) for item in (image_paths or [])]
+
+        if _production_quality_platform_enabled():
+            _qa_regeneration_count = 0
+            while True:
+                qa_payload = {
+                    "channel": result.get("channel"),
+                    "niche": getattr(cfg, "niche", ""),
+                    "topic": topic or getattr(content, "title", ""),
+                    "title": getattr(content, "title", ""),
+                    "script": getattr(content, "script", ""),
+                    "description": getattr(content, "description", ""),
+                    "tags": list(getattr(content, "tags", []) or []),
+                    "thumbnail_prompt": getattr(content, "thumbnail_prompt", ""),
+                    "selected_visuals": result.get("selected_visuals") or [],
+                    "rejection_reasons": result.get("rejection_reasons") or [],
+                    "script_similarity": ((result.get("content_quality") or {}).get("script_similarity", 0.0)),
+                    "shorts_enabled": True,
+                }
+                automatic_qa = evaluate_automatic_qa(qa_payload)
+                result["automatic_qa"] = automatic_qa
+                if automatic_qa.get("decision") != "block":
+                    break
+                if _qa_regeneration_count >= 1:
+                    raise RuntimeError(f"automatic_qa_blocked: {', '.join(automatic_qa.get('blocked_checks') or [])}")
+                _qa_regeneration_count += 1
+                result["pipeline_retry_count"] = int(result.get("pipeline_retry_count", 0)) + 1
+                retry_guidance = (
+                    "Production QA blocked previous output. Regenerate with stronger channel-topic fit, "
+                    "clean metadata consistency, and a clearly relevant thumbnail concept."
+                )
+                _generate_content(generator, generation_topic=topic, additional_guidance=retry_guidance)
+
     # ─── ADIM 3: Video Montaji ────────────────────────────────────────────────
     _run_fact_check_guard("render", content.script)
     logger.info("=" * 60)
@@ -1088,6 +1250,28 @@ def run_full_pipeline(
             variant_id=str(thumbnail_experiments.get("selected_variant_id") or "video_default"),
             rejected_attempts=((result.get("thumbnail_diversity") or {}).get("video", {}).get("rejected_attempts") or []),
         )
+
+    try:
+        from .thumbnail_history import load_recent_thumbnail_history
+
+        recent_prompts = []
+        for item in load_recent_thumbnail_history():
+            prompt = str(item.get("thumbnail_prompt") or "").strip()
+            if prompt:
+                recent_prompts.append(prompt)
+        thumbnail_intelligence = evaluate_thumbnail_intelligence(
+            channel_id=str(result.get("channel", "default")),
+            topic=str(topic or getattr(content, "title", "")),
+            thumbnail_prompt=str(getattr(content, "thumbnail_prompt", "") or ""),
+            rejection_reasons=list(result.get("rejection_reasons") or []),
+            recent_thumbnail_prompts=recent_prompts[-120:],
+            ctr_evidence={
+                "click_through_rate": ((result.get("performance_snapshot") or {}).get("click_through_rate")),
+            },
+        )
+        result["thumbnail_intelligence"] = thumbnail_intelligence
+    except Exception:
+        pass
 
     try:
         from .thumbnail_history import append_thumbnail_history
@@ -1186,13 +1370,55 @@ def run_full_pipeline(
             start_payload={"privacy": privacy, "publish_at": publish_at},
             complete_payload_fn=lambda: {"video_id": str(result.get("video_id", ""))},
         ):
-            video_id = uploader.upload_video(
-                video_path=video_path,
-                content=content,
-                thumbnail_path=thumbnail_path,
-                privacy=privacy,
+            idempotency_key = build_idempotency_key(
+                channel=str(result.get("channel", "default")),
+                generation_id=str(result.get("content_id", "")),
                 publish_at=publish_at,
+                title=str(getattr(content, "title", "")),
             )
+            existing_upload = get_registered_upload(idempotency_key)
+            if existing_upload and str(existing_upload.get("video_id") or "").strip():
+                video_id = str(existing_upload.get("video_id"))
+                result["upload_metadata"] = {
+                    "experiment_id": resolved_experiment_id,
+                    "video_id": video_id,
+                    "privacy": privacy,
+                    "publish_at": publish_at,
+                    "idempotency_key": idempotency_key,
+                    "duplicate_prevented": True,
+                }
+            else:
+                def _upload_once():
+                    return uploader.upload_video(
+                        video_path=video_path,
+                        content=content,
+                        thumbnail_path=thumbnail_path,
+                        privacy=privacy,
+                        publish_at=publish_at,
+                    )
+
+                def _on_upload_retry(attempt: int, _exc: Exception) -> None:
+                    result["upload_retry_count"] = int(result.get("upload_retry_count", 0)) + 1
+
+                video_id, recovery = run_stage_with_recovery(
+                    stage="upload",
+                    fn=_upload_once,
+                    max_attempts=1,
+                    base_backoff_seconds=4.0,
+                    on_retry=_on_upload_retry,
+                )
+                if not str(video_id or "").strip():
+                    raise RuntimeError("upload_response_missing_id")
+                result["upload_recovery"] = recovery
+                register_upload(
+                    idempotency_key,
+                    {
+                        "video_id": video_id,
+                        "channel": result.get("channel"),
+                        "title": getattr(content, "title", ""),
+                        "youtube_url": f"https://youtube.com/watch?v={video_id}",
+                    },
+                )
             result["video_id"] = video_id
             result["youtube_url"] = f"https://youtube.com/watch?v={video_id}"
             result["upload_metadata"] = {
@@ -1200,6 +1426,7 @@ def run_full_pipeline(
                 "video_id": video_id,
                 "privacy": privacy,
                 "publish_at": publish_at,
+                "idempotency_key": idempotency_key,
             }
             # Register script fingerprint ONLY after confirmed upload
             try:
@@ -1220,20 +1447,27 @@ def run_full_pipeline(
     except Exception as e:
         upload_error = e
         result["upload_error"] = str(e)
+        failure_kind = _classify_upload_failure(str(e))
         result["upload_metadata"] = {
             "experiment_id": resolved_experiment_id,
             "video_id": None,
             "privacy": privacy,
             "publish_at": publish_at,
             "error": str(e),
+            "failure_kind": failure_kind,
         }
-        logger.error(f"Upload başarısız, snapshot yine kaydedilecek: {e}")
+        logger.error(
+            "Upload başarısız, snapshot yine kaydedilecek: %s (failure_kind=%s)",
+            e,
+            failure_kind,
+        )
 
     # ─── ADIM 4.5: Short Yukle ────────────────────────────────────────────────
     _emit("shorts_upload", "stage_started")
     shorts_upload_error = None
+    short_upload_skipped_reason = None
     if upload_error:
-        _emit("shorts_upload", "stage_completed", {"short_uploaded": False, "skipped": True, "reason": "main_upload_failed"})
+        short_upload_skipped_reason = "main_upload_failed"
     elif result.get("short_path"):
         try:
             from .content_generator import VideoContent as VC
@@ -1318,6 +1552,9 @@ def run_full_pipeline(
                 privacy="public",
                 publish_at=None,
             )
+            if not str(short_id or "").strip():
+                raise RuntimeError("short_upload_missing_video_id")
+            result["short_video_id"] = str(short_id)
             result["short_url"] = f"https://youtube.com/shorts/{short_id}"
             result["short_thumbnail_path"] = short_thumbnail_path
 
@@ -1345,7 +1582,9 @@ def run_full_pipeline(
             shorts_upload_error = e
             logger.error(f"Short yuklenemedi: {e}")
     if result.get("short_path"):
-        if result.get("short_url"):
+        if short_upload_skipped_reason:
+            _emit("shorts_upload", "stage_completed", {"short_uploaded": False, "skipped": True, "reason": short_upload_skipped_reason})
+        elif result.get("short_url"):
             _emit("shorts_upload", "stage_completed", {"short_uploaded": True})
         else:
             _emit(
@@ -1426,10 +1665,40 @@ def run_full_pipeline(
                 )
 
     logger.info("=" * 60)
-    logger.info(f"✅ TAMAMLANDI! Video: {result.get('youtube_url')}")
+    if result.get("video_id"):
+        logger.info(f"✅ TAMAMLANDI! Video: {result.get('youtube_url')}")
+    else:
+        logger.error("❌ TAMAMLANAMADI: geçerli video_id oluşmadı")
     if result.get("short_url"):
         logger.info(f"✅ Short: {result['short_url']}")
     logger.info("=" * 60)
+
+    result["topic"] = topic or getattr(content, "title", "")
+    result["script"] = getattr(content, "script", "")
+    result["description"] = getattr(content, "description", "")
+    result["tags"] = list(getattr(content, "tags", []) or [])
+    result["finished_at"] = datetime.now(timezone.utc).isoformat()
+    if result.get("video_id"):
+        result["final_status"] = "success"
+    elif result.get("upload_error"):
+        result["final_status"] = "failed"
+    else:
+        result["final_status"] = "blocked"
+
+    try:
+        write_production_evidence(result)
+    except Exception:
+        pass
+    try:
+        update_production_observability_latest()
+        update_production_dashboard(
+            scheduler_status="pipeline_run",
+            build_sha=str(result.get("build_sha") or "unknown"),
+            scheduler_pid=result.get("scheduler_pid"),
+            last_error=result.get("upload_error"),
+        )
+    except Exception:
+        pass
 
     _refresh_observability_fields()
     return result

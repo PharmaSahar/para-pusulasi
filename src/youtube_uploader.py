@@ -97,6 +97,12 @@ class YouTubeUploader:
         # Beklenmeyen durumda güvenli taraf: retry etme.
         return "unknown_http_error", False
 
+    def _http_error_detail(self, err: HttpError) -> str:
+        content = getattr(err, "content", b"")
+        if isinstance(content, bytes):
+            return content.decode("utf-8", errors="ignore")[:600]
+        return str(content)[:600]
+
     def _get_service(self):
         if not self.service:
             from .youtube_auth import get_authenticated_service
@@ -535,22 +541,27 @@ class YouTubeUploader:
                     logger.info(f"Yükleniyor... %{progress}")
             except HttpError as e:
                 reason, retryable = self._classify_http_error(e)
+                status = getattr(getattr(e, "resp", None), "status", "unknown")
+                detail = self._http_error_detail(e)
                 if retryable and retry < MAX_RETRIES:
                     retry += 1
                     wait = 2 ** retry
                     logger.warning(
-                        "Transient upload HTTP hatası (%s), %ss sonra yeniden denenecek (%s/%s)",
+                        "Transient upload HTTP hatası (%s, status=%s), %ss sonra yeniden denenecek (%s/%s). detail=%s",
                         reason,
+                        status,
                         wait,
                         retry,
                         MAX_RETRIES,
+                        detail,
                     )
                     time.sleep(wait)
                 else:
                     logger.error(
-                        "Kalıcı upload HTTP hatası (%s, status=%s) - retry yok",
+                        "Kalıcı upload HTTP hatası (%s, status=%s) - retry yok. detail=%s",
                         reason,
-                        getattr(getattr(e, "resp", None), "status", "unknown"),
+                        status,
+                        detail,
                     )
                     raise
             except ServerNotFoundError as e:
@@ -576,8 +587,20 @@ class YouTubeUploader:
                     time.sleep(wait)
                 else:
                     raise
+        if not isinstance(response, dict):
+            logger.error("Upload yanıtı geçersiz tipte: %s", type(response).__name__)
+            raise RuntimeError("upload_response_invalid_type")
 
-        return response["id"]
+        video_id = str(response.get("id") or "").strip()
+        if not video_id:
+            logger.error(
+                "Upload yanıtında video ID yok. keys=%s response=%s",
+                sorted(response.keys()),
+                json.dumps(response, ensure_ascii=False)[:600],
+            )
+            raise RuntimeError("upload_response_missing_id")
+
+        return video_id
 
     def _ensure_dns_resolution(self, host: str) -> None:
         try:

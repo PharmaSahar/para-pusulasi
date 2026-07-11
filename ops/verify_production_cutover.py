@@ -162,15 +162,14 @@ def main() -> int:
     if build.get("sha") and head != "unknown":
         result["checks"]["build_sha_matches_head"] = build["sha"] == head
 
-    result["ok"] = all(
-        [
-            bool(result["pid"]),
-            result["process_running"],
-            result["checks"]["command_contains_scheduler"],
-            result["checks"]["cwd_matches_root"],
-            result["checks"]["build_info_present"],
-        ]
+    required_checks = (
+        "pid_present",
+        "command_contains_scheduler",
+        "cwd_matches_root",
+        "build_info_present",
+        "build_sha_matches_head",
     )
+    result["ok"] = all(bool(result["checks"].get(name)) for name in required_checks)
 
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["ok"] else 1

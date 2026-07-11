@@ -4,9 +4,52 @@ Finansal Grafik Üretici
 - Video içine embed edilecek PNG formatında
 """
 import logging
+import math
+import re
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def _coerce_numeric_value(raw_value) -> float | None:
+    if isinstance(raw_value, bool):
+        return None
+    if isinstance(raw_value, (int, float)):
+        value = float(raw_value)
+        return value if math.isfinite(value) else None
+
+    text = str(raw_value or "").strip()
+    if not text:
+        return None
+
+    if text.endswith("%"):
+        text = text[:-1].strip()
+
+    text = text.replace(" ", "")
+
+    if "," in text and "." in text:
+        if text.rfind(",") > text.rfind("."):
+            text = text.replace(".", "").replace(",", ".")
+        else:
+            text = text.replace(",", "")
+    elif "," in text:
+        if text.count(",") == 1:
+            left, right = text.split(",", 1)
+            if right.isdigit() and len(right) <= 2:
+                text = f"{left}.{right}"
+            else:
+                text = left + right
+        else:
+            text = text.replace(",", "")
+
+    if not re.fullmatch(r"[+-]?\d+(?:\.\d+)?", text):
+        return None
+
+    try:
+        value = float(text)
+    except Exception:
+        return None
+    return value if math.isfinite(value) else None
 
 
 def generate_chart(chart_data: dict, output_path: str) -> str | None:
@@ -31,11 +74,26 @@ def generate_chart(chart_data: dict, output_path: str) -> str | None:
         chart_type = chart_data.get("type", "bar")
         title = chart_data.get("title", "")
         data = chart_data.get("data", {})
-        labels = data.get("labels", [])
-        values = data.get("values", [])
+        labels = list(data.get("labels", []))
+        values = list(data.get("values", []))
 
         if not labels or not values:
             return None
+
+        valid_rows: list[tuple[str, float]] = []
+        for idx, (label, raw_value) in enumerate(zip(labels, values)):
+            parsed = _coerce_numeric_value(raw_value)
+            if parsed is None:
+                logger.warning("Grafik satırı atlandı: index=%s label=%r raw_value=%r", idx, label, raw_value)
+                continue
+            valid_rows.append((str(label), parsed))
+
+        if not valid_rows:
+            logger.warning("Grafik üretilemedi: geçerli sayısal veri yok")
+            return None
+
+        labels = [label for label, _ in valid_rows]
+        values_num = [value for _, value in valid_rows]
 
         # Türk finans kanalı tema renkleri
         PRIMARY = "#D4AF37"   # Altın sarısı
@@ -47,8 +105,6 @@ def generate_chart(chart_data: dict, output_path: str) -> str | None:
         fig, ax = plt.subplots(figsize=(12, 6.75))  # 16:9 oran
         fig.patch.set_facecolor(BG)
         ax.set_facecolor(BG)
-
-        values_num = [float(v) for v in values]
 
         if chart_type == "bar":
             colors = [PRIMARY if v >= 0 else "#FF4757" for v in values_num]

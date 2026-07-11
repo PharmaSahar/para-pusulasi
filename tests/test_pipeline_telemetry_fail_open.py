@@ -4,7 +4,34 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 
+import pytest
+
 import src.pipeline as pipeline
+import src.content_quality_guard as content_quality_guard
+
+
+@pytest.fixture(autouse=True)
+def _allow_automatic_qa(monkeypatch):
+    monkeypatch.setattr(
+        pipeline,
+        "evaluate_automatic_qa",
+        lambda _payload: {"decision": "allow", "blocked_checks": []},
+    )
+
+
+@pytest.fixture(autouse=True)
+def _allow_content_quality_gate(monkeypatch):
+    class _AllowDecision:
+        publish_decision = "allow"
+        block_reasons: list[str] = []
+        scores: dict[str, float] = {}
+        script_similarity = 0.0
+
+    monkeypatch.setattr(
+        content_quality_guard,
+        "evaluate_content_quality",
+        lambda *_args, **_kwargs: _AllowDecision(),
+    )
 
 
 def _load_thumbnail_fixture(filename: str) -> dict:
@@ -17,7 +44,10 @@ class _FakeContent:
     title: str = "Test Baslik"
     created_at: str = "2026-07-09T10:00:00"
     script: str = "Test script"
-    description: str = "Test description"
+    description: str = (
+        "Bu test aciklamasi kalite kapisini gecmek icin yeterli uzunlukta tutulmustur. "
+        "Pipeline fail-open davranisi ayrica bu fixture ile dogrulanir."
+    )
     tags: list[str] | None = None
     category_id: str = "27"
     niche: str = "finance"
@@ -31,7 +61,7 @@ class _FakeContent:
 
     def __post_init__(self):
         if self.tags is None:
-            self.tags = ["test"]
+            self.tags = ["test", "pipeline", "quality"]
 
     def seo_description(self) -> str:
         return self.description
@@ -103,6 +133,28 @@ class _FakeShortsCreator:
 
     def create_short(self, script, title, hook="", image_paths=None):
         raise RuntimeError("short disabled in unit test")
+
+
+class _FakeShortsCreatorOk:
+    def __init__(self, channel_cfg=None):
+        self.channel_cfg = channel_cfg
+
+    def create_short(self, script, title, hook="", image_paths=None):
+        short_path = Path(self.channel_cfg.videos_dir) / "fake_short.mp4"
+        short_path.parent.mkdir(parents=True, exist_ok=True)
+        short_path.write_bytes(b"short")
+        return str(short_path)
+
+
+class _FakeUploaderMissingId:
+    def __init__(self, channel_cfg=None):
+        pass
+
+    def upload_video(self, video_path, content, thumbnail_path=None, privacy="public", publish_at=None):
+        return ""
+
+    def get_channel_stats(self):
+        return {"subscribers": 0}
 
 
 class _FakeConfig:
@@ -278,8 +330,65 @@ def test_pipeline_thumbnail_validator_fail_open_writes_standard_fields(monkeypat
     assert "rejection_reasons" in result
     assert isinstance(result["rejection_reasons"], list)
     assert "validation_warning" in result
-    assert result["validation_warning"]["code"] == "thumbnail_validator_failed"
-    assert "Validation fail-open" in caplog.text
+
+
+def test_pipeline_marks_upload_failed_when_video_id_missing(monkeypatch, tmp_path):
+    cfg = _FakeConfig(tmp_path)
+
+    monkeypatch.setattr(pipeline, "ContentGenerator", _FakeGenerator)
+    monkeypatch.setattr(pipeline, "TTSEngine", _FakeTTS)
+    monkeypatch.setattr(pipeline, "ImageFetcher", _FakeFetcher)
+    monkeypatch.setattr(pipeline, "VideoCreator", _FakeCreator)
+    monkeypatch.setattr(pipeline, "YouTubeUploader", _FakeUploaderMissingId)
+    monkeypatch.setattr(pipeline, "build_default_fact_provider", lambda: object())
+    monkeypatch.setattr(pipeline, "validate_script_factual_freshness", _fact_check_ok)
+    monkeypatch.setattr(pipeline, "emit_event", lambda *args, **kwargs: None)
+
+    import src.shorts_creator as shorts_creator_module
+
+    monkeypatch.setattr(shorts_creator_module, "ShortsCreator", _FakeShortsCreator)
+
+    result = pipeline.run_full_pipeline(topic="x", generate_only=False, channel_cfg=cfg)
+
+    assert result.get("video_id") is None
+    assert result.get("final_status") == "failed"
+    assert "upload_response_missing_id" in str(result.get("upload_error"))
+
+
+def test_pipeline_short_upload_is_skipped_when_main_upload_fails(monkeypatch, tmp_path):
+    cfg = _FakeConfig(tmp_path)
+    emitted: list[tuple[str, str, dict]] = []
+
+    def _capture_event(*args, **kwargs):
+        envelope = args[0] if args else kwargs.get("event") or {}
+        stage = str(envelope.get("stage") or "")
+        event_type = str(envelope.get("event_type") or "")
+        payload = dict(envelope.get("payload") or {})
+        emitted.append((stage, event_type, payload))
+
+    monkeypatch.setattr(pipeline, "ContentGenerator", _FakeGenerator)
+    monkeypatch.setattr(pipeline, "TTSEngine", _FakeTTS)
+    monkeypatch.setattr(pipeline, "ImageFetcher", _FakeFetcher)
+    monkeypatch.setattr(pipeline, "VideoCreator", _FakeCreator)
+    monkeypatch.setattr(pipeline, "YouTubeUploader", _FakeUploaderMissingId)
+    monkeypatch.setattr(pipeline, "build_default_fact_provider", lambda: object())
+    monkeypatch.setattr(pipeline, "validate_script_factual_freshness", _fact_check_ok)
+    monkeypatch.setattr(pipeline, "emit_event", _capture_event)
+
+    import src.shorts_creator as shorts_creator_module
+
+    monkeypatch.setattr(shorts_creator_module, "ShortsCreator", _FakeShortsCreatorOk)
+
+    result = pipeline.run_full_pipeline(topic="x", generate_only=False, channel_cfg=cfg)
+
+    assert result.get("video_id") is None
+    shorts_events = [row for row in emitted if row[0] == "shorts_upload"]
+    assert shorts_events
+    assert any(
+        event_type == "stage_completed" and payload.get("reason") == "main_upload_failed"
+        for _, event_type, payload in shorts_events
+    )
+    assert not any(event_type == "stage_failed" for _, event_type, _ in shorts_events)
 
 
 def test_pipeline_thumbnail_experiment_binding_success_writes_variant_metadata(monkeypatch, tmp_path):

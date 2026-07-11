@@ -193,6 +193,35 @@ def test_resumable_upload_retries_timeout(monkeypatch):
     assert sleeps == [2]
 
 
+def test_resumable_upload_fails_when_response_has_no_video_id(monkeypatch):
+    request = _FakeRequest([(None, {"kind": "youtube#video"})])
+    uploader = youtube_uploader.YouTubeUploader()
+    monkeypatch.setattr(youtube_uploader.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(RuntimeError, match="upload_response_missing_id"):
+        uploader._resumable_upload(request)  # noqa: SLF001
+
+    assert request.calls == 1
+
+
+def test_resumable_upload_transient_errors_retry_with_bounded_limit(monkeypatch):
+    request = _FakeRequest([
+        _make_http_error(503, b"service unavailable"),
+        _make_http_error(503, b"service unavailable"),
+        _make_http_error(503, b"service unavailable"),
+        _make_http_error(503, b"service unavailable"),
+    ])
+    uploader = youtube_uploader.YouTubeUploader()
+    sleeps: list[int] = []
+    monkeypatch.setattr(youtube_uploader.time, "sleep", lambda seconds: sleeps.append(seconds))
+
+    with pytest.raises(HttpError):
+        uploader._resumable_upload(request)  # noqa: SLF001
+
+    assert request.calls == 4
+    assert sleeps == [2, 4, 8]
+
+
 def test_default_language_uses_channel_config_first(monkeypatch):
     uploader = youtube_uploader.YouTubeUploader(channel_cfg=SimpleNamespace(language="en-US"))
     monkeypatch.setattr(youtube_uploader.config, "channel_language", "tr")

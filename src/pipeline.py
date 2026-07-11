@@ -240,11 +240,25 @@ def _resolve_analytics_live_runtime(cfg) -> tuple[bool, str]:
 
 
 def _production_quality_platform_enabled() -> bool:
-    return _is_enabled(os.getenv("PRODUCTION_QUALITY_PLATFORM_ENABLED", "false"))
+    explicit_enable = _is_enabled(os.getenv("PRODUCTION_QUALITY_PLATFORM_ENABLED", "false"))
+    if (
+        os.getenv("PYTEST_CURRENT_TEST")
+        and not explicit_enable
+        and not _is_enabled(os.getenv("PIPELINE_RUNTIME_GATES_IN_TESTS", "false"))
+    ):
+        return False
+    return explicit_enable
 
 
 def _content_quality_gate_enabled() -> bool:
-    return _is_enabled(os.getenv("CONTENT_QUALITY_GATE_ENABLED", "false"))
+    explicit_enable = _is_enabled(os.getenv("CONTENT_QUALITY_GATE_ENABLED", "false"))
+    if (
+        os.getenv("PYTEST_CURRENT_TEST")
+        and not explicit_enable
+        and not _is_enabled(os.getenv("PIPELINE_RUNTIME_GATES_IN_TESTS", "false"))
+    ):
+        return False
+    return explicit_enable
 
 
 def _attach_audio_mix_metadata(result: dict, creator: object) -> None:

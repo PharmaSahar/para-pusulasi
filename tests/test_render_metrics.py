@@ -1,4 +1,5 @@
 import importlib
+import hashlib
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,8 +14,15 @@ def _install_fake_dotenv(monkeypatch):
     monkeypatch.setitem(sys.modules, "dotenv", fake_module)
 
 
-def _import_pipeline_with_stubs(monkeypatch):
+def _import_pipeline_with_stubs(monkeypatch, tmp_path: Path):
     _install_fake_dotenv(monkeypatch)
+
+    dashboard_md_path = tmp_path / "production_dashboard_latest.md"
+    dashboard_json_path = tmp_path / "production_dashboard_latest.json"
+
+    # Force dashboard artifacts to an isolated tmp path before importing modules.
+    monkeypatch.setenv("PRODUCTION_DASHBOARD_MD_PATH", str(dashboard_md_path))
+    monkeypatch.setenv("PRODUCTION_DASHBOARD_JSON_PATH", str(dashboard_json_path))
 
     fake_config = ModuleType("src.config")
 
@@ -48,6 +56,7 @@ def _import_pipeline_with_stubs(monkeypatch):
 
     fake_content_generator.ContentGenerator = DummyGenerator
     fake_content_generator.VideoContent = DummyVideoContent
+    fake_content_generator.TopicDomainBlockedError = type("TopicDomainBlockedError", (Exception,), {})
     monkeypatch.setitem(sys.modules, "src.content_generator", fake_content_generator)
 
     for module_name, class_name in [
@@ -60,8 +69,19 @@ def _import_pipeline_with_stubs(monkeypatch):
         setattr(fake_module, class_name, type(class_name, (), {}))
         monkeypatch.setitem(sys.modules, module_name, fake_module)
 
+    sys.modules.pop("src.production_quality_platform", None)
     sys.modules.pop("src.pipeline", None)
-    return importlib.import_module("src.pipeline")
+    pipeline = importlib.import_module("src.pipeline")
+
+    # Reinforce isolation even if function globals were bound from a prior import chain.
+    prod_globals = pipeline.update_production_dashboard.__globals__
+    monkeypatch.setitem(prod_globals, "PRODUCTION_DASHBOARD_MD_PATH", dashboard_md_path)
+    monkeypatch.setitem(prod_globals, "PRODUCTION_DASHBOARD_JSON_PATH", dashboard_json_path)
+    return pipeline
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def test_build_render_metrics_has_expected_shape_and_non_negative_duration():
@@ -99,8 +119,10 @@ def test_build_render_metrics_clamps_negative_duration_to_zero():
     assert metrics["render_duration_seconds"] == 0.0
 
 
-def test_pipeline_attaches_render_metrics_on_success(monkeypatch):
-    pipeline = _import_pipeline_with_stubs(monkeypatch)
+def test_pipeline_attaches_render_metrics_on_success(monkeypatch, tmp_path):
+    pipeline = _import_pipeline_with_stubs(monkeypatch, tmp_path)
+    tracked_dashboard = Path(__file__).resolve().parents[1] / "docs" / "production_dashboard_latest.md"
+    baseline_dashboard = _sha256(tracked_dashboard)
 
     class FakeContent:
         title = "Title"
@@ -214,10 +236,13 @@ def test_pipeline_attaches_render_metrics_on_success(monkeypatch):
     assert metrics["output_resolution"] == "1920x1080"
     assert metrics["output_fps"] == 24
     assert metrics["render_duration_seconds"] >= 0
+    assert _sha256(tracked_dashboard) == baseline_dashboard
 
 
-def test_pipeline_keeps_fail_open_when_render_metrics_builder_raises(monkeypatch):
-    pipeline = _import_pipeline_with_stubs(monkeypatch)
+def test_pipeline_keeps_fail_open_when_render_metrics_builder_raises(monkeypatch, tmp_path):
+    pipeline = _import_pipeline_with_stubs(monkeypatch, tmp_path)
+    tracked_dashboard = Path(__file__).resolve().parents[1] / "docs" / "production_dashboard_latest.md"
+    baseline_dashboard = _sha256(tracked_dashboard)
 
     class FakeContent:
         title = "Title"
@@ -325,10 +350,11 @@ def test_pipeline_keeps_fail_open_when_render_metrics_builder_raises(monkeypatch
 
     assert result["video_id"] == "video-id"
     assert result["render_metrics"] == {}
+    assert _sha256(tracked_dashboard) == baseline_dashboard
 
 
-def test_pipeline_preserves_existing_failure_behavior_when_render_fails(monkeypatch):
-    pipeline = _import_pipeline_with_stubs(monkeypatch)
+def test_pipeline_preserves_existing_failure_behavior_when_render_fails(monkeypatch, tmp_path):
+    pipeline = _import_pipeline_with_stubs(monkeypatch, tmp_path)
 
     class FakeContent:
         title = "Title"

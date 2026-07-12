@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -11,6 +12,7 @@ from src.scheduler_utils import (
     _classify_error_decision,
     get_global_overload_pause_status,
     get_provider_circuit_status,
+    notify_error,
     record_provider_failure,
 )
 
@@ -21,7 +23,23 @@ def _stub_scheduler_singleton_lock(monkeypatch):
     monkeypatch.setattr(scheduler, "_release_scheduler_singleton_lock", lambda: None)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_production_dashboard_paths(monkeypatch, tmp_path: Path):
+    dashboard_md_path = tmp_path / "production_dashboard_latest.md"
+    dashboard_json_path = tmp_path / "production_dashboard_latest.json"
+
+    monkeypatch.setenv("PRODUCTION_DASHBOARD_MD_PATH", str(dashboard_md_path))
+    monkeypatch.setenv("PRODUCTION_DASHBOARD_JSON_PATH", str(dashboard_json_path))
+
+    # scheduler imports update_production_dashboard at module import time, so patch
+    # function globals directly to avoid writes to tracked repo docs during tests.
+    prod_globals = scheduler.update_production_dashboard.__globals__
+    monkeypatch.setitem(prod_globals, "PRODUCTION_DASHBOARD_MD_PATH", dashboard_md_path)
+    monkeypatch.setitem(prod_globals, "PRODUCTION_DASHBOARD_JSON_PATH", dashboard_json_path)
+
+
 def test_main_exits_when_provider_preflight_fails(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_FAIL_OPEN_LOCAL_CONTENT", "0")
     monkeypatch.setattr(scheduler.sys, "argv", ["scheduler.py"])
 
     class _StartupResult:
@@ -38,6 +56,69 @@ def test_main_exits_when_provider_preflight_fails(monkeypatch):
         scheduler.main()
 
     assert exc.value.code == 1
+    assert calls["ready"] == 0
+
+
+def test_main_continues_when_provider_preflight_fails_but_local_fail_open_enabled(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_FAIL_OPEN_LOCAL_CONTENT", "1")
+    monkeypatch.setattr(scheduler.sys, "argv", ["scheduler.py"])
+
+    class _StartupResult:
+        ok = True
+        errors = ()
+
+    class _StopLoop(Exception):
+        pass
+
+    class _FakeEvery:
+        @property
+        def day(self):
+            return self
+
+        def at(self, *_args, **_kwargs):
+            return self
+
+        @property
+        def hours(self):
+            return self
+
+        @property
+        def hour(self):
+            return self
+
+        def do(self, *_args, **_kwargs):
+            return self
+
+    fake_schedule = SimpleNamespace(
+        every=lambda *args, **kwargs: _FakeEvery(),
+        run_pending=lambda: (_ for _ in ()).throw(_StopLoop()),
+    )
+
+    class _FakeThread:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            pass
+
+    fake_utils = SimpleNamespace(
+        cleanup_old_renders=lambda **kwargs: None,
+        notify_startup=lambda _n: None,
+    )
+
+    calls = {"ready": 0}
+    monkeypatch.setattr(scheduler, "_run_startup_health_check", lambda **_kwargs: _StartupResult())
+    monkeypatch.setattr(scheduler, "_run_provider_preflight_check", lambda **_kwargs: (False, "credit balance low"))
+    monkeypatch.setattr(scheduler, "get_ready_channels", lambda: calls.__setitem__("ready", calls["ready"] + 1) or ["demo"])
+    monkeypatch.setattr(scheduler, "setup_schedule", lambda: ["demo"])
+    monkeypatch.setattr(scheduler, "catch_up_overdue_queue_entries", lambda: {})
+    monkeypatch.setattr(scheduler, "schedule", fake_schedule)
+    monkeypatch.setattr(scheduler.threading, "Thread", _FakeThread)
+    monkeypatch.setitem(sys.modules, "src.scheduler_utils", fake_utils)
+
+    with pytest.raises(SystemExit):
+        scheduler.main()
+
     assert calls["ready"] == 0
 
 
@@ -108,6 +189,7 @@ def test_main_skip_provider_preflight_flag(monkeypatch):
 
 
 def test_render_and_schedule_skips_when_provider_circuit_open(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_FAIL_OPEN_LOCAL_CONTENT", "0")
     import src.channel_manager as channel_manager
     import src.scheduler_utils as scheduler_utils
     import src.pipeline as pipeline
@@ -139,6 +221,7 @@ def test_render_and_schedule_skips_when_provider_circuit_open(monkeypatch):
 
 
 def test_render_and_schedule_skips_when_global_overload_pause_open(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_FAIL_OPEN_LOCAL_CONTENT", "0")
     import src.channel_manager as channel_manager
     import src.scheduler_utils as scheduler_utils
     import src.pipeline as pipeline
@@ -303,3 +386,66 @@ def test_render_and_schedule_does_not_outer_retry_provider_handled_exception(mon
 
     assert calls["pipeline"] == 1
     assert calls["notify"] == 1
+
+
+def test_render_and_schedule_continues_when_provider_circuit_open_in_fail_open_mode(monkeypatch):
+    import src.channel_manager as channel_manager
+    import src.scheduler_utils as scheduler_utils
+    import src.pipeline as pipeline
+
+    channel_cfg = SimpleNamespace(name="Demo Channel", upload_times=["10:00"])
+
+    monkeypatch.setattr(channel_manager, "get_channel", lambda _cid: channel_cfg)
+    monkeypatch.setattr(scheduler_utils, "check_disk_space", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        scheduler_utils,
+        "get_provider_circuit_status",
+        lambda _provider: {"provider": "anthropic", "is_open": True, "retry_after_seconds": 120, "state": {}},
+    )
+
+    called = {"pipeline": 0, "notify": 0}
+
+    monkeypatch.setattr(
+        pipeline,
+        "run_full_pipeline",
+        lambda **_kwargs: called.__setitem__("pipeline", called["pipeline"] + 1) or {"video_id": "vid1", "title": "ok", "youtube_url": "https://youtube.com/watch?v=vid1"},
+    )
+    monkeypatch.setattr(scheduler_utils, "notify_error", lambda *_args, **_kwargs: called.__setitem__("notify", called["notify"] + 1) or {})
+    monkeypatch.setattr(scheduler_utils, "notify_upload", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(scheduler_utils, "force_cleanup", lambda: None)
+    monkeypatch.setattr(scheduler_utils, "save_used_topic", lambda *_args, **_kwargs: None)
+
+    scheduler.render_and_schedule("demo_channel")
+
+    assert called["pipeline"] == 0
+    assert called["notify"] == 1
+
+
+def test_notify_error_dedupes_anthropic_cooldown_across_channels(monkeypatch, tmp_path):
+    import src.scheduler_utils as scheduler_utils
+
+    alerts_file = tmp_path / "alerts_sent.json"
+    sent = []
+
+    monkeypatch.setattr(scheduler_utils, "ALERTS_FILE", str(alerts_file))
+    monkeypatch.setattr(scheduler_utils, "send_telegram", lambda message: sent.append(message))
+
+    notify_error("Teknoloji Pusulasi", "Anthropic circuit open; provider is cooling down (580s)")
+    notify_error("Borsa Akademi", "Anthropic circuit open; provider is cooling down (595s)")
+
+    assert len(sent) == 1
+
+
+def test_notify_error_keeps_non_cooldown_alerts_channel_scoped(monkeypatch, tmp_path):
+    import src.scheduler_utils as scheduler_utils
+
+    alerts_file = tmp_path / "alerts_sent.json"
+    sent = []
+
+    monkeypatch.setattr(scheduler_utils, "ALERTS_FILE", str(alerts_file))
+    monkeypatch.setattr(scheduler_utils, "send_telegram", lambda message: sent.append(message))
+
+    notify_error("Teknoloji Pusulasi", "Disk alanı kritik seviyede!")
+    notify_error("Borsa Akademi", "Disk alanı kritik seviyede!")
+
+    assert len(sent) == 2

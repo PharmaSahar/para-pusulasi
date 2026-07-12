@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import importlib
 import json
 from pathlib import Path
+
+import pytest
 
 
 def test_record_event_writes_observability_and_dashboard(tmp_path, monkeypatch):
@@ -134,3 +137,46 @@ def test_canary_gate_decision(tmp_path, monkeypatch):
 
     allowed = canary_gate_decision("ch_canary")
     assert allowed["allow"] is True
+
+
+def test_export_runtime_dashboard_to_docs(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PRODUCTION_DASHBOARD_MD_PATH", str(tmp_path / "runtime" / "dashboard.md"))
+
+    import src.production_quality_platform as pqp
+
+    pqp = importlib.reload(pqp)
+    pqp.update_production_dashboard(
+        scheduler_status="active",
+        build_sha="abc1234",
+        scheduler_pid=77,
+        last_error=None,
+    )
+
+    target = tmp_path / "docs" / "production_dashboard_latest.md"
+    out = pqp.export_runtime_dashboard_to_docs(docs_path=target)
+    assert out["ok"] is True
+    assert target.exists()
+    assert "Production Dashboard (Latest)" in target.read_text(encoding="utf-8")
+
+
+def test_dashboard_runtime_write_guard_blocks_tracked_docs_in_strict_mode(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("RUNTIME_TRACKED_WRITE_STRICT", "true")
+
+    import src.production_quality_platform as pqp
+    from src.runtime_storage import TrackedRuntimeWriteError, repo_root
+
+    monkeypatch.setenv(
+        "PRODUCTION_DASHBOARD_MD_PATH",
+        str(repo_root() / "docs" / "production_dashboard_latest.md"),
+    )
+
+    pqp = importlib.reload(pqp)
+    with pytest.raises(TrackedRuntimeWriteError, match="runtime_tracked_write_blocked"):
+        pqp.update_production_dashboard(
+            scheduler_status="active",
+            build_sha="abc1234",
+            scheduler_pid=99,
+            last_error=None,
+        )

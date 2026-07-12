@@ -7,15 +7,27 @@ artifact writes, but fail-closed for mandatory QA/script gates.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
+import logging
 import os
 import time
+import threading
+import traceback
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
 from .channel_performance import load_recent_performance_snapshots
+from .runtime_storage import (
+    docs_dashboard_path,
+    env_or_runtime_path,
+    validate_runtime_write_path,
+)
 from .visual_diversity import topic_similarity
+
+
+logger = logging.getLogger("ProductionQualityPlatform")
 
 
 def _env_path(key: str, default: str) -> Path:
@@ -51,15 +63,49 @@ def _assert_preprod_mutable_path(path: Path, *, env_key: str) -> None:
         )
 
 
-PRODUCTION_EVENTS_PATH = _env_path("PRODUCTION_EVENTS_PATH", "logs/production_events.jsonl")
-PRODUCTION_OBSERVABILITY_LATEST_PATH = _env_path("PRODUCTION_OBSERVABILITY_LATEST_PATH", "logs/production_observability_latest.json")
-PRODUCTION_DASHBOARD_JSON_PATH = _env_path("PRODUCTION_DASHBOARD_JSON_PATH", "logs/production_dashboard_latest.json")
-PRODUCTION_DASHBOARD_MD_PATH = _env_path("PRODUCTION_DASHBOARD_MD_PATH", "docs/production_dashboard_latest.md")
-THUMBNAIL_INTELLIGENCE_LATEST_PATH = _env_path("THUMBNAIL_INTELLIGENCE_LATEST_PATH", "logs/thumbnail_intelligence_latest.json")
-PRODUCTION_EVIDENCE_DIR = _env_path("PRODUCTION_EVIDENCE_DIR", "logs/production_evidence")
-UPLOAD_REGISTRY_PATH = _env_path("UPLOAD_REGISTRY_PATH", "logs/production_upload_registry.json")
-DEAD_LETTER_QUEUE_PATH = _env_path("DEAD_LETTER_QUEUE_PATH", "logs/production_dead_letter_queue.jsonl")
-CANARY_STATE_PATH = _env_path("CANARY_STATE_PATH", "logs/production_canary_state.json")
+PRODUCTION_EVENTS_PATH = env_or_runtime_path("PRODUCTION_EVENTS_PATH", "telemetry/production_events.jsonl")
+PRODUCTION_OBSERVABILITY_LATEST_PATH = env_or_runtime_path(
+    "PRODUCTION_OBSERVABILITY_LATEST_PATH",
+    "telemetry/production_observability_latest.json",
+)
+PRODUCTION_DASHBOARD_JSON_PATH = env_or_runtime_path("PRODUCTION_DASHBOARD_JSON_PATH", "state/production_dashboard_latest.json")
+PRODUCTION_DASHBOARD_MD_PATH = env_or_runtime_path("PRODUCTION_DASHBOARD_MD_PATH", "state/production_dashboard_latest.md")
+THUMBNAIL_INTELLIGENCE_LATEST_PATH = env_or_runtime_path(
+    "THUMBNAIL_INTELLIGENCE_LATEST_PATH",
+    "telemetry/thumbnail_intelligence_latest.json",
+)
+PRODUCTION_EVIDENCE_DIR = env_or_runtime_path("PRODUCTION_EVIDENCE_DIR", "evidence")
+UPLOAD_REGISTRY_PATH = env_or_runtime_path("UPLOAD_REGISTRY_PATH", "state/production_upload_registry.json")
+DEAD_LETTER_QUEUE_PATH = env_or_runtime_path("DEAD_LETTER_QUEUE_PATH", "telemetry/production_dead_letter_queue.jsonl")
+CANARY_STATE_PATH = env_or_runtime_path("CANARY_STATE_PATH", "state/production_canary_state.json")
+
+
+def _trace_dashboard_write(*, target: Path, write_mode: str, atomic: bool, bytes_written: int) -> None:
+    trace_path_raw = str(os.getenv("DASHBOARD_WRITE_TRACE_PATH", "")).strip()
+    if not trace_path_raw:
+        return
+
+    payload = {
+        "timestamp": _now_iso(),
+        "pid": os.getpid(),
+        "thread_id": threading.get_ident(),
+        "test_node_id": str(os.getenv("PYTEST_CURRENT_TEST", "") or ""),
+        "caller_function": inspect.stack()[1].function,
+        "target_path": str(target),
+        "write_mode": write_mode,
+        "atomic": bool(atomic),
+        "bytes_written": int(max(0, bytes_written)),
+        "stack_trace": traceback.format_stack(),
+    }
+
+    try:
+        trace_path = Path(trace_path_raw)
+        trace_path.parent.mkdir(parents=True, exist_ok=True)
+        with trace_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
+    except Exception:
+        # Tracing must stay fail-open for production logic.
+        return
 
 
 def _now_iso() -> str:
@@ -85,16 +131,25 @@ def _safe_read_json(path: Path) -> dict[str, Any]:
 
 
 def _safe_write_json(path: Path, payload: dict[str, Any]) -> None:
+    if not validate_runtime_write_path(path, purpose="safe_write_json", logger=logger):
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    encoded = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+    tmp.write_text(encoded, encoding="utf-8")
+    _trace_dashboard_write(target=tmp, write_mode="overwrite", atomic=False, bytes_written=len(encoded.encode("utf-8")))
     tmp.replace(path)
+    _trace_dashboard_write(target=path, write_mode="replace", atomic=True, bytes_written=len(encoded.encode("utf-8")))
 
 
 def _append_jsonl(path: Path, payload: dict[str, Any]) -> None:
+    if not validate_runtime_write_path(path, purpose="append_jsonl", logger=logger):
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n"
     with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
+        handle.write(encoded)
+    _trace_dashboard_write(target=path, write_mode="append", atomic=False, bytes_written=len(encoded.encode("utf-8")))
 
 
 def _tokenize(text: str) -> set[str]:
@@ -347,6 +402,11 @@ def update_production_dashboard(
     scheduler_pid: int | None,
     last_error: str | None = None,
 ) -> dict[str, Any]:
+    if not validate_runtime_write_path(PRODUCTION_DASHBOARD_JSON_PATH, purpose="dashboard_json", logger=logger):
+        return {}
+    if not validate_runtime_write_path(PRODUCTION_DASHBOARD_MD_PATH, purpose="dashboard_markdown", logger=logger):
+        return {}
+
     _assert_preprod_mutable_path(
         PRODUCTION_DASHBOARD_MD_PATH,
         env_key="PRODUCTION_DASHBOARD_MD_PATH",
@@ -429,8 +489,39 @@ def update_production_dashboard(
         md_lines.append(f"- {channel}: total={row['total']} success={row['success']} failed={row['failed']}")
 
     PRODUCTION_DASHBOARD_MD_PATH.parent.mkdir(parents=True, exist_ok=True)
-    PRODUCTION_DASHBOARD_MD_PATH.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+    dashboard_md = "\n".join(md_lines) + "\n"
+    PRODUCTION_DASHBOARD_MD_PATH.write_text(dashboard_md, encoding="utf-8")
+    _trace_dashboard_write(
+        target=PRODUCTION_DASHBOARD_MD_PATH,
+        write_mode="overwrite",
+        atomic=False,
+        bytes_written=len(dashboard_md.encode("utf-8")),
+    )
     return payload
+
+
+def export_runtime_dashboard_to_docs(
+    *,
+    source_path: Path | None = None,
+    docs_path: Path | None = None,
+) -> dict[str, Any]:
+    source = source_path or PRODUCTION_DASHBOARD_MD_PATH
+    target = docs_path or docs_dashboard_path()
+    if not source.exists():
+        raise FileNotFoundError(f"runtime_dashboard_missing: {source}")
+
+    content = source.read_text(encoding="utf-8")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_suffix(target.suffix + ".tmp")
+    tmp.write_text(content, encoding="utf-8")
+    tmp.replace(target)
+    logger.info("runtime_dashboard_exported: source=%s target=%s bytes=%s", source, target, len(content.encode("utf-8")))
+    return {
+        "source": str(source),
+        "target": str(target),
+        "bytes": len(content.encode("utf-8")),
+        "ok": True,
+    }
 
 
 def build_idempotency_key(*, channel: str, generation_id: str, publish_at: str | None, title: str) -> str:

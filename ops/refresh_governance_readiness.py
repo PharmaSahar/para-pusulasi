@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from src.runtime_storage import runtime_path
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -24,13 +26,13 @@ def _env_path(key: str, default: Path) -> Path:
     return Path(raw) if raw else default
 
 
-LOGS = _env_path("GOVERNANCE_LOG_DIR", ROOT / "logs")
+LOGS = _env_path("GOVERNANCE_LOG_DIR", runtime_path("telemetry"))
 MONITOR_PATH = _env_path("PROVEN_VALIDATED_MONITOR_PATH", LOGS / "proven_validated_monitor.jsonl")
-LATEST_PATH = _env_path("GOVERNANCE_REFRESH_LATEST_PATH", LOGS / "governance_refresh_run_latest.json")
+LATEST_PATH = _env_path("GOVERNANCE_REFRESH_LATEST_PATH", runtime_path("state/governance_refresh_run_latest.json"))
 
 
 def _resolve_readiness_markdown() -> Path:
-    return _env_path("GOVERNANCE_READINESS_MD_PATH", ROOT / "docs/governance_readiness_latest.md")
+    return _env_path("GOVERNANCE_READINESS_MD_PATH", runtime_path("state/governance_readiness_latest.md"))
 
 
 def _preprod_isolation_enabled() -> bool:

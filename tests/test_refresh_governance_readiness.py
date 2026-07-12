@@ -46,4 +46,4 @@ def test_run_refresh_artifacts_include_strict_evidence_bridge(tmp_path, monkeypa
 
     assert payload["ok"] is True
     assert "strict_evidence_bridge" in payload["artifacts"]
-    assert payload["artifacts"]["strict_evidence_bridge"].endswith("logs/governance_dashboard_bridge_latest.json")
+    assert payload["artifacts"]["strict_evidence_bridge"].endswith("output/runtime/telemetry/governance_dashboard_bridge_latest.json")

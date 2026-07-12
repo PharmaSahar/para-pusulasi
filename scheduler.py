@@ -39,6 +39,7 @@ from src.production_quality_platform import (
     record_dead_letter,
     update_production_dashboard,
 )
+from src.runtime_storage import runtime_path
 try:
     import fcntl
 except ImportError:  # pragma: no cover
@@ -70,7 +71,7 @@ def _path_string_from_env(env_key: str, default: str) -> str:
     return raw if raw else default
 
 # Loglama
-_SCHEDULER_LOG_FILE_PATH = _path_from_env("SCHEDULER_LOG_FILE", "logs/scheduler.log")
+_SCHEDULER_LOG_FILE_PATH = _path_from_env("SCHEDULER_LOG_FILE", str(runtime_path("logs/scheduler.log")))
 _SCHEDULER_LOG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
 _SCHEDULER_LOG_FILE_HANDLER = logging.FileHandler(_SCHEDULER_LOG_FILE_PATH, encoding="utf-8")
 _SCHEDULER_LOG_STREAM_HANDLER = logging.StreamHandler(sys.stdout)
@@ -144,12 +145,24 @@ except ValueError:
     MAX_PARALLEL_RENDERS = 1
 
 TZ = pytz.timezone("Europe/Istanbul")
-QUEUE_FILE = _path_string_from_env("SCHEDULER_QUEUE_FILE", "output/queue/channel_queue.json")
-PID_FILE = _path_from_env("SCHEDULER_PID_FILE", "logs/production_scheduler.pid")
-SCHEDULER_SINGLETON_LOCK_FILE = _path_from_env("SCHEDULER_SINGLETON_LOCK_FILE", "output/state/scheduler_singleton.lock")
-SCHEDULER_SINGLETON_META_FILE = _path_from_env("SCHEDULER_SINGLETON_META_FILE", "output/state/scheduler_singleton_meta.json")
-RUNTIME_EVIDENCE_LATEST_FILE = _path_from_env("RUNTIME_EVIDENCE_LATEST_FILE", "logs/runtime_optimization_evidence_latest.json")
-SAFETY_GATE_LATEST_FILE = _path_from_env("SAFETY_GATE_LATEST_FILE", "logs/production_safety_gate_latest.json")
+QUEUE_FILE = _path_string_from_env("SCHEDULER_QUEUE_FILE", str(runtime_path("state/channel_queue.json")))
+PID_FILE = _path_from_env("SCHEDULER_PID_FILE", str(runtime_path("state/production_scheduler.pid")))
+SCHEDULER_SINGLETON_LOCK_FILE = _path_from_env(
+    "SCHEDULER_SINGLETON_LOCK_FILE",
+    str(runtime_path("state/scheduler_singleton.lock")),
+)
+SCHEDULER_SINGLETON_META_FILE = _path_from_env(
+    "SCHEDULER_SINGLETON_META_FILE",
+    str(runtime_path("state/scheduler_singleton_meta.json")),
+)
+RUNTIME_EVIDENCE_LATEST_FILE = _path_from_env(
+    "RUNTIME_EVIDENCE_LATEST_FILE",
+    str(runtime_path("state/runtime_optimization_evidence_latest.json")),
+)
+SAFETY_GATE_LATEST_FILE = _path_from_env(
+    "SAFETY_GATE_LATEST_FILE",
+    str(runtime_path("state/production_safety_gate_latest.json")),
+)
 ACTIVATION_CONTROLLER_SCRIPT = Path("ops/activation_controller.py")
 FLEET_HEALTH_SCRIPT = Path("ops/fleet_health_report.py")
 BACKLOG_SCRIPT = Path("ops/optimization_backlog_engine.py")
@@ -321,15 +334,42 @@ def _collect_preprod_mutable_paths() -> dict[str, Path]:
         "scheduler_singleton_meta_file": _scheduler_singleton_meta_path(),
         "runtime_evidence_latest": RUNTIME_EVIDENCE_LATEST_FILE,
         "safety_gate_latest": SAFETY_GATE_LATEST_FILE,
-        "activation_report": _path_from_env("ACTIVATION_CONTROLLER_REPORT_PATH", "logs/activation_controller_report.json"),
-        "activation_report_archive": _path_from_env("ACTIVATION_CONTROLLER_REPORT_ARCHIVE_DIR", "output/state/activation_reports"),
-        "activation_flags": _path_from_env("ACTIVATION_FLAGS_PATH", "output/state/learning_activation_flags.json"),
-        "governance_refresh_latest": _path_from_env("GOVERNANCE_REFRESH_LATEST_PATH", "logs/governance_refresh_run_latest.json"),
-        "governance_readiness_markdown": _path_from_env("GOVERNANCE_READINESS_MD_PATH", "docs/governance_readiness_latest.md"),
-        "production_dashboard_latest_json": _path_from_env("PRODUCTION_DASHBOARD_JSON_PATH", "logs/production_dashboard_latest.json"),
-        "production_dashboard_latest_md": _path_from_env("PRODUCTION_DASHBOARD_MD_PATH", "docs/production_dashboard_latest.md"),
-        "production_events": _path_from_env("PRODUCTION_EVENTS_PATH", "logs/production_events.jsonl"),
-        "production_observability_latest": _path_from_env("PRODUCTION_OBSERVABILITY_LATEST_PATH", "logs/production_observability_latest.json"),
+        "activation_report": _path_from_env(
+            "ACTIVATION_CONTROLLER_REPORT_PATH",
+            str(runtime_path("state/activation_controller_report.json")),
+        ),
+        "activation_report_archive": _path_from_env(
+            "ACTIVATION_CONTROLLER_REPORT_ARCHIVE_DIR",
+            str(runtime_path("state/activation_reports")),
+        ),
+        "activation_flags": _path_from_env(
+            "ACTIVATION_FLAGS_PATH",
+            str(runtime_path("state/learning_activation_flags.json")),
+        ),
+        "governance_refresh_latest": _path_from_env(
+            "GOVERNANCE_REFRESH_LATEST_PATH",
+            str(runtime_path("state/governance_refresh_run_latest.json")),
+        ),
+        "governance_readiness_markdown": _path_from_env(
+            "GOVERNANCE_READINESS_MD_PATH",
+            str(runtime_path("state/governance_readiness_latest.md")),
+        ),
+        "production_dashboard_latest_json": _path_from_env(
+            "PRODUCTION_DASHBOARD_JSON_PATH",
+            str(runtime_path("state/production_dashboard_latest.json")),
+        ),
+        "production_dashboard_latest_md": _path_from_env(
+            "PRODUCTION_DASHBOARD_MD_PATH",
+            str(runtime_path("state/production_dashboard_latest.md")),
+        ),
+        "production_events": _path_from_env(
+            "PRODUCTION_EVENTS_PATH",
+            str(runtime_path("telemetry/production_events.jsonl")),
+        ),
+        "production_observability_latest": _path_from_env(
+            "PRODUCTION_OBSERVABILITY_LATEST_PATH",
+            str(runtime_path("telemetry/production_observability_latest.json")),
+        ),
     }
 
 
@@ -888,8 +928,36 @@ def render_and_schedule(channel_id: str):
                 if failure_class["classification"] == TERMINAL_FAILURE:
                     logger.error(f"[{cfg.name}] Fatal hata (retry yok): {e}")
                     if "failed_fact_check" not in error_str:
-                        decision = notify_error(cfg.name, error_text)
-                        logger.info(f"[{cfg.name}] Telegram karar feedback: {decision.get('decision')}")
+                        decision = notify_error(
+                            cfg.name,
+                            error_text,
+                            context={
+                                "run_id": str(getattr(e, "_run_id", "") or ""),
+                                "content_id": str(getattr(e, "_content_id", "") or ""),
+                                "pipeline_stage": str(getattr(e, "_pipeline_stage", "content_generation") or "content_generation"),
+                                "retry_count": attempt,
+                                "retry_limit": max_attempts,
+                                "regeneration_count": int(getattr(e, "_regeneration_count", 0) or 0),
+                                "regeneration_limit": int(getattr(e, "_regeneration_limit", 1) or 1),
+                                "error_type": str(getattr(e, "_error_type", "") or ""),
+                                "guard_reason_codes": list(getattr(e, "_guard_reason_codes", []) or []),
+                                "triggering_validator": str(getattr(e, "_triggering_validator", "") or ""),
+                                "selected_topic": str(getattr(e, "_topic", "") or ""),
+                                "collision_path": str(getattr(e, "_collision_path", "") or ""),
+                                "expected_channel": channel_id,
+                                "detected_channel": str(getattr(e, "_detected_channel", "") or channel_id),
+                                "original_topic_source": str(getattr(e, "_original_topic_source", "") or ""),
+                                "provenance_score": getattr(e, "_provenance_score", None),
+                                "confidence_score": getattr(e, "_confidence_score", None),
+                            },
+                        )
+                        logger.info(
+                            "[%s] Telegram karar feedback: %s incident_id=%s lifecycle=%s",
+                            cfg.name,
+                            decision.get("decision"),
+                            decision.get("incident_id", ""),
+                            decision.get("incident_lifecycle", ""),
+                        )
                         setattr(e, "_scheduler_notify_sent", True)
                     raise
 
@@ -1097,8 +1165,36 @@ def render_and_schedule(channel_id: str):
             from src.channel_manager import get_channel
             cfg = get_channel(channel_id)
             from src.scheduler_utils import notify_error
-            decision = notify_error(cfg.name, routed_error_text)
-            logger.info(f"[{cfg.name}] Telegram karar feedback: {decision.get('decision')}")
+            decision = notify_error(
+                cfg.name,
+                routed_error_text,
+                context={
+                    "run_id": str(getattr(e, "_run_id", "") or ""),
+                    "content_id": str(getattr(e, "_content_id", "") or ""),
+                    "pipeline_stage": str(getattr(e, "_pipeline_stage", "scheduler_render") or "scheduler_render"),
+                    "retry_count": int(getattr(e, "_retry_count", 0) or 0),
+                    "retry_limit": 3,
+                    "regeneration_count": int(getattr(e, "_regeneration_count", 0) or 0),
+                    "regeneration_limit": int(getattr(e, "_regeneration_limit", 1) or 1),
+                    "error_type": str(getattr(e, "_error_type", "") or ""),
+                    "guard_reason_codes": list(getattr(e, "_guard_reason_codes", []) or []),
+                    "triggering_validator": str(getattr(e, "_triggering_validator", "") or ""),
+                    "selected_topic": str(getattr(e, "_topic", "") or ""),
+                    "collision_path": str(getattr(e, "_collision_path", "") or ""),
+                    "expected_channel": channel_id,
+                    "detected_channel": str(getattr(e, "_detected_channel", "") or channel_id),
+                    "original_topic_source": str(getattr(e, "_original_topic_source", "") or ""),
+                    "provenance_score": getattr(e, "_provenance_score", None),
+                    "confidence_score": getattr(e, "_confidence_score", None),
+                },
+            )
+            logger.info(
+                "[%s] Telegram karar feedback: %s incident_id=%s lifecycle=%s",
+                cfg.name,
+                decision.get("decision"),
+                decision.get("incident_id", ""),
+                decision.get("incident_lifecycle", ""),
+            )
         except Exception:
             pass
     finally:
@@ -1805,6 +1901,10 @@ def run_optimization_cycle_once() -> int:
 
     try:
         evidence = run_optimization_runtime_cycle()
+def _is_local_content_fail_open_enabled() -> bool:
+    return _is_enabled(os.getenv("ANTHROPIC_FAIL_OPEN_LOCAL_CONTENT", "true"))
+
+
         _write_json_atomic(RUNTIME_EVIDENCE_LATEST_FILE, evidence)
         print(
             json.dumps(
@@ -1928,10 +2028,10 @@ def main():
             mode="startup",
             startup_health=startup_health,
             provider_preflight_ok=False,
-            provider_preflight_detail=provider_detail,
+            provider_preflight_detail=detail,
         )
-        logger.error("Startup provider preflight failed: %s", provider_detail)
-        print(f"ERROR: Anthropic preflight failed: {provider_detail}")
+        logger.error("Startup provider preflight failed: %s", detail)
+        print(f"ERROR: Anthropic preflight failed: {detail}")
         sys.exit(1)
 
     _record_safety_gate_result(
@@ -1942,6 +2042,7 @@ def main():
     )
     logger.info("Startup provider preflight result: %s", provider_detail)
 
+        detail = str(provider_detail or "")
     # scheduler_utils opsiyonel — yoksa basit fallback kullan
     try:
         from src.scheduler_utils import notify_startup, cleanup_old_renders

@@ -249,6 +249,6 @@ def test_production_default_paths_unchanged_when_no_preprod_env(monkeypatch):
     refresh = importlib.reload(refresh)
     ac = importlib.reload(ac)
 
-    assert str(pqp.PRODUCTION_DASHBOARD_MD_PATH).endswith("docs/production_dashboard_latest.md")
-    assert str(refresh._resolve_readiness_markdown()).endswith("docs/governance_readiness_latest.md")
+    assert str(pqp.PRODUCTION_DASHBOARD_MD_PATH).endswith("output/runtime/state/production_dashboard_latest.md")
+    assert str(refresh._resolve_readiness_markdown()).endswith("output/runtime/state/governance_readiness_latest.md")
     assert str(ac.DEFAULT_REPORT_ARCHIVE_DIR).endswith("output/state/activation_reports")

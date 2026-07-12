@@ -8,6 +8,7 @@ import shlex
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -152,6 +153,30 @@ def build_unit_test_env(base_env: dict[str, str] | None = None) -> dict[str, str
     env = dict(os.environ if base_env is None else base_env)
     for key in UNIT_TEST_ENV_UNSET_KEYS:
         env.pop(key, None)
+
+    scratch = Path(tempfile.mkdtemp(prefix="preprod_runner_pytest_"))
+    path_overrides = {
+        "GOVERNANCE_READINESS_MD_PATH": scratch / "state" / "governance_readiness_latest.md",
+        "PRODUCTION_DASHBOARD_MD_PATH": scratch / "state" / "production_dashboard_latest.md",
+        "PRODUCTION_DASHBOARD_JSON_PATH": scratch / "state" / "production_dashboard_latest.json",
+        "ACTIVATION_CONTROLLER_REPORT_PATH": scratch / "state" / "activation_report_latest.json",
+        "ACTIVATION_CONTROLLER_REPORT_ARCHIVE_DIR": scratch / "state" / "activation_reports",
+        "PRODUCTION_EVENTS_PATH": scratch / "state" / "production_events.jsonl",
+        "PRODUCTION_OBSERVABILITY_LATEST_PATH": scratch / "state" / "production_observability_latest.md",
+        "RUNTIME_EVIDENCE_LATEST_FILE": scratch / "state" / "runtime_evidence_latest.json",
+        "SAFETY_GATE_LATEST_FILE": scratch / "state" / "safety_gate_latest.json",
+        "SCHEDULER_QUEUE_FILE": scratch / "state" / "channel_queue.json",
+        "SCHEDULER_PID_FILE": scratch / "state" / "scheduler.pid",
+        "SCHEDULER_SINGLETON_LOCK_FILE": scratch / "state" / "scheduler.lock",
+        "SCHEDULER_SINGLETON_META_FILE": scratch / "state" / "scheduler_meta.json",
+        "SCHEDULER_LOG_FILE": scratch / "logs" / "scheduler.log",
+        "OUTPUT_ROOT": scratch / "output",
+        "TELEMETRY_SINK_DIR": scratch / "telemetry",
+        "TOPIC_PROVENANCE_DIR": scratch / "output" / "topic_provenance",
+    }
+    for key, path in path_overrides.items():
+        env[key] = str(path)
+
     return env
 
 

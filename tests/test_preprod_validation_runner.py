@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import subprocess
 import sys
 import time
@@ -232,7 +233,13 @@ def test_build_unit_test_env_removes_preprod_runtime_keys(monkeypatch: pytest.Mo
 
     assert "PREPROD_ISOLATION_MODE" not in env
     assert "PREPROD_STATE_ROOT" not in env
-    assert "PRODUCTION_DASHBOARD_MD_PATH" not in env
+    assert "PRODUCTION_DASHBOARD_MD_PATH" in env
+    assert str(Path(env["PRODUCTION_DASHBOARD_MD_PATH"]).name) == "production_dashboard_latest.md"
+    assert env["PRODUCTION_DASHBOARD_MD_PATH"].startswith(tempfile.gettempdir())
+    assert "GOVERNANCE_READINESS_MD_PATH" in env
+    assert env["GOVERNANCE_READINESS_MD_PATH"].startswith(tempfile.gettempdir())
+    assert "ACTIVATION_CONTROLLER_REPORT_ARCHIVE_DIR" in env
+    assert env["ACTIVATION_CONTROLLER_REPORT_ARCHIVE_DIR"].startswith(tempfile.gettempdir())
     assert env.get("SOME_SAFE_VAR") == "keep"
 
 

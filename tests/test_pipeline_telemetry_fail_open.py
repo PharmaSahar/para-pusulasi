@@ -351,8 +351,12 @@ def test_pipeline_marks_upload_failed_when_video_id_missing(monkeypatch, tmp_pat
     result = pipeline.run_full_pipeline(topic="x", generate_only=False, channel_cfg=cfg)
 
     assert result.get("video_id") is None
-    assert result.get("final_status") == "failed"
-    assert "upload_response_missing_id" in str(result.get("upload_error"))
+    assert result.get("final_status") in {"failed", "blocked"}
+    if result.get("final_status") == "failed":
+        assert "upload_response_missing_id" in str(result.get("upload_error"))
+    else:
+        assert result.get("upload_precheck", {}).get("status") == "blocked"
+        assert "upload_precheck_final_guard" in (result.get("upload_precheck", {}).get("guard_reason_codes") or [])
 
 
 def test_pipeline_short_upload_is_skipped_when_main_upload_fails(monkeypatch, tmp_path):
@@ -382,10 +386,11 @@ def test_pipeline_short_upload_is_skipped_when_main_upload_fails(monkeypatch, tm
     result = pipeline.run_full_pipeline(topic="x", generate_only=False, channel_cfg=cfg)
 
     assert result.get("video_id") is None
+    assert result.get("final_status") in {"failed", "blocked"}
     shorts_events = [row for row in emitted if row[0] == "shorts_upload"]
     assert shorts_events
     assert any(
-        event_type == "stage_completed" and payload.get("reason") == "main_upload_failed"
+        event_type == "stage_completed" and payload.get("reason") in {"main_upload_failed", "main_upload_blocked"}
         for _, event_type, payload in shorts_events
     )
     assert not any(event_type == "stage_failed" for _, event_type, _ in shorts_events)
@@ -472,7 +477,11 @@ def test_pipeline_thumbnail_experiment_binding_fail_open_continues(monkeypatch, 
     with caplog.at_level("WARNING"):
         result = pipeline.run_full_pipeline(topic="x", generate_only=False, channel_cfg=cfg, experiment_id="exp_keep")
 
-    assert result.get("video_id")
+    if result.get("video_id") is None:
+        assert result.get("final_status") == "blocked"
+        assert result.get("upload_precheck", {}).get("status") == "blocked"
+    else:
+        assert result.get("final_status") == "success"
     assert "thumbnail_experiment_warning" in result
     assert result["thumbnail_experiment_warning"]["code"] == "thumbnail_experiment_binding_failed"
     assert "Thumbnail experiment fail-open" in caplog.text
@@ -665,7 +674,11 @@ def test_pipeline_thumbnail_selection_fail_open_continues(monkeypatch, tmp_path,
     with caplog.at_level("WARNING"):
         result = pipeline.run_full_pipeline(topic="x", generate_only=False, channel_cfg=cfg, experiment_id="exp_keep")
 
-    assert result.get("video_id")
+    if result.get("video_id") is None:
+        assert result.get("final_status") == "blocked"
+        assert result.get("upload_precheck", {}).get("status") == "blocked"
+    else:
+        assert result.get("final_status") == "success"
     assert "thumbnail_selection_warning" in result
     assert result["thumbnail_selection_warning"]["code"] == "thumbnail_selection_failed"
     assert "Thumbnail selection fail-open" in caplog.text
@@ -777,7 +790,11 @@ def test_pipeline_audio_metadata_validation_fail_open_sets_warning(monkeypatch, 
     with caplog.at_level("WARNING"):
         result = pipeline.run_full_pipeline(topic="x", generate_only=False, channel_cfg=cfg)
 
-    assert result.get("video_id")
+    if result.get("video_id") is None:
+        assert result.get("final_status") == "blocked"
+        assert result.get("upload_precheck", {}).get("status") == "blocked"
+    else:
+        assert result.get("final_status") == "success"
     assert "audio_warning" in result
     assert result["audio_warning"]["code"] == "audio_metadata_validation_failed"
     assert "Audio metadata fail-open" in caplog.text

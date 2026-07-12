@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import tempfile
 import subprocess
 import sys
 import time
@@ -228,32 +227,163 @@ def test_build_unit_test_env_removes_preprod_runtime_keys(monkeypatch: pytest.Mo
     monkeypatch.setenv("PREPROD_STATE_ROOT", "/tmp/preprod_state")
     monkeypatch.setenv("PRODUCTION_DASHBOARD_MD_PATH", "/tmp/dashboard.md")
     monkeypatch.setenv("SOME_SAFE_VAR", "keep")
+    monkeypatch.setenv("PREPROD_RUNNER_STATE_ROOT", "/tmp/preprod_runner_state_contract")
 
     env = runner.build_unit_test_env()
 
-    assert "PREPROD_ISOLATION_MODE" not in env
-    assert "PREPROD_STATE_ROOT" not in env
+    assert env["PREPROD_ISOLATION_MODE"] == "true"
+    assert env["PREPROD_STATE_ROOT"].endswith("/tmp/preprod_runner_state_contract/unit-test-output")
     assert "PRODUCTION_DASHBOARD_MD_PATH" in env
-    assert str(Path(env["PRODUCTION_DASHBOARD_MD_PATH"]).name) == "production_dashboard_latest.md"
-    assert env["PRODUCTION_DASHBOARD_MD_PATH"].startswith(tempfile.gettempdir())
+    assert env["PRODUCTION_DASHBOARD_MD_PATH"].endswith("/unit-test-output/state/production_dashboard_latest.md")
     assert "GOVERNANCE_READINESS_MD_PATH" in env
-    assert env["GOVERNANCE_READINESS_MD_PATH"].startswith(tempfile.gettempdir())
+    assert env["GOVERNANCE_READINESS_MD_PATH"].endswith("/unit-test-output/state/governance_readiness_latest.md")
     assert "ACTIVATION_CONTROLLER_REPORT_ARCHIVE_DIR" in env
-    assert env["ACTIVATION_CONTROLLER_REPORT_ARCHIVE_DIR"].startswith(tempfile.gettempdir())
+    assert env["ACTIVATION_CONTROLLER_REPORT_ARCHIVE_DIR"].endswith("/unit-test-output/state/activation_reports")
+    assert env["PRODUCTION_DASHBOARD_JSON_PATH"].endswith("/unit-test-output/state/production_dashboard_latest.json")
+    assert env["PYTHONPATH"] == "."
     assert env.get("SOME_SAFE_VAR") == "keep"
 
 
 def test_run_phase_clears_preprod_vars_for_pytest_category(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("PREPROD_ISOLATION_MODE", "true")
+    state_root = tmp_path / "external_state"
+    monkeypatch.setenv("PREPROD_RUNNER_STATE_ROOT", str(state_root))
     log_path = tmp_path / "phase_log.jsonl"
+    detached = tmp_path / "detached"
+    detached.mkdir(parents=True, exist_ok=True)
     phase = runner.PhaseSpec(
         name="env_probe_pytest",
-        command=[sys.executable, "-c", "import os; print(os.environ.get('PREPROD_ISOLATION_MODE', '<none>'))"],
+        command=[
+            sys.executable,
+            "-c",
+            (
+                "import os; "
+                "print(os.environ.get('PREPROD_ISOLATION_MODE','<none>')); "
+                "print(os.environ.get('PRODUCTION_DASHBOARD_MD_PATH','<missing>')); "
+                "print(os.environ.get('PRODUCTION_DASHBOARD_JSON_PATH','<missing>')); "
+                "print(os.getcwd())"
+            ),
+        ],
         timeout_seconds=3,
         category="pytest",
     )
 
-    res = runner.run_phase(phase=phase, run_id="r5", phase_log=log_path, default_cwd=tmp_path)
+    res = runner.run_phase(phase=phase, run_id="r5", phase_log=log_path, default_cwd=detached)
 
     assert res.status == "pass"
-    assert "<none>" in res.stdout_tail
+    assert "true" in res.stdout_tail
+    assert str((state_root / "unit-test-output" / "state" / "production_dashboard_latest.md")) in res.stdout_tail
+    assert str((state_root / "unit-test-output" / "state" / "production_dashboard_latest.json")) in res.stdout_tail
+    assert str(detached) in res.stdout_tail
+
+
+def test_unit_test_env_dashboard_paths_stay_outside_detached_worktree(tmp_path: Path) -> None:
+    detached = tmp_path / "detached"
+    detached.mkdir(parents=True, exist_ok=True)
+    state_root = tmp_path / "state_root"
+    env = runner.build_unit_test_env({"PREPROD_RUNNER_STATE_ROOT": str(state_root)})
+
+    md = Path(env["PRODUCTION_DASHBOARD_MD_PATH"]).resolve()
+    js = Path(env["PRODUCTION_DASHBOARD_JSON_PATH"]).resolve()
+    state_resolved = (state_root / "unit-test-output").resolve()
+
+    assert state_resolved in md.parents
+    assert state_resolved in js.parents
+    assert detached.resolve() not in md.parents
+    assert detached.resolve() not in js.parents
+
+
+def test_default_full_phases_keep_full_test_gate() -> None:
+    phases = runner.default_full_phases(detached_worktree=Path("/tmp/fake"), candidate_sha="a" * 40)
+    names = [p.name for p in phases]
+    cats = [p.category for p in phases]
+    assert "full_pytest_wdefault" in names
+    assert "full_pytest_normal" in names
+    assert cats.count("full_pytest") >= 2
+
+
+def test_run_phase_passes_env_before_pytest_subprocess_start(tmp_path: Path) -> None:
+    state_root = tmp_path / "state_root"
+    unit_env = runner.build_unit_test_env({"PREPROD_RUNNER_STATE_ROOT": str(state_root)})
+    phase = runner.PhaseSpec(
+        name="pre_start_env_probe",
+        command=[sys.executable, "-c", "import os; print(os.environ['PRODUCTION_DASHBOARD_MD_PATH'])"],
+        timeout_seconds=3,
+        category="full_pytest",
+    )
+
+    res = runner.run_phase(
+        phase=phase,
+        run_id="r6",
+        phase_log=tmp_path / "log.jsonl",
+        default_cwd=tmp_path,
+        unit_test_env=unit_env,
+    )
+
+    assert res.status == "pass"
+    assert unit_env["PRODUCTION_DASHBOARD_MD_PATH"] in res.stdout_tail
+
+
+def test_full_phase_still_enforces_tracked_mutation_detection(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _init_git_repo(tmp_path)
+    (tmp_path / "docs").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "docs" / "production_dashboard_latest.md").write_text("baseline\n", encoding="utf-8")
+    subprocess.run(["git", "add", "docs/production_dashboard_latest.md"], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "commit", "-m", "add-dashboard"], cwd=str(tmp_path), check=True, capture_output=True, text=True)
+    monkeypatch.setattr(runner, "PROJECT_ROOT", tmp_path)
+
+    phases = [
+        runner.PhaseSpec(
+            name="full_pytest_wdefault",
+            command=[sys.executable, "-c", "from pathlib import Path; Path('docs/production_dashboard_latest.md').write_text('changed\\n', encoding='utf-8')"],
+            timeout_seconds=5,
+            category="full_pytest",
+        )
+    ]
+
+    out = runner.run_validation(
+        phases,
+        run_id="tracked_gate",
+        artifacts_dir=tmp_path / "art",
+        state_root=tmp_path / "state",
+        repo_root=tmp_path,
+    )
+
+    assert out["status"] == "failed"
+    assert out["reason"] == "tracked_mutation_detected"
+    assert "docs/production_dashboard_latest.md" in out["tracked_mutations"]
+
+
+def test_simulated_dashboard_write_uses_external_env_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _init_git_repo(tmp_path)
+    docs = tmp_path / "docs"
+    docs.mkdir(parents=True, exist_ok=True)
+    tracked_dashboard = docs / "production_dashboard_latest.md"
+    tracked_dashboard.write_text("baseline\n", encoding="utf-8")
+    subprocess.run(["git", "add", "docs/production_dashboard_latest.md"], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "commit", "-m", "add-dashboard"], cwd=str(tmp_path), check=True, capture_output=True, text=True)
+    monkeypatch.setattr(runner, "PROJECT_ROOT", tmp_path)
+
+    phases = [
+        runner.PhaseSpec(
+            name="dashboard_env_write",
+            command=[
+                sys.executable,
+                "-c",
+                "import os; from pathlib import Path; p=Path(os.environ['PRODUCTION_DASHBOARD_MD_PATH']); p.parent.mkdir(parents=True, exist_ok=True); p.write_text('external-write\\n', encoding='utf-8'); print(p)",
+            ],
+            timeout_seconds=5,
+            category="full_pytest",
+        )
+    ]
+
+    out = runner.run_validation(
+        phases,
+        run_id="dashboard_safe",
+        artifacts_dir=tmp_path / "art",
+        state_root=tmp_path / "state",
+        repo_root=tmp_path,
+    )
+
+    assert out["status"] == "passed"
+    assert out["tracked_mutations"] == []
+    assert tracked_dashboard.read_text(encoding="utf-8") == "baseline\n"

@@ -154,13 +154,24 @@ def build_unit_test_env(base_env: dict[str, str] | None = None) -> dict[str, str
     for key in UNIT_TEST_ENV_UNSET_KEYS:
         env.pop(key, None)
 
-    scratch = Path(tempfile.mkdtemp(prefix="preprod_runner_pytest_"))
+    state_root_raw = str(env.get("PREPROD_RUNNER_STATE_ROOT", "")).strip()
+    if state_root_raw:
+        scratch = Path(state_root_raw).resolve() / "unit-test-output"
+    else:
+        scratch = Path(tempfile.mkdtemp(prefix="preprod_runner_pytest_")).resolve()
+
+    # Ensure test subprocesses remain isolated from checkout mutable outputs.
+    env["PREPROD_ISOLATION_MODE"] = "true"
+    env["PREPROD_STATE_ROOT"] = str(scratch)
+
     path_overrides = {
         "GOVERNANCE_READINESS_MD_PATH": scratch / "state" / "governance_readiness_latest.md",
+        "GOVERNANCE_REFRESH_LATEST_PATH": scratch / "state" / "governance_refresh_latest.json",
         "PRODUCTION_DASHBOARD_MD_PATH": scratch / "state" / "production_dashboard_latest.md",
         "PRODUCTION_DASHBOARD_JSON_PATH": scratch / "state" / "production_dashboard_latest.json",
         "ACTIVATION_CONTROLLER_REPORT_PATH": scratch / "state" / "activation_report_latest.json",
         "ACTIVATION_CONTROLLER_REPORT_ARCHIVE_DIR": scratch / "state" / "activation_reports",
+        "ACTIVATION_FLAGS_PATH": scratch / "state" / "activation_flags.json",
         "PRODUCTION_EVENTS_PATH": scratch / "state" / "production_events.jsonl",
         "PRODUCTION_OBSERVABILITY_LATEST_PATH": scratch / "state" / "production_observability_latest.md",
         "RUNTIME_EVIDENCE_LATEST_FILE": scratch / "state" / "runtime_evidence_latest.json",
@@ -175,7 +186,10 @@ def build_unit_test_env(base_env: dict[str, str] | None = None) -> dict[str, str
         "TOPIC_PROVENANCE_DIR": scratch / "output" / "topic_provenance",
     }
     for key, path in path_overrides.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
         env[key] = str(path)
+
+    env["PYTHONPATH"] = "."
 
     return env
 
@@ -340,14 +354,20 @@ def _terminate_process_group(proc: subprocess.Popen[str], grace_seconds: float =
             pass
 
 
-def run_phase(phase: PhaseSpec, run_id: str, phase_log: Path, default_cwd: Path) -> PhaseResult:
+def run_phase(
+    phase: PhaseSpec,
+    run_id: str,
+    phase_log: Path,
+    default_cwd: Path,
+    unit_test_env: dict[str, str] | None = None,
+) -> PhaseResult:
     started = time.time()
     started_iso = utc_now()
     cwd = str(default_cwd if phase.cwd is None else Path(phase.cwd))
 
     env = dict(os.environ)
     if phase.category in {"pytest", "full_pytest"}:
-        env = build_unit_test_env(env)
+        env = dict(unit_test_env) if unit_test_env is not None else build_unit_test_env(env)
     if phase.env_overrides:
         for key, value in phase.env_overrides.items():
             if value is None:
@@ -502,6 +522,10 @@ def run_validation(phases: list[PhaseSpec], run_id: str, artifacts_dir: Path, st
     state_path = run_state_dir / "state.json"
     phase_log = artifacts_dir / "preprod_runner_phase_log.jsonl"
 
+    unit_test_env_seed = dict(os.environ)
+    unit_test_env_seed["PREPROD_RUNNER_STATE_ROOT"] = str(run_state_dir)
+    unit_test_env = build_unit_test_env(unit_test_env_seed)
+
     store = StateStore(state_path)
     baseline_tracked = set(_tracked_mutations(repo_root))
     store.update(
@@ -513,7 +537,13 @@ def run_validation(phases: list[PhaseSpec], run_id: str, artifacts_dir: Path, st
     all_results: list[PhaseResult] = []
     for phase in phases:
         store.update(current_phase=phase.name)
-        result = run_phase(phase=phase, run_id=run_id, phase_log=phase_log, default_cwd=repo_root)
+        result = run_phase(
+            phase=phase,
+            run_id=run_id,
+            phase_log=phase_log,
+            default_cwd=repo_root,
+            unit_test_env=unit_test_env,
+        )
         store.append_phase_result(result)
         all_results.append(result)
 

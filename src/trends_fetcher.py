@@ -43,44 +43,70 @@ def get_trending_topics(niche: str = "kisisel_finans", count: int = 5) -> list[s
     Google Trends'den Türkiye gündem konularını getir.
     pytrends kütüphanesi kullanır.
     """
+    return list(get_trending_topics_with_metadata(niche=niche, count=count).get("topics", []))
+
+
+def get_trending_topics_with_metadata(niche: str = "kisisel_finans", count: int = 5) -> dict:
+    """Return trending topics with provider raw/normalized rows for provenance."""
+    normalized_niche = str(niche or "").strip().lower()
+    meta = {
+        "provider": "pytrends",
+        "provider_status": "ok",
+        "raw_provider_rows": [],
+        "normalized_provider_rows": [],
+        "topics": [],
+        "fallback_invoked": False,
+        "fallback_source": None,
+    }
     try:
         from pytrends.request import TrendReq
         pytrends = TrendReq(hl="tr-TR", tz=180, timeout=(5, 10))
 
-        seed_keywords = NICHE_SEED_KEYWORDS.get(niche, ["finans", "para"])[:5]
+        seed_keywords = NICHE_SEED_KEYWORDS.get(normalized_niche, [])[:5]
         pytrends.build_payload(seed_keywords, cat=0, timeframe="now 7-d", geo="TR")
 
         related = pytrends.related_queries()
         topics = []
         for kw in seed_keywords:
-            if kw in related and related[kw].get("rising") is not None:
-                rising = related[kw]["rising"]
-                if rising is not None and len(rising) > 0:
-                    for _, row in rising.head(2).iterrows():
-                        query = row.get("query", "")
-                        if query and len(query) > 3:
-                            topics.append(query)
+            rising = None
+            if kw in related:
+                rising = related[kw].get("rising")
+            if rising is None or len(rising) <= 0:
+                continue
+            for _, row in rising.head(2).iterrows():
+                query = str(row.get("query", "")).strip()
+                value = row.get("value")
+                payload_row = {
+                    "keyword": kw,
+                    "query": query,
+                    "value": value,
+                }
+                meta["raw_provider_rows"].append(payload_row)
+                if query and len(query) > 3:
+                    topics.append(query)
+                    meta["normalized_provider_rows"].append(query)
         if topics:
+            meta["topics"] = topics[:count]
             logger.info(f"Google Trends'den {len(topics)} trend konu bulundu: {topics[:3]}")
-            return topics[:count]
+            return meta
     except Exception as e:
+        meta["provider_status"] = f"error:{e.__class__.__name__}"
         logger.debug(f"Google Trends hatasi (fallback kullanilacak): {e}")
 
-    # Fallback: gunun saatine ve tarihe gore farkli konular
+    # Fallback: niche-scoped static topics only (fail-closed for unknown niches)
     year = datetime.now().year
-    month = datetime.now().month
     fallback_topics = {
         "kisisel_finans": [
             f"Dolar/TL {year} sonu tahminleri",
             f"Enflasyona karsi en iyi yatirim araclari {year}",
-            f"Merkez Bankasi faiz karari ne anlama geliyor",
+            "Merkez Bankasi faiz karari ne anlama geliyor",
             f"BIST 100 {year} firsat hisseleri",
             f"Altin fiyatlari neden yukseliyor {year}",
         ],
         "borsa": [
             f"BIST 100 teknik analiz {year}",
             f"Temettü sezonu {year} en yüksek hisseler",
-            f"Yabanci yatirimci BIST'te ne aliyor",
+            "Yabanci yatirimci BIST'te ne aliyor",
         ],
         "kripto": [
             f"Bitcoin {year} sonu hedef fiyat",
@@ -123,7 +149,15 @@ def get_trending_topics(niche: str = "kisisel_finans", count: int = 5) -> list[s
             "Yatirimlik konut secim kriterleri",
         ],
     }
-    return fallback_topics.get(niche, fallback_topics["kisisel_finans"])[:count]
+    fallback = list(fallback_topics.get(normalized_niche, []))[:count]
+    meta["fallback_invoked"] = True
+    meta["fallback_source"] = f"static_niche:{normalized_niche or 'unknown'}"
+    meta["provider"] = "static_fallback"
+    meta["topics"] = fallback
+    meta["normalized_provider_rows"] = list(fallback)
+    for item in fallback:
+        meta["raw_provider_rows"].append({"keyword": normalized_niche, "query": item, "value": None})
+    return meta
 
 
 def get_seasonal_boost_topics(niche: str) -> list[str]:

@@ -381,6 +381,70 @@ def _is_retryable_anthropic_exception(exc: Exception, *, error_text: str) -> boo
     )
 
 
+def _env_flag_true(name: str, default: bool = False) -> bool:
+    raw = str(os.getenv(name, "1" if default else "0")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _is_fail_open_eligible_provider_error(error_text: str) -> bool:
+    txt = (error_text or "").lower()
+    return any(
+        token in txt
+        for token in (
+            "anthropic circuit open",
+            "credit balance is too low",
+            "insufficient credit",
+            "invalid api key",
+            "authentication",
+            "unauthorized",
+            "http 401",
+            "http 403",
+        )
+    )
+
+
+def _build_local_fail_open_content_payload(*, topic: str, niche: str | None, next_topic_hint: str, channel_name: str) -> dict:
+    niche_label = (niche or "genel").strip() or "genel"
+    title = f"{topic} | Pratik Rehber"
+    script = (
+        f"Bugun {topic} konusunu sade ve uygulanabilir bir yol haritasiyla ele aliyoruz. "
+        "Bu icerik hizli uygulanabilir adimlar sunar ve varsayimsal egitim amaclidir.\n\n"
+        "Birinci adim: Durumu netlestir. Hedefini tek cumleyle yaz ve neyi degistirmek istedigini tarif et.\n"
+        "Ikinci adim: Kucuk ve olculebilir bir rutin belirle. Her gun kisa ama duzenli uygulama yap.\n"
+        "Ucuncu adim: Hata gunlugu tut. Hangi davranis seni geri cekiyor, hangi davranis seni ileri tasiyor kaydet.\n"
+        "Dorduncu adim: Haftalik gozden gecirme yap. Plani sade tut, ise yaramayani cikar ve etkili olani buyut.\n"
+        "Besinci adim: Riskleri onceden yaz. Beklenmeyen bir durumda alternatif bir sonraki adimi simdiden belirle.\n\n"
+        "Bu yontem hizli sonuc vadi degil, surdurulebilir ilerleme odaklidir. Kisa vadede netlik, orta vadede istikrar, "
+        "uzun vadede birikimli etki saglar. Uygulama sirasinda kendi baglamina gore oranlari ve adimlari sadeleştirebilirsin.\n\n"
+        f"Bir sonraki videoda su soruyu inceleyecegiz: {next_topic_hint}."
+    )
+    return {
+        "title": title[:95],
+        "hook": f"{topic} konusunda en cok yapilan yanlisi 60 saniyede duzeltelim.",
+        "description": (
+            f"{channel_name} kanalinda {topic} icin uygulanabilir bir yol haritasi. "
+            "Bu bolumde temel prensipler, adim adim uygulama plani ve haftalik kontrol listesi yer alir. "
+            "Icerik egitim amaclidir ve izleyicinin kendi durumuna gore uyarlanmalidir."
+        ),
+        "tags": [
+            topic,
+            niche_label,
+            "rehber",
+            "egitim",
+            "pratik adimlar",
+            "uygulama plani",
+            "turkiye",
+            "2026",
+        ],
+        "script": script,
+        "thumbnail_prompt": f"{topic} konusu icin yuksek kontrast, tek odakli, okunakli Turkce baslikli thumbnail",
+        "category_id": "27",
+        "next_video_teaser": f"Sonraki adim: {next_topic_hint}",
+        "pexels_search": f"{niche_label} practical guide education",
+        "chart_data": None,
+    }
+
+
 @contextmanager
 def _acquire_anthropic_rate_gate(min_interval_seconds: float):
     global _LAST_ANTHROPIC_CALL_AT
@@ -1176,14 +1240,34 @@ class ContentGenerator:
                 additional_guidance=guidance or None,
                 niche=self.niche,
             )
-            response = self._anthropic_create(
-                model=self.model,
-                max_tokens=8192,
-                system=self._system_prompt(),
-                messages=[{"role": "user", "content": prompt}],
-                temperature=1,  # Maksimum yaraticilik
-            )
-            raw = response.content[0].text.strip()
+            try:
+                response = self._anthropic_create(
+                    model=self.model,
+                    max_tokens=8192,
+                    system=self._system_prompt(),
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=1,  # Maksimum yaraticilik
+                )
+                raw = response.content[0].text.strip()
+            except Exception as exc:
+                last_error = exc
+                error_text = _anthropic_error_text(exc)
+                if _env_flag_true("ANTHROPIC_FAIL_OPEN_LOCAL_CONTENT", default=True) and _is_fail_open_eligible_provider_error(error_text):
+                    logger.warning(
+                        "Anthropic fail-open local fallback activated: channel=%s niche=%s reason=%s",
+                        channel_name,
+                        self.niche,
+                        error_text[:180],
+                    )
+                    data = _build_local_fail_open_content_payload(
+                        topic=topic,
+                        niche=self.niche,
+                        next_topic_hint=next_hint,
+                        channel_name=channel_name,
+                    )
+                    raw_chart = data.get("chart_data")
+                    break
+                continue
 
             # Markdown kod blogu temizle
             if raw.startswith("```"):

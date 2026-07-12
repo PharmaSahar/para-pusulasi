@@ -113,12 +113,25 @@ def test_generate_topic_ideas_filters_finance_trends_for_non_finance_channel(mon
     monkeypatch.setattr(content_generator.anthropic, "Anthropic", FakeAnthropicClient)
     monkeypatch.setattr(content_generator, "_load_used_titles", lambda: [])
     monkeypatch.setattr(
-        "src.content_generator.get_trending_topics",
-        lambda niche, count=4: [
-            "Dolar/TL 2026 sonu tahminleri",
-            "Enflasyona karsi en iyi yatirim araclari 2026",
-            "Uyku duzenini guclendirme yollari",
-        ],
+        "src.content_generator.get_trending_topics_with_metadata",
+        lambda niche, count=4: {
+            "provider": "pytrends",
+            "raw_provider_rows": [
+                {"keyword": "x", "query": "Dolar/TL 2026 sonu tahminleri", "value": 10},
+                {"keyword": "y", "query": "Enflasyona karsi en iyi yatirim araclari 2026", "value": 9},
+                {"keyword": "z", "query": "Uyku duzenini guclendirme yollari", "value": 8},
+            ],
+            "normalized_provider_rows": [
+                "Dolar/TL 2026 sonu tahminleri",
+                "Enflasyona karsi en iyi yatirim araclari 2026",
+                "Uyku duzenini guclendirme yollari",
+            ],
+            "topics": [
+                "Dolar/TL 2026 sonu tahminleri",
+                "Enflasyona karsi en iyi yatirim araclari 2026",
+                "Uyku duzenini guclendirme yollari",
+            ],
+        },
         raising=False,
     )
     monkeypatch.setattr(
@@ -160,6 +173,17 @@ def test_generate_topic_ideas_filters_finance_ai_topics_for_non_finance_channel(
 
     monkeypatch.setattr(content_generator.anthropic, "Anthropic", FakeAnthropicClient)
     monkeypatch.setattr(content_generator, "_load_used_titles", lambda: [])
+    monkeypatch.setattr(
+        "src.content_generator.get_trending_topics_with_metadata",
+        lambda niche, count=4: {
+            "provider": "pytrends",
+            "raw_provider_rows": [],
+            "normalized_provider_rows": [],
+            "topics": [],
+        },
+        raising=False,
+    )
+    monkeypatch.setattr("src.content_generator.get_seasonal_boost_topics", lambda niche: [], raising=False)
 
     generator = content_generator.ContentGenerator(channel_cfg=FakeConfig())
     topics = generator.generate_topic_ideas(count=3)

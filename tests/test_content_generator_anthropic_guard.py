@@ -204,6 +204,48 @@ def test_non_retryable_anthropic_exceptions_do_not_retry(monkeypatch, tmp_path, 
     assert provider_state["consecutive_failures"] == 1
 
 
+def test_generate_video_content_uses_local_fail_open_on_credit_exhaustion(monkeypatch, tmp_path):
+    _prepare_provider_state(monkeypatch, tmp_path)
+    monkeypatch.setenv("ANTHROPIC_FAIL_OPEN_LOCAL_CONTENT", "1")
+    monkeypatch.setattr(content_generator, "build_prompt_metadata", lambda _prompt: {})
+    monkeypatch.setattr(content_generator, "build_channel_dna_metadata", lambda **_kwargs: {})
+    monkeypatch.setattr(content_generator, "build_quality_scores", lambda **_kwargs: {})
+
+    messages = SequencedMessages([
+        _status_error(
+            BadRequestError,
+            400,
+            "Your credit balance is too low to access the Anthropic API.",
+            "invalid_request_error",
+        )
+    ])
+    generator = _make_generator(messages)
+
+    content = generator.generate_video_content("Yatirim disiplini nasil kurulur")
+
+    assert messages.calls == 1
+    assert "Pratik Rehber" in content.title
+    assert "uygulanabilir" in content.description.lower()
+    assert len(content.script) > 200
+
+
+def test_generate_video_content_uses_local_fail_open_on_circuit_open_runtime_error(monkeypatch, tmp_path):
+    _prepare_provider_state(monkeypatch, tmp_path)
+    monkeypatch.setenv("ANTHROPIC_FAIL_OPEN_LOCAL_CONTENT", "1")
+    monkeypatch.setattr(content_generator, "build_prompt_metadata", lambda _prompt: {})
+    monkeypatch.setattr(content_generator, "build_channel_dna_metadata", lambda **_kwargs: {})
+    monkeypatch.setattr(content_generator, "build_quality_scores", lambda **_kwargs: {})
+
+    messages = SequencedMessages([RuntimeError("Anthropic circuit open; retry after 300s")])
+    generator = _make_generator(messages)
+
+    content = generator.generate_video_content("BIST icin temel risk yonetimi")
+
+    assert messages.calls == 1
+    assert "Pratik Rehber" in content.title
+    assert len(content.script) > 200
+
+
 def test_retry_exhaustion_counts_as_single_logical_failure(monkeypatch, tmp_path):
     _prepare_provider_state(monkeypatch, tmp_path)
     overloaded = _status_error(OverloadedError, 529, "Overloaded", "overloaded_error")

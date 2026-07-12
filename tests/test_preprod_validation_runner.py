@@ -223,16 +223,15 @@ def test_runtime_identity_valid_detached_launch_passes(tmp_path: Path) -> None:
 
 
 def test_build_unit_test_env_removes_preprod_runtime_keys(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("PREPROD_ISOLATION_MODE", "true")
-    monkeypatch.setenv("PREPROD_STATE_ROOT", "/tmp/preprod_state")
+    monkeypatch.delenv("PREPROD_ISOLATION_MODE", raising=False)
+    monkeypatch.delenv("PREPROD_STATE_ROOT", raising=False)
     monkeypatch.setenv("PRODUCTION_DASHBOARD_MD_PATH", "/tmp/dashboard.md")
     monkeypatch.setenv("SOME_SAFE_VAR", "keep")
     monkeypatch.setenv("PREPROD_RUNNER_STATE_ROOT", "/tmp/preprod_runner_state_contract")
 
     env = runner.build_unit_test_env()
 
-    assert env["PREPROD_ISOLATION_MODE"] == "true"
-    assert env["PREPROD_STATE_ROOT"].endswith("/tmp/preprod_runner_state_contract/unit-test-output")
+    assert env.get("PREPROD_ISOLATION_MODE") != "true"
     assert "PRODUCTION_DASHBOARD_MD_PATH" in env
     assert env["PRODUCTION_DASHBOARD_MD_PATH"].endswith("/unit-test-output/state/production_dashboard_latest.md")
     assert "GOVERNANCE_READINESS_MD_PATH" in env
@@ -246,6 +245,7 @@ def test_build_unit_test_env_removes_preprod_runtime_keys(monkeypatch: pytest.Mo
 
 def test_run_phase_clears_preprod_vars_for_pytest_category(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     state_root = tmp_path / "external_state"
+    monkeypatch.delenv("PREPROD_ISOLATION_MODE", raising=False)
     monkeypatch.setenv("PREPROD_RUNNER_STATE_ROOT", str(state_root))
     log_path = tmp_path / "phase_log.jsonl"
     detached = tmp_path / "detached"
@@ -270,7 +270,7 @@ def test_run_phase_clears_preprod_vars_for_pytest_category(tmp_path: Path, monke
     res = runner.run_phase(phase=phase, run_id="r5", phase_log=log_path, default_cwd=detached)
 
     assert res.status == "pass"
-    assert "true" in res.stdout_tail
+    assert "<none>" in res.stdout_tail
     assert str((state_root / "unit-test-output" / "state" / "production_dashboard_latest.md")) in res.stdout_tail
     assert str((state_root / "unit-test-output" / "state" / "production_dashboard_latest.json")) in res.stdout_tail
     assert str(detached) in res.stdout_tail

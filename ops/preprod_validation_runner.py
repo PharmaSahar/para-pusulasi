@@ -160,10 +160,6 @@ def build_unit_test_env(base_env: dict[str, str] | None = None) -> dict[str, str
     else:
         scratch = Path(tempfile.mkdtemp(prefix="preprod_runner_pytest_")).resolve()
 
-    # Ensure test subprocesses remain isolated from checkout mutable outputs.
-    env["PREPROD_ISOLATION_MODE"] = "true"
-    env["PREPROD_STATE_ROOT"] = str(scratch)
-
     path_overrides = {
         "GOVERNANCE_READINESS_MD_PATH": scratch / "state" / "governance_readiness_latest.md",
         "GOVERNANCE_REFRESH_LATEST_PATH": scratch / "state" / "governance_refresh_latest.json",

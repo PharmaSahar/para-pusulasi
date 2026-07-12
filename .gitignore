@@ -21,3 +21,9 @@ venv/
 # Geçici
 /tmp/
 *.m4a
+
+# Generated runtime/validation outputs (keep source/docs visible)
+artifacts/latest/
+artifacts/deployment/
+artifacts/incidents/cross_channel_contamination/
+config/runtime_manifest.json

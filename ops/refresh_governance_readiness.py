@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -16,13 +17,48 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-LOGS = ROOT / "logs"
-MONITOR_PATH = LOGS / "proven_validated_monitor.jsonl"
-LATEST_PATH = LOGS / "governance_refresh_run_latest.json"
+
+
+def _env_path(key: str, default: Path) -> Path:
+    raw = str(os.getenv(key, "")).strip()
+    return Path(raw) if raw else default
+
+
+LOGS = _env_path("GOVERNANCE_LOG_DIR", ROOT / "logs")
+MONITOR_PATH = _env_path("PROVEN_VALIDATED_MONITOR_PATH", LOGS / "proven_validated_monitor.jsonl")
+LATEST_PATH = _env_path("GOVERNANCE_REFRESH_LATEST_PATH", LOGS / "governance_refresh_run_latest.json")
 
 
 def _resolve_readiness_markdown() -> Path:
-    return ROOT / "docs/governance_readiness_latest.md"
+    return _env_path("GOVERNANCE_READINESS_MD_PATH", ROOT / "docs/governance_readiness_latest.md")
+
+
+def _preprod_isolation_enabled() -> bool:
+    raw = str(os.getenv("PREPROD_ISOLATION_MODE", "false")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _assert_preprod_mutable_path(path: Path, *, env_key: str) -> None:
+    if not _preprod_isolation_enabled():
+        return
+
+    root_raw = str(os.getenv("PREPROD_STATE_ROOT", "")).strip()
+    if not root_raw:
+        raise RuntimeError("preprod_isolation_invalid: PREPROD_STATE_ROOT missing")
+
+    if not str(os.getenv(env_key, "")).strip():
+        raise RuntimeError(f"preprod_isolation_invalid: {env_key} missing")
+
+    resolved = path.resolve()
+    state_root = Path(root_raw).resolve()
+    repo_root = ROOT.resolve()
+
+    inside_state_root = resolved == state_root or state_root in resolved.parents
+    inside_repo = resolved == repo_root or repo_root in resolved.parents
+    if (not inside_state_root) or inside_repo:
+        raise RuntimeError(
+            f"preprod_isolation_violation: {env_key}={resolved} outside PREPROD_STATE_ROOT or inside repo"
+        )
 
 
 def _utc_now() -> datetime:
@@ -153,6 +189,8 @@ def _build_readiness_markdown(*, generated_at: str, lookback_rows: int, steps: l
 def run_refresh(*, lookback_rows: int) -> dict[str, Any]:
     python_bin = sys.executable
     readiness_markdown = _resolve_readiness_markdown()
+    _assert_preprod_mutable_path(readiness_markdown, env_key="GOVERNANCE_READINESS_MD_PATH")
+    _assert_preprod_mutable_path(LATEST_PATH, env_key="GOVERNANCE_REFRESH_LATEST_PATH")
     steps = [
         {
             "name": "p0_validation_metrics",

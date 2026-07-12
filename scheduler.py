@@ -31,7 +31,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
 
 import pytz
 from src.production_quality_platform import (
@@ -59,9 +59,20 @@ except ImportError:
 
 sys.path.insert(0, os.path.dirname(__file__))
 
+
+def _path_from_env(env_key: str, default: str) -> Path:
+    raw = str(os.getenv(env_key, default)).strip()
+    return Path(raw if raw else default)
+
+
+def _path_string_from_env(env_key: str, default: str) -> str:
+    raw = str(os.getenv(env_key, default)).strip()
+    return raw if raw else default
+
 # Loglama
-Path("logs").mkdir(exist_ok=True)
-_SCHEDULER_LOG_FILE_HANDLER = logging.FileHandler("logs/scheduler.log", encoding="utf-8")
+_SCHEDULER_LOG_FILE_PATH = _path_from_env("SCHEDULER_LOG_FILE", "logs/scheduler.log")
+_SCHEDULER_LOG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+_SCHEDULER_LOG_FILE_HANDLER = logging.FileHandler(_SCHEDULER_LOG_FILE_PATH, encoding="utf-8")
 _SCHEDULER_LOG_STREAM_HANDLER = logging.StreamHandler(sys.stdout)
 logging.basicConfig(
     level=logging.INFO,
@@ -133,12 +144,12 @@ except ValueError:
     MAX_PARALLEL_RENDERS = 1
 
 TZ = pytz.timezone("Europe/Istanbul")
-QUEUE_FILE = "output/queue/channel_queue.json"
-PID_FILE = Path("logs/production_scheduler.pid")
-SCHEDULER_SINGLETON_LOCK_FILE = Path("output/state/scheduler_singleton.lock")
-SCHEDULER_SINGLETON_META_FILE = Path("output/state/scheduler_singleton_meta.json")
-RUNTIME_EVIDENCE_LATEST_FILE = Path("logs/runtime_optimization_evidence_latest.json")
-SAFETY_GATE_LATEST_FILE = Path("logs/production_safety_gate_latest.json")
+QUEUE_FILE = _path_string_from_env("SCHEDULER_QUEUE_FILE", "output/queue/channel_queue.json")
+PID_FILE = _path_from_env("SCHEDULER_PID_FILE", "logs/production_scheduler.pid")
+SCHEDULER_SINGLETON_LOCK_FILE = _path_from_env("SCHEDULER_SINGLETON_LOCK_FILE", "output/state/scheduler_singleton.lock")
+SCHEDULER_SINGLETON_META_FILE = _path_from_env("SCHEDULER_SINGLETON_META_FILE", "output/state/scheduler_singleton_meta.json")
+RUNTIME_EVIDENCE_LATEST_FILE = _path_from_env("RUNTIME_EVIDENCE_LATEST_FILE", "logs/runtime_optimization_evidence_latest.json")
+SAFETY_GATE_LATEST_FILE = _path_from_env("SAFETY_GATE_LATEST_FILE", "logs/production_safety_gate_latest.json")
 ACTIVATION_CONTROLLER_SCRIPT = Path("ops/activation_controller.py")
 FLEET_HEALTH_SCRIPT = Path("ops/fleet_health_report.py")
 BACKLOG_SCRIPT = Path("ops/optimization_backlog_engine.py")
@@ -152,6 +163,41 @@ _SCHEDULER_SINGLETON_HANDLE: TextIO | None = None
 # Thread havuzu
 render_executor = ThreadPoolExecutor(max_workers=MAX_PARALLEL_RENDERS, thread_name_prefix="render")
 render_locks = {}  # Her kanal için kilit — aynı anda iki render başlamasın
+
+RETRYABLE = "RETRYABLE"
+NON_RETRYABLE_QUARANTINE = "NON_RETRYABLE_QUARANTINE"
+TERMINAL_FAILURE = "TERMINAL_FAILURE"
+
+_NON_RETRYABLE_DOMAIN_TOKENS = (
+    "topic_domain_blocked",
+    "topic_provenance_collision",
+    "domain_policy_forbidden_keyword",
+    "channel_topic_domain_mismatch",
+    "cross_channel_topic_contamination",
+)
+
+_TERMINAL_FAILURE_TOKENS = (
+    "failed_fact_check",
+    "credit balance",
+    "quota",
+    "invalid_request",
+    "invalidtags",
+    "authentication",
+    "http 400",
+    "http 401",
+    "http 403",
+)
+
+_TRANSIENT_RETRYABLE_TOKENS = (
+    "timeout",
+    "connection",
+    "dns",
+    "network",
+    "temporary",
+    "service unavailable",
+    "internal server error",
+    "http 5",
+)
 
 
 # ─── Yardımcı Fonksiyonlar ────────────────────────────────────────────────────
@@ -264,6 +310,65 @@ def _scheduler_singleton_lock_path() -> Path:
 def _scheduler_singleton_meta_path() -> Path:
     raw = str(os.getenv("SCHEDULER_SINGLETON_META_FILE", str(SCHEDULER_SINGLETON_META_FILE))).strip()
     return Path(raw) if raw else SCHEDULER_SINGLETON_META_FILE
+
+
+def _collect_preprod_mutable_paths() -> dict[str, Path]:
+    return {
+        "scheduler_log_file": _SCHEDULER_LOG_FILE_PATH,
+        "scheduler_queue_file": Path(QUEUE_FILE),
+        "scheduler_pid_file": PID_FILE,
+        "scheduler_singleton_lock_file": _scheduler_singleton_lock_path(),
+        "scheduler_singleton_meta_file": _scheduler_singleton_meta_path(),
+        "runtime_evidence_latest": RUNTIME_EVIDENCE_LATEST_FILE,
+        "safety_gate_latest": SAFETY_GATE_LATEST_FILE,
+        "activation_report": _path_from_env("ACTIVATION_CONTROLLER_REPORT_PATH", "logs/activation_controller_report.json"),
+        "activation_report_archive": _path_from_env("ACTIVATION_CONTROLLER_REPORT_ARCHIVE_DIR", "output/state/activation_reports"),
+        "activation_flags": _path_from_env("ACTIVATION_FLAGS_PATH", "output/state/learning_activation_flags.json"),
+        "governance_refresh_latest": _path_from_env("GOVERNANCE_REFRESH_LATEST_PATH", "logs/governance_refresh_run_latest.json"),
+        "governance_readiness_markdown": _path_from_env("GOVERNANCE_READINESS_MD_PATH", "docs/governance_readiness_latest.md"),
+        "production_dashboard_latest_json": _path_from_env("PRODUCTION_DASHBOARD_JSON_PATH", "logs/production_dashboard_latest.json"),
+        "production_dashboard_latest_md": _path_from_env("PRODUCTION_DASHBOARD_MD_PATH", "docs/production_dashboard_latest.md"),
+        "production_events": _path_from_env("PRODUCTION_EVENTS_PATH", "logs/production_events.jsonl"),
+        "production_observability_latest": _path_from_env("PRODUCTION_OBSERVABILITY_LATEST_PATH", "logs/production_observability_latest.json"),
+    }
+
+
+def _assert_preprod_isolation_paths() -> None:
+    enabled = _is_enabled(os.getenv("PREPROD_ISOLATION_MODE", "false"))
+    if not enabled:
+        return
+
+    root_raw = str(os.getenv("PREPROD_STATE_ROOT", "")).strip()
+    if not root_raw:
+        raise RuntimeError("preprod_isolation_invalid: PREPROD_STATE_ROOT missing")
+
+    state_root = Path(root_raw).resolve()
+    repo_root = Path(os.getcwd()).resolve()
+
+    required_env_keys = (
+        "PRODUCTION_DASHBOARD_MD_PATH",
+        "ACTIVATION_CONTROLLER_REPORT_ARCHIVE_DIR",
+    )
+    missing_required = [key for key in required_env_keys if not str(os.getenv(key, "")).strip()]
+    if missing_required:
+        raise RuntimeError(
+            "preprod_isolation_invalid: required mutable path env missing: "
+            + ",".join(missing_required)
+        )
+
+    offenders: list[str] = []
+    for name, path in _collect_preprod_mutable_paths().items():
+        resolved = path.resolve()
+        inside_state_root = resolved == state_root or state_root in resolved.parents
+        inside_repo = resolved == repo_root or repo_root in resolved.parents
+        if (not inside_state_root) or inside_repo:
+            offenders.append(f"{name}={resolved}")
+
+    if offenders:
+        raise RuntimeError(
+            "preprod_isolation_violation: mutable path outside PREPROD_STATE_ROOT or inside repo: "
+            + "; ".join(offenders)
+        )
 
 
 def _load_scheduler_singleton_meta() -> dict:
@@ -423,6 +528,160 @@ def _normalize_queue_entry(entry: dict) -> dict:
         status = "active"
     row["status"] = status
     return row
+
+
+def _classify_pipeline_failure(error_text: str, exc: Exception) -> dict[str, Any]:
+    text = str(error_text or "").strip().lower()
+    guard_codes = [str(x).strip().lower() for x in (getattr(exc, "_guard_reason_codes", []) or []) if str(x).strip()]
+    combined = text + " " + " ".join(guard_codes)
+
+    if any(token in combined for token in _NON_RETRYABLE_DOMAIN_TOKENS):
+        codes = sorted(set(guard_codes + ["topic_domain_blocked"]))
+        return {
+            "classification": NON_RETRYABLE_QUARANTINE,
+            "quarantine_reason": "topic_domain_blocked",
+            "guard_reason_codes": codes,
+            "retry_reason": "deterministic_domain_policy_rejection",
+        }
+
+    if getattr(exc, "_skip_scheduler_pipeline_retry", False):
+        return {
+            "classification": TERMINAL_FAILURE,
+            "quarantine_reason": None,
+            "guard_reason_codes": guard_codes,
+            "retry_reason": "explicit_skip_retry",
+        }
+
+    if any(token in text for token in _TERMINAL_FAILURE_TOKENS):
+        return {
+            "classification": TERMINAL_FAILURE,
+            "quarantine_reason": None,
+            "guard_reason_codes": guard_codes,
+            "retry_reason": "fatal_generation_error",
+        }
+
+    if any(token in text for token in _TRANSIENT_RETRYABLE_TOKENS):
+        return {
+            "classification": RETRYABLE,
+            "quarantine_reason": None,
+            "guard_reason_codes": guard_codes,
+            "retry_reason": "transient_provider_or_network_error",
+        }
+
+    return {
+        "classification": RETRYABLE,
+        "quarantine_reason": None,
+        "guard_reason_codes": guard_codes,
+        "retry_reason": "retry_budget_fallback",
+    }
+
+
+def _is_same_domain_quarantine_entry(entry: dict[str, Any], candidate: dict[str, Any]) -> bool:
+    if str(entry.get("status") or "").strip().lower() != "quarantined":
+        return False
+    if str(entry.get("quarantine_reason") or "") != str(candidate.get("quarantine_reason") or ""):
+        return False
+
+    entry_run = str(entry.get("run_id") or "").strip()
+    entry_content = str(entry.get("content_id") or "").strip()
+    cand_run = str(candidate.get("run_id") or "").strip()
+    cand_content = str(candidate.get("content_id") or "").strip()
+    if cand_run and cand_content:
+        return entry_run == cand_run and entry_content == cand_content
+
+    return (
+        str(entry.get("channel_id") or "") == str(candidate.get("channel_id") or "")
+        and str(entry.get("topic") or "") == str(candidate.get("topic") or "")
+        and list(entry.get("guard_reason_codes") or []) == list(candidate.get("guard_reason_codes") or [])
+    )
+
+
+def _quarantine_non_retryable_domain_block(
+    *,
+    channel_id: str,
+    cfg: Any,
+    publish_at: str,
+    failure: dict[str, Any],
+    routed_error_text: str,
+    source_stage: str,
+) -> None:
+    guard_reason_codes = list(failure.get("guard_reason_codes") or ["topic_domain_blocked"])
+    expected_niche = str(getattr(cfg, "niche", "") or "")
+    topic = str(failure.get("topic") or "")
+    run_id = str(failure.get("run_id") or "")
+    content_id = str(failure.get("content_id") or "")
+    retry_count = int(failure.get("retry_count") or 1)
+    detected_domain = str(failure.get("detected_domain") or "unknown")
+
+    entry_payload = _normalize_queue_entry(
+        {
+            "queue_entry_id": f"qe_{uuid.uuid4().hex[:16]}",
+            "video_id": None,
+            "title": "",
+            "youtube_url": "",
+            "publish_at": publish_at,
+            "rendered_at": datetime.now(TZ).isoformat(),
+            "status": "quarantined",
+            "channel_id": channel_id,
+            "quarantine_reason": str(failure.get("quarantine_reason") or "topic_domain_blocked"),
+            "guard_reason_codes": guard_reason_codes,
+            "quarantined_at": datetime.now(TZ).isoformat(),
+            "recoverable": False,
+            "review_status": "pending",
+            "error": routed_error_text[:300],
+            "run_id": run_id,
+            "content_id": content_id,
+            "topic": topic,
+            "expected_niche": expected_niche,
+            "detected_domain": detected_domain,
+            "retry_count": retry_count,
+            "source_stage": source_stage,
+            "prevent_upload": True,
+            "prevent_shorts_upload": True,
+        }
+    )
+
+    update_state = {"created": False, "entry": None}
+
+    def _upsert_quarantined_entry(queue):
+        entries = list(queue.get(channel_id, []) or [])
+        for idx, existing in enumerate(entries):
+            if _is_same_domain_quarantine_entry(existing, entry_payload):
+                merged = dict(existing)
+                merged.update({k: v for k, v in entry_payload.items() if v not in ("", None, [])})
+                merged["guard_reason_codes"] = sorted(
+                    set(list(existing.get("guard_reason_codes") or []) + list(entry_payload.get("guard_reason_codes") or []))
+                )
+                entries[idx] = _normalize_queue_entry(merged)
+                queue[channel_id] = entries
+                update_state["entry"] = entries[idx]
+                return
+
+        entries.append(entry_payload)
+        queue[channel_id] = entries
+        update_state["created"] = True
+        update_state["entry"] = entry_payload
+
+    update_queue(_upsert_quarantined_entry)
+
+    _append_queue_quarantine_decision(
+        {
+            "event": "topic_domain_blocked",
+            "channel_id": channel_id,
+            "reason": str(failure.get("quarantine_reason") or "topic_domain_blocked"),
+            "guard_reason_codes": guard_reason_codes,
+            "error": routed_error_text[:300],
+            "source": source_stage,
+            "run_id": run_id,
+            "content_id": content_id,
+            "topic": topic,
+            "expected_niche": expected_niche,
+            "detected_domain": detected_domain,
+            "retry_count": retry_count,
+            "quarantine_entry_created": bool(update_state["created"]),
+            "queue_entry_id": str((update_state.get("entry") or {}).get("queue_entry_id") or ""),
+        }
+    )
 
 
 def get_ready_channels() -> list:
@@ -590,6 +849,7 @@ def render_and_schedule(channel_id: str):
                 last_error = e
                 error_text = str(getattr(e, "_provider_error_text", str(e)))
                 error_str = error_text.lower()
+                failure_class = _classify_pipeline_failure(error_text, e)
                 provider_failure_tokens = (
                     "anthropic",
                     "credit balance",
@@ -614,13 +874,25 @@ def render_and_schedule(channel_id: str):
                 # 529 overload dalgasinda kanal-icinde tekrar denemek yerine global circuit'e birak.
                 if overloaded_signal:
                     setattr(e, "_skip_scheduler_pipeline_retry", True)
+
+                setattr(e, "_retry_count", attempt)
+                setattr(e, "_retry_reason", str(failure_class.get("retry_reason") or "unknown"))
+
+                if failure_class["classification"] == NON_RETRYABLE_QUARANTINE:
+                    setattr(e, "_skip_scheduler_pipeline_retry", True)
+                    setattr(e, "_guard_reason_codes", list(failure_class.get("guard_reason_codes") or []))
+                    setattr(e, "_quarantine_reason", str(failure_class.get("quarantine_reason") or "topic_domain_blocked"))
+                    raise
+
                 # Kesinlikle retry yapma
-                if any(x in error_str for x in ["failed_fact_check", "credit balance", "quota", "invalid_request", "invalidtags", "authentication", "http 400", "http 401", "http 403"]):
+                if failure_class["classification"] == TERMINAL_FAILURE:
                     logger.error(f"[{cfg.name}] Fatal hata (retry yok): {e}")
                     if "failed_fact_check" not in error_str:
                         decision = notify_error(cfg.name, error_text)
                         logger.info(f"[{cfg.name}] Telegram karar feedback: {decision.get('decision')}")
+                        setattr(e, "_scheduler_notify_sent", True)
                     raise
+
                 if getattr(e, "_skip_scheduler_pipeline_retry", False):
                     raise
                 if attempt < 3:
@@ -750,6 +1022,7 @@ def render_and_schedule(channel_id: str):
     except Exception as e:
         routed_error_text = str(getattr(e, "_provider_error_text", str(e)))
         err_text = routed_error_text.lower()
+        failure_class = _classify_pipeline_failure(routed_error_text, e)
         if any(token in err_text for token in (
             "anthropic",
             "credit balance",
@@ -768,6 +1041,37 @@ def render_and_schedule(channel_id: str):
         )) and not getattr(e, "_provider_failure_recorded", False):
             record_provider_failure("anthropic", routed_error_text)
         logger.error(f"[{channel_id}] Render hatası: {e}", exc_info=True)
+        if failure_class["classification"] == NON_RETRYABLE_QUARANTINE:
+            try:
+                from src.channel_manager import get_channel as _get_channel
+                cfg = _get_channel(channel_id)
+                publish_at = get_next_upload_time(
+                    cfg,
+                    skip_occupied=[
+                        entry.get("publish_at", "")
+                        for entry in load_queue().get(channel_id, [])
+                        if _is_publishable_queue_entry(entry)
+                    ],
+                )
+
+                _quarantine_non_retryable_domain_block(
+                    channel_id=channel_id,
+                    cfg=cfg,
+                    publish_at=publish_at,
+                    failure={
+                        "quarantine_reason": str(getattr(e, "_quarantine_reason", "topic_domain_blocked")),
+                        "guard_reason_codes": list(getattr(e, "_guard_reason_codes", []) or list(failure_class.get("guard_reason_codes") or [])),
+                        "run_id": str(getattr(e, "_run_id", "") or ""),
+                        "content_id": str(getattr(e, "_content_id", "") or ""),
+                        "topic": str(getattr(e, "_topic", "") or ""),
+                        "detected_domain": str(getattr(e, "_detected_domain", "unknown") or "unknown"),
+                        "retry_count": int(getattr(e, "_retry_count", 1) or 1),
+                    },
+                    routed_error_text=routed_error_text,
+                    source_stage="scheduler.render_and_schedule",
+                )
+            except Exception:
+                pass
         try:
             record_dead_letter(
                 {
@@ -787,6 +1091,8 @@ def render_and_schedule(channel_id: str):
             pass
         try:
             if "failed_fact_check" in routed_error_text.lower():
+                return
+            if getattr(e, "_scheduler_notify_sent", False):
                 return
             from src.channel_manager import get_channel
             cfg = get_channel(channel_id)
@@ -1160,7 +1466,7 @@ def run_optimization_runtime_cycle() -> dict:
     if not target_channel and ready_channels:
         target_channel = ready_channels[0]
 
-    flags_path = Path("output/state/learning_activation_flags.json")
+    flags_path = _path_from_env("ACTIVATION_FLAGS_PATH", "output/state/learning_activation_flags.json")
     flags_before = _load_json_file(flags_path)
 
     evidence = {
@@ -1536,6 +1842,8 @@ def run_governance_refresh_once() -> int:
 def main():
     args = sys.argv[1:]
     skip_provider_preflight = "--skip-provider-preflight" in args
+
+    _assert_preprod_isolation_paths()
 
     if "--help" in args or "-h" in args:
         _print_help()

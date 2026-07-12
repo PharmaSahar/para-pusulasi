@@ -17,15 +17,49 @@ from typing import Any, Callable
 from .channel_performance import load_recent_performance_snapshots
 from .visual_diversity import topic_similarity
 
-PRODUCTION_EVENTS_PATH = Path("logs/production_events.jsonl")
-PRODUCTION_OBSERVABILITY_LATEST_PATH = Path("logs/production_observability_latest.json")
-PRODUCTION_DASHBOARD_JSON_PATH = Path("logs/production_dashboard_latest.json")
-PRODUCTION_DASHBOARD_MD_PATH = Path("docs/production_dashboard_latest.md")
-THUMBNAIL_INTELLIGENCE_LATEST_PATH = Path("logs/thumbnail_intelligence_latest.json")
-PRODUCTION_EVIDENCE_DIR = Path("logs/production_evidence")
-UPLOAD_REGISTRY_PATH = Path("logs/production_upload_registry.json")
-DEAD_LETTER_QUEUE_PATH = Path("logs/production_dead_letter_queue.jsonl")
-CANARY_STATE_PATH = Path("logs/production_canary_state.json")
+
+def _env_path(key: str, default: str) -> Path:
+    raw = str(os.getenv(key, default)).strip()
+    return Path(raw if raw else default)
+
+
+def _preprod_isolation_enabled() -> bool:
+    raw = str(os.getenv("PREPROD_ISOLATION_MODE", "false")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _assert_preprod_mutable_path(path: Path, *, env_key: str) -> None:
+    if not _preprod_isolation_enabled():
+        return
+
+    root_raw = str(os.getenv("PREPROD_STATE_ROOT", "")).strip()
+    if not root_raw:
+        raise RuntimeError("preprod_isolation_invalid: PREPROD_STATE_ROOT missing")
+
+    if not str(os.getenv(env_key, "")).strip():
+        raise RuntimeError(f"preprod_isolation_invalid: {env_key} missing")
+
+    resolved = path.resolve()
+    state_root = Path(root_raw).resolve()
+    repo_root = Path(__file__).resolve().parents[1]
+
+    inside_state_root = resolved == state_root or state_root in resolved.parents
+    inside_repo = resolved == repo_root or repo_root in resolved.parents
+    if (not inside_state_root) or inside_repo:
+        raise RuntimeError(
+            f"preprod_isolation_violation: {env_key}={resolved} outside PREPROD_STATE_ROOT or inside repo"
+        )
+
+
+PRODUCTION_EVENTS_PATH = _env_path("PRODUCTION_EVENTS_PATH", "logs/production_events.jsonl")
+PRODUCTION_OBSERVABILITY_LATEST_PATH = _env_path("PRODUCTION_OBSERVABILITY_LATEST_PATH", "logs/production_observability_latest.json")
+PRODUCTION_DASHBOARD_JSON_PATH = _env_path("PRODUCTION_DASHBOARD_JSON_PATH", "logs/production_dashboard_latest.json")
+PRODUCTION_DASHBOARD_MD_PATH = _env_path("PRODUCTION_DASHBOARD_MD_PATH", "docs/production_dashboard_latest.md")
+THUMBNAIL_INTELLIGENCE_LATEST_PATH = _env_path("THUMBNAIL_INTELLIGENCE_LATEST_PATH", "logs/thumbnail_intelligence_latest.json")
+PRODUCTION_EVIDENCE_DIR = _env_path("PRODUCTION_EVIDENCE_DIR", "logs/production_evidence")
+UPLOAD_REGISTRY_PATH = _env_path("UPLOAD_REGISTRY_PATH", "logs/production_upload_registry.json")
+DEAD_LETTER_QUEUE_PATH = _env_path("DEAD_LETTER_QUEUE_PATH", "logs/production_dead_letter_queue.jsonl")
+CANARY_STATE_PATH = _env_path("CANARY_STATE_PATH", "logs/production_canary_state.json")
 
 
 def _now_iso() -> str:
@@ -313,6 +347,11 @@ def update_production_dashboard(
     scheduler_pid: int | None,
     last_error: str | None = None,
 ) -> dict[str, Any]:
+    _assert_preprod_mutable_path(
+        PRODUCTION_DASHBOARD_MD_PATH,
+        env_key="PRODUCTION_DASHBOARD_MD_PATH",
+    )
+
     events = _parse_recent_events(hours=24)
     snapshots = load_recent_performance_snapshots(lookback_days=2, max_items=800)
     videos = [e for e in events if str(e.get("content_type") or "video") == "video"]

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -21,10 +22,45 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 ANALYTICS_PROBE_SCRIPT = ROOT / "ops" / "analytics_single_channel_probe.py"
-THUMB_CACHE_PATH = ROOT / "logs" / "thumbnail_permission_cache.json"
-DEFAULT_REPORT_PATH = ROOT / "logs" / "activation_controller_report.json"
-DEFAULT_FLAGS_PATH = ROOT / "output" / "state" / "learning_activation_flags.json"
-DEFAULT_REPORT_ARCHIVE_DIR = ROOT / "output" / "state" / "activation_reports"
+
+
+def _env_path(key: str, default: Path) -> Path:
+    raw = str(os.getenv(key, "")).strip()
+    return Path(raw) if raw else default
+
+
+def _preprod_isolation_enabled() -> bool:
+    raw = str(os.getenv("PREPROD_ISOLATION_MODE", "false")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _assert_preprod_mutable_path(path: Path, *, env_key: str) -> None:
+    if not _preprod_isolation_enabled():
+        return
+
+    root_raw = str(os.getenv("PREPROD_STATE_ROOT", "")).strip()
+    if not root_raw:
+        raise RuntimeError("preprod_isolation_invalid: PREPROD_STATE_ROOT missing")
+
+    if not str(os.getenv(env_key, "")).strip():
+        raise RuntimeError(f"preprod_isolation_invalid: {env_key} missing")
+
+    resolved = path.resolve()
+    state_root = Path(root_raw).resolve()
+    repo_root = ROOT.resolve()
+
+    inside_state_root = resolved == state_root or state_root in resolved.parents
+    inside_repo = resolved == repo_root or repo_root in resolved.parents
+    if (not inside_state_root) or inside_repo:
+        raise RuntimeError(
+            f"preprod_isolation_violation: {env_key}={resolved} outside PREPROD_STATE_ROOT or inside repo"
+        )
+
+
+THUMB_CACHE_PATH = _env_path("THUMBNAIL_PERMISSION_CACHE_PATH", ROOT / "logs" / "thumbnail_permission_cache.json")
+DEFAULT_REPORT_PATH = _env_path("ACTIVATION_CONTROLLER_REPORT_PATH", ROOT / "logs" / "activation_controller_report.json")
+DEFAULT_FLAGS_PATH = _env_path("ACTIVATION_FLAGS_PATH", ROOT / "output" / "state" / "learning_activation_flags.json")
+DEFAULT_REPORT_ARCHIVE_DIR = _env_path("ACTIVATION_CONTROLLER_REPORT_ARCHIVE_DIR", ROOT / "output" / "state" / "activation_reports")
 
 
 @dataclass
@@ -200,6 +236,11 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def _archive_report(*, report: dict[str, Any], archive_dir: Path) -> dict[str, str]:
+    _assert_preprod_mutable_path(
+        archive_dir,
+        env_key="ACTIVATION_CONTROLLER_REPORT_ARCHIVE_DIR",
+    )
+
     archive_dir.mkdir(parents=True, exist_ok=True)
 
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")

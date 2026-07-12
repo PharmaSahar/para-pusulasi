@@ -220,3 +220,33 @@ def test_runtime_identity_valid_detached_launch_passes(tmp_path: Path) -> None:
     res = runner.run_phase(phase=phase, run_id="r4", phase_log=tmp_path / "log.jsonl", default_cwd=tmp_path)
     assert res.status == "pass"
     assert "BUILD_INFO scheduler" in res.stdout_tail
+
+
+def test_build_unit_test_env_removes_preprod_runtime_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PREPROD_ISOLATION_MODE", "true")
+    monkeypatch.setenv("PREPROD_STATE_ROOT", "/tmp/preprod_state")
+    monkeypatch.setenv("PRODUCTION_DASHBOARD_MD_PATH", "/tmp/dashboard.md")
+    monkeypatch.setenv("SOME_SAFE_VAR", "keep")
+
+    env = runner.build_unit_test_env()
+
+    assert "PREPROD_ISOLATION_MODE" not in env
+    assert "PREPROD_STATE_ROOT" not in env
+    assert "PRODUCTION_DASHBOARD_MD_PATH" not in env
+    assert env.get("SOME_SAFE_VAR") == "keep"
+
+
+def test_run_phase_clears_preprod_vars_for_pytest_category(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PREPROD_ISOLATION_MODE", "true")
+    log_path = tmp_path / "phase_log.jsonl"
+    phase = runner.PhaseSpec(
+        name="env_probe_pytest",
+        command=[sys.executable, "-c", "import os; print(os.environ.get('PREPROD_ISOLATION_MODE', '<none>'))"],
+        timeout_seconds=3,
+        category="pytest",
+    )
+
+    res = runner.run_phase(phase=phase, run_id="r5", phase_log=log_path, default_cwd=tmp_path)
+
+    assert res.status == "pass"
+    assert "<none>" in res.stdout_tail

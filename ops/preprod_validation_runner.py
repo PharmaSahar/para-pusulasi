@@ -21,6 +21,18 @@ DEFAULT_ARTIFACTS_DIR = PROJECT_ROOT / "artifacts" / "deployment"
 DEFAULT_STATE_ROOT = Path("/tmp/preprod_validation_state")
 DEFAULT_EXTERNAL_RUNNER = Path("/tmp/preprod_runtime_validation.py")
 
+UNIT_TEST_ENV_UNSET_KEYS: tuple[str, ...] = (
+    "PREPROD_ISOLATION_MODE",
+    "PREPROD_STATE_ROOT",
+    "GOVERNANCE_READINESS_MD_PATH",
+    "PRODUCTION_DASHBOARD_MD_PATH",
+    "PRODUCTION_DASHBOARD_JSON_PATH",
+    "ACTIVATION_CONTROLLER_REPORT_PATH",
+    "ACTIVATION_CONTROLLER_REPORT_ARCHIVE_DIR",
+    "PRODUCTION_EVENTS_PATH",
+    "PRODUCTION_OBSERVABILITY_LATEST_PATH",
+)
+
 
 @dataclass(frozen=True)
 class PhaseSpec:
@@ -134,6 +146,13 @@ def build_runtime_identity_phase(detached_worktree: Path, candidate_sha: str, py
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def build_unit_test_env(base_env: dict[str, str] | None = None) -> dict[str, str]:
+    env = dict(os.environ if base_env is None else base_env)
+    for key in UNIT_TEST_ENV_UNSET_KEYS:
+        env.pop(key, None)
+    return env
 
 
 def _tail(text: str, max_lines: int = 40) -> str:
@@ -302,6 +321,8 @@ def run_phase(phase: PhaseSpec, run_id: str, phase_log: Path, default_cwd: Path)
     cwd = str(default_cwd if phase.cwd is None else Path(phase.cwd))
 
     env = dict(os.environ)
+    if phase.category in {"pytest", "full_pytest"}:
+        env = build_unit_test_env(env)
     if phase.env_overrides:
         for key, value in phase.env_overrides.items():
             if value is None:
@@ -661,6 +682,7 @@ def _run_selftests(artifacts_dir: Path) -> dict[str, Any]:
     proc = subprocess.run(
         [py, "-m", "pytest", "-q", "tests/test_preprod_validation_runner.py"],
         cwd=str(PROJECT_ROOT),
+        env=build_unit_test_env(),
         capture_output=True,
         text=True,
         check=False,

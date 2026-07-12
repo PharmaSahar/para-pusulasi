@@ -193,6 +193,18 @@ def test_pipeline_attaches_render_metrics_on_success(monkeypatch):
     monkeypatch.setattr(pipeline, "ImageFetcher", FakeFetcher)
     monkeypatch.setattr(pipeline, "VideoCreator", FakeCreator)
     monkeypatch.setattr(pipeline, "YouTubeUploader", FakeUploader)
+    monkeypatch.setattr(pipeline, "persist_ownership_manifest", lambda **_kwargs: "/tmp/fake_ownership_manifest.json")
+    monkeypatch.setattr(
+        pipeline,
+        "evaluate_upload_precheck",
+        lambda **_kwargs: {
+            "status": "allow",
+            "quarantine_reason": "",
+            "guard_reason_codes": [],
+            "recoverable": True,
+            "details": {"gate_enabled": False},
+        },
+    )
 
     result = pipeline.run_full_pipeline(topic="x", generate_only=False, channel_cfg=FakeConfig())
 
@@ -295,6 +307,18 @@ def test_pipeline_keeps_fail_open_when_render_metrics_builder_raises(monkeypatch
     monkeypatch.setattr(pipeline, "ImageFetcher", FakeFetcher)
     monkeypatch.setattr(pipeline, "VideoCreator", FakeCreator)
     monkeypatch.setattr(pipeline, "YouTubeUploader", FakeUploader)
+    monkeypatch.setattr(pipeline, "persist_ownership_manifest", lambda **_kwargs: "/tmp/fake_ownership_manifest.json")
+    monkeypatch.setattr(
+        pipeline,
+        "evaluate_upload_precheck",
+        lambda **_kwargs: {
+            "status": "allow",
+            "quarantine_reason": "",
+            "guard_reason_codes": [],
+            "recoverable": True,
+            "details": {"gate_enabled": False},
+        },
+    )
     monkeypatch.setattr(pipeline, "build_render_metrics", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("metrics down")))
 
     result = pipeline.run_full_pipeline(topic="x", generate_only=False, channel_cfg=FakeConfig())

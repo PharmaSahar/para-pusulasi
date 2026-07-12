@@ -292,6 +292,18 @@ def test_pipeline_keeps_full_flow_when_editor_review_succeeds(monkeypatch):
     monkeypatch.setattr(pipeline, "ImageFetcher", FakeFetcher)
     monkeypatch.setattr(pipeline, "VideoCreator", FakeCreator)
     monkeypatch.setattr(pipeline, "YouTubeUploader", FakeUploader)
+    monkeypatch.setattr(pipeline, "persist_ownership_manifest", lambda **_kwargs: "/tmp/fake_ownership_manifest.json")
+    monkeypatch.setattr(
+        pipeline,
+        "evaluate_upload_precheck",
+        lambda **_kwargs: {
+            "status": "allow",
+            "quarantine_reason": "",
+            "guard_reason_codes": [],
+            "recoverable": True,
+            "details": {"gate_enabled": False},
+        },
+    )
 
     result = pipeline.run_full_pipeline(topic="x", generate_only=False, channel_cfg=FakeConfig())
 

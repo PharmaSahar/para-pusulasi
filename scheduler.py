@@ -645,13 +645,18 @@ def _quarantine_non_retryable_domain_block(
     routed_error_text: str,
     source_stage: str,
 ) -> None:
+    timestamp = datetime.now(TZ).isoformat()
     guard_reason_codes = list(failure.get("guard_reason_codes") or ["topic_domain_blocked"])
     expected_niche = str(getattr(cfg, "niche", "") or "")
+    channel_name = str(getattr(cfg, "name", "") or "")
     topic = str(failure.get("topic") or "")
     run_id = str(failure.get("run_id") or "")
     content_id = str(failure.get("content_id") or "")
     retry_count = int(failure.get("retry_count") or 1)
+    regeneration_count = int(failure.get("regeneration_count") or 0)
     detected_domain = str(failure.get("detected_domain") or "unknown")
+    source_exception_type = str(failure.get("source_exception_type") or "")
+    source_exception_message = str(failure.get("source_exception_message") or routed_error_text)
 
     entry_payload = _normalize_queue_entry(
         {
@@ -659,22 +664,30 @@ def _quarantine_non_retryable_domain_block(
             "video_id": None,
             "title": "",
             "youtube_url": "",
+            "timestamp": timestamp,
             "publish_at": publish_at,
-            "rendered_at": datetime.now(TZ).isoformat(),
+            "rendered_at": timestamp,
             "status": "quarantined",
             "channel_id": channel_id,
+            "channel_name": channel_name,
             "quarantine_reason": str(failure.get("quarantine_reason") or "topic_domain_blocked"),
             "guard_reason_codes": guard_reason_codes,
-            "quarantined_at": datetime.now(TZ).isoformat(),
+            "quarantined_at": timestamp,
             "recoverable": False,
             "review_status": "pending",
             "error": routed_error_text[:300],
             "run_id": run_id,
             "content_id": content_id,
             "topic": topic,
+            "selected_topic": topic,
             "expected_niche": expected_niche,
+            "expected_domain": expected_niche,
             "detected_domain": detected_domain,
+            "source_exception_type": source_exception_type,
+            "source_exception_message": source_exception_message[:500],
             "retry_count": retry_count,
+            "regeneration_count": regeneration_count,
+            "terminal": True,
             "source_stage": source_stage,
             "prevent_upload": True,
             "prevent_shorts_upload": True,
@@ -717,7 +730,9 @@ def _quarantine_non_retryable_domain_block(
             "topic": topic,
             "expected_niche": expected_niche,
             "detected_domain": detected_domain,
+            "source_exception_type": source_exception_type,
             "retry_count": retry_count,
+            "regeneration_count": regeneration_count,
             "quarantine_entry_created": bool(update_state["created"]),
             "queue_entry_id": str((update_state.get("entry") or {}).get("queue_entry_id") or ""),
         }
@@ -1134,6 +1149,9 @@ def render_and_schedule(channel_id: str):
                         "topic": str(getattr(e, "_topic", "") or ""),
                         "detected_domain": str(getattr(e, "_detected_domain", "unknown") or "unknown"),
                         "retry_count": int(getattr(e, "_retry_count", 1) or 1),
+                        "regeneration_count": int(getattr(e, "_regeneration_count", 0) or 0),
+                        "source_exception_type": e.__class__.__name__,
+                        "source_exception_message": routed_error_text,
                     },
                     routed_error_text=routed_error_text,
                     source_stage="scheduler.render_and_schedule",
@@ -1883,6 +1901,10 @@ def _run_provider_preflight_check(*, skip_preflight: bool = False) -> tuple[bool
     return ok, detail
 
 
+def _is_local_content_fail_open_enabled() -> bool:
+    return _is_enabled(os.getenv("ANTHROPIC_FAIL_OPEN_LOCAL_CONTENT", "true"))
+
+
 def run_optimization_cycle_once() -> int:
     """Runtime optimization cycle'i bir kez calistir ve sonucu yazdir."""
     if not RUNTIME_CYCLE_LOCK.acquire(blocking=False):
@@ -1901,10 +1923,6 @@ def run_optimization_cycle_once() -> int:
 
     try:
         evidence = run_optimization_runtime_cycle()
-def _is_local_content_fail_open_enabled() -> bool:
-    return _is_enabled(os.getenv("ANTHROPIC_FAIL_OPEN_LOCAL_CONTENT", "true"))
-
-
         _write_json_atomic(RUNTIME_EVIDENCE_LATEST_FILE, evidence)
         print(
             json.dumps(
@@ -2024,6 +2042,7 @@ def main():
         skip_preflight=skip_provider_preflight,
     )
     if not provider_ok:
+        detail = str(provider_detail or "")
         _record_safety_gate_result(
             mode="startup",
             startup_health=startup_health,
@@ -2042,7 +2061,6 @@ def main():
     )
     logger.info("Startup provider preflight result: %s", provider_detail)
 
-        detail = str(provider_detail or "")
     # scheduler_utils opsiyonel — yoksa basit fallback kullan
     try:
         from src.scheduler_utils import notify_startup, cleanup_old_renders

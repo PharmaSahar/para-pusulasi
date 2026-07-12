@@ -8,6 +8,19 @@ import scheduler
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _isolate_production_dashboard_paths(monkeypatch, tmp_path):
+    dashboard_md_path = tmp_path / "production_dashboard_latest.md"
+    dashboard_json_path = tmp_path / "production_dashboard_latest.json"
+
+    monkeypatch.setenv("PRODUCTION_DASHBOARD_MD_PATH", str(dashboard_md_path))
+    monkeypatch.setenv("PRODUCTION_DASHBOARD_JSON_PATH", str(dashboard_json_path))
+
+    prod_globals = scheduler.update_production_dashboard.__globals__
+    monkeypatch.setitem(prod_globals, "PRODUCTION_DASHBOARD_MD_PATH", dashboard_md_path)
+    monkeypatch.setitem(prod_globals, "PRODUCTION_DASHBOARD_JSON_PATH", dashboard_json_path)
+
+
 def _prepare_common_domain_block_mocks(monkeypatch, tmp_path, *, queue_file=None):
     import src.channel_manager as channel_manager
     import src.scheduler_utils as scheduler_utils
@@ -79,7 +92,15 @@ def test_scheduler_topic_domain_block_is_not_retried(monkeypatch):
 
         def _raise_domain_block(**_kwargs):
             calls["pipeline"] += 1
-            raise RuntimeError("topic_domain_blocked:no_valid_candidate niche=saglik")
+            err = RuntimeError("topic_domain_blocked:no_valid_candidate niche=saglik")
+            setattr(err, "_skip_scheduler_pipeline_retry", True)
+            setattr(err, "_quarantine_reason", "topic_domain_blocked")
+            setattr(err, "_guard_reason_codes", ["topic_domain_blocked"])
+            setattr(err, "_run_id", "run_test")
+            setattr(err, "_content_id", "content_test")
+            setattr(err, "_topic", "Saglik kontrol listesi")
+            setattr(err, "_detected_domain", "health")
+            raise err
 
         monkeypatch.setattr(pipeline, "run_full_pipeline", _raise_domain_block)
         scheduler.render_and_schedule("demo_channel")
@@ -127,14 +148,24 @@ def test_quarantine_entry_contains_identity_fields(monkeypatch, tmp_path):
 
     data = json.loads(queue_file.read_text(encoding="utf-8"))
     entry = data["demo_channel"][0]
+    assert entry["timestamp"]
     assert entry["channel_id"] == "demo_channel"
+    assert entry["channel_name"] == "Demo Channel"
     assert entry["run_id"] == "run_001"
     assert entry["content_id"] == "content_001"
     assert entry["topic"] == "Dolar/TL 2027 tahmini"
+    assert entry["selected_topic"] == "Dolar/TL 2027 tahmini"
     assert entry["expected_niche"] == "saglik"
+    assert entry["expected_domain"] == "saglik"
     assert entry["detected_domain"] == "finance"
+    assert entry["source_exception_type"] == "RuntimeError"
+    assert "channel_topic_domain_mismatch" in entry["source_exception_message"]
     assert entry["source_stage"] == "scheduler.render_and_schedule"
     assert entry["retry_count"] == 1
+    assert entry["regeneration_count"] == 0
+    assert entry["terminal"] is True
+    assert entry["prevent_upload"] is True
+    assert entry["prevent_shorts_upload"] is True
 
 
 def test_quarantine_duplicate_handling_is_idempotent(monkeypatch, tmp_path):
@@ -215,3 +246,92 @@ def test_domain_block_does_not_consume_general_retry_budget(monkeypatch, tmp_pat
     scheduler.render_and_schedule("demo_channel")
 
     assert calls["pipeline"] == 1
+
+
+def test_terminal_domain_block_never_schedules_rendered_or_uploaded_content(monkeypatch, tmp_path):
+    import src.pipeline as pipeline
+
+    queue_file, _ = _prepare_common_domain_block_mocks(monkeypatch, tmp_path)
+
+    def _raise_domain_block(**_kwargs):
+        raise RuntimeError("topic_domain_blocked:no_valid_candidate niche=saglik")
+
+    monkeypatch.setattr(pipeline, "run_full_pipeline", _raise_domain_block)
+
+    scheduler.render_and_schedule("demo_channel")
+
+    data = json.loads(queue_file.read_text(encoding="utf-8"))
+    entry = data["demo_channel"][0]
+    assert entry["status"] == "quarantined"
+    assert entry["video_id"] is None
+    assert entry.get("youtube_url", "") == ""
+    assert entry["prevent_upload"] is True
+    assert entry["prevent_shorts_upload"] is True
+
+
+def test_scheduler_continues_with_other_channel_after_terminal_domain_block(monkeypatch, tmp_path):
+    import src.channel_manager as channel_manager
+    import src.pipeline as pipeline
+    import src.scheduler_utils as scheduler_utils
+
+    queue_file = tmp_path / "channel_queue.json"
+    queue_file.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(scheduler, "QUEUE_FILE", str(queue_file))
+
+    cfg_map = {
+        "blocked_channel": SimpleNamespace(name="Blocked Channel", upload_times=["10:00"], niche="saglik"),
+        "healthy_channel": SimpleNamespace(name="Healthy Channel", upload_times=["10:00"], niche="saglik"),
+    }
+    monkeypatch.setattr(channel_manager, "get_channel", lambda cid: cfg_map[cid])
+    monkeypatch.setattr(scheduler_utils, "check_disk_space", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        scheduler_utils,
+        "get_provider_circuit_status",
+        lambda _provider: {"provider": "anthropic", "is_open": False, "retry_after_seconds": 0, "state": {}},
+    )
+    monkeypatch.setattr(scheduler_utils, "notify_error", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(scheduler_utils, "notify_upload", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(scheduler_utils, "force_cleanup", lambda: None)
+
+    def _pipeline(**_kwargs):
+        cfg = _kwargs["channel_cfg"]
+        if cfg.name == "Blocked Channel":
+            raise RuntimeError("topic_domain_blocked:no_valid_candidate niche=saglik")
+        return {
+            "video_id": "healthy_vid",
+            "title": "Healthy upload",
+            "youtube_url": "https://youtube.com/watch?v=healthy_vid",
+        }
+
+    monkeypatch.setattr(pipeline, "run_full_pipeline", _pipeline)
+
+    scheduler.render_and_schedule("blocked_channel")
+    scheduler.render_and_schedule("healthy_channel")
+
+    data = json.loads(queue_file.read_text(encoding="utf-8"))
+    assert data["blocked_channel"][0]["status"] == "quarantined"
+    assert data["healthy_channel"][0]["status"] == "active"
+    assert data["healthy_channel"][0]["video_id"] == "healthy_vid"
+
+
+def test_quarantine_persistence_failure_is_fail_safe_and_never_uploads(monkeypatch, tmp_path):
+    import src.pipeline as pipeline
+    import src.scheduler_utils as scheduler_utils
+
+    _, _ = _prepare_common_domain_block_mocks(monkeypatch, tmp_path)
+    calls = {"notify_upload": 0}
+
+    def _raise_domain_block(**_kwargs):
+        raise RuntimeError("topic_domain_blocked:no_valid_candidate niche=saglik")
+
+    monkeypatch.setattr(pipeline, "run_full_pipeline", _raise_domain_block)
+    monkeypatch.setattr(
+        scheduler_utils,
+        "notify_upload",
+        lambda *_args, **_kwargs: calls.__setitem__("notify_upload", calls["notify_upload"] + 1),
+    )
+    monkeypatch.setattr(scheduler, "update_queue", lambda _fn: (_ for _ in ()).throw(OSError("read only fs")))
+
+    scheduler.render_and_schedule("demo_channel")
+
+    assert calls["notify_upload"] == 0

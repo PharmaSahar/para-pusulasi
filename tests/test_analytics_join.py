@@ -40,6 +40,7 @@ def _import_pipeline_with_stubs(monkeypatch):
 
     fake_content_generator.ContentGenerator = DummyGenerator
     fake_content_generator.VideoContent = DummyVideoContent
+    fake_content_generator.TopicDomainBlockedError = type("TopicDomainBlockedError", (Exception,), {})
     monkeypatch.setitem(sys.modules, "src.content_generator", fake_content_generator)
 
     for module_name, class_name in [

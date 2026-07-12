@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import config as _default_config
-from .content_generator import ContentGenerator, VideoContent
+from .content_generator import ContentGenerator, TopicDomainBlockedError, VideoContent
 from .editor_review import build_editor_review_metadata
 from .fact_sources import build_default_fact_provider
 from .factual_freshness import FactCheckFailed, validate_script_factual_freshness
@@ -861,13 +861,48 @@ def run_full_pipeline(
 
     def _generate_content(generator: ContentGenerator, *, generation_topic: str | None, additional_guidance: str | None = None):
         nonlocal content
-        if additional_guidance is None:
-            content = generator.generate_and_save(generation_topic)
-        else:
-            try:
-                content = generator.generate_and_save(generation_topic, additional_guidance=additional_guidance)
-            except TypeError:
+        try:
+            if additional_guidance is None:
                 content = generator.generate_and_save(generation_topic)
+            else:
+                try:
+                    content = generator.generate_and_save(generation_topic, additional_guidance=additional_guidance)
+                except TypeError:
+                    content = generator.generate_and_save(generation_topic)
+        except TopicDomainBlockedError as topic_error:
+            trace = dict(getattr(topic_error, "trace", {}) or {})
+            msg = str(topic_error or "")
+            msg_lower = msg.lower()
+            is_collision = "topic_provenance_collision" in msg_lower
+            setattr(topic_error, "_skip_scheduler_pipeline_retry", True)
+            setattr(topic_error, "_quarantine_reason", "topic_provenance_collision" if is_collision else "topic_domain_blocked")
+
+            guard_reason_codes = list(getattr(topic_error, "_guard_reason_codes", []) or [])
+            if is_collision and "topic_provenance_collision" not in guard_reason_codes:
+                guard_reason_codes.append("topic_provenance_collision")
+            if (not is_collision) and "topic_domain_blocked" not in guard_reason_codes:
+                guard_reason_codes.append("topic_domain_blocked")
+            setattr(topic_error, "_guard_reason_codes", sorted(set(str(code).strip().lower() for code in guard_reason_codes if str(code).strip())))
+
+            collision_path = ""
+            if is_collision and ":" in msg:
+                collision_path = msg.split(":", 1)[1].strip()
+
+            setattr(topic_error, "_run_id", str(result.get("run_id", "") or ""))
+            setattr(topic_error, "_content_id", str(result.get("content_id", "") or ""))
+            setattr(topic_error, "_topic", str(generation_topic or trace.get("selected_topic") or ""))
+            setattr(topic_error, "_detected_domain", str(trace.get("detected_domain") or "unknown"))
+            setattr(topic_error, "_detected_channel", str(trace.get("channel_id") or result.get("channel") or ""))
+            setattr(topic_error, "_triggering_validator", "topic_provenance_validator" if is_collision else "topic_domain_validator")
+            setattr(topic_error, "_pipeline_stage", "content_generation")
+            setattr(topic_error, "_error_type", "topic_provenance_collision" if is_collision else "topic_domain_blocked")
+            setattr(topic_error, "_collision_path", collision_path)
+            setattr(topic_error, "_original_topic_source", str(trace.get("provider") or "unknown"))
+            setattr(topic_error, "_provenance_score", trace.get("provenance_score"))
+            setattr(topic_error, "_confidence_score", trace.get("confidence_score"))
+            setattr(topic_error, "_regeneration_count", int(result.get("pipeline_retry_count", 0) or 0))
+            setattr(topic_error, "_regeneration_limit", 1)
+            raise
         result["title"] = content.title
         result["script_path"] = str(getattr(content, "saved_path", "") or f"{cfg.scripts_dir}/{content.created_at[:10]}_{content.title[:30]}.json")
 

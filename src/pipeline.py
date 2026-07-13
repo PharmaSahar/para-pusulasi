@@ -1068,6 +1068,60 @@ def run_full_pipeline(
 
     if shadow_mode_enabled:
         try:
+            from .shadow_generation_planning import build_shadow_generation_planning_artifact
+
+            requested_objective = "shorts_optimization" if str(slot or "").strip().lower() == "short" else "engagement_growth"
+            shadow_generation_planning = build_shadow_generation_planning_artifact(
+                run_id=str(result.get("run_id", "")),
+                channel_id=str(result.get("channel", "")),
+                content_type="mixed",
+                topic=str(topic or getattr(content, "title", "") or ""),
+                requested_objective=requested_objective,
+                generation_timestamp=result.get("started_at") or datetime.now(timezone.utc).isoformat(),
+            )
+            result["shadow_generation_planning"] = shadow_generation_planning
+            logger.info(
+                "shadow_generation_planning run_id=%s blueprint_id=%s channel_id=%s topic=%s planning_version=%s validation=%s storage=success mode=advisory",
+                result.get("run_id"),
+                shadow_generation_planning.get("blueprint_id"),
+                result.get("channel"),
+                str(topic or getattr(content, "title", "") or "")[:120],
+                shadow_generation_planning.get("planning_schema_version"),
+                bool(((shadow_generation_planning.get("validation") or {}).get("valid"))),
+            )
+        except Exception as exc:
+            result["shadow_generation_planning"] = {
+                "enabled": True,
+                "mode": "advisory",
+                "schema_version": "v1",
+                "planning_schema_version": "v1",
+                "blueprint_schema_version": "v1",
+                "run_id": str(result.get("run_id", "")),
+                "blueprint_id": None,
+                "blueprint_hash": None,
+                "channel_id": str(result.get("channel", "")),
+                "content_type": "mixed",
+                "topic_excerpt": str(topic or getattr(content, "title", "") or "")[:120],
+                "requested_objective": "engagement_growth",
+                "validation": {"valid": False, "error": exc.__class__.__name__},
+                "pipeline_output_changed": False,
+                "context": {},
+                "blueprint": {},
+                "results_path": "logs/shadow_generation_planning.jsonl",
+            }
+            logger.warning(
+                "shadow_generation_planning run_id=%s blueprint_id=%s channel_id=%s topic=%s planning_version=%s validation=%s storage=failure mode=advisory error_type=%s",
+                result.get("run_id"),
+                None,
+                result.get("channel"),
+                str(topic or getattr(content, "title", "") or "")[:120],
+                "v1",
+                False,
+                exc.__class__.__name__,
+            )
+
+    if shadow_mode_enabled:
+        try:
             from .shadow_content_quality import (
                 SHADOW_CONTENT_QUALITY_SCHEMA_VERSION,
                 SHADOW_RESULTS_PATH,

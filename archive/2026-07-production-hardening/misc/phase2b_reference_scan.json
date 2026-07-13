@@ -1,0 +1,2498 @@
+{
+  "groups": [
+    {
+      "group": "activation_controller",
+      "recommendation": "MERGE",
+      "files": [
+        {
+          "path": "logs/activation_controller_report.json",
+          "basename": "activation_controller_report.json",
+          "path_ref_count": 19,
+          "basename_ref_count": 3,
+          "path_refs_sample": [
+            {
+              "file": "docs/architecture.md",
+              "line": 83,
+              "text": "| Routing Guard | Orchestration | channels/channel_registry.json | logs/activation_controller_report.json | tests/test_pipeline_telemetry_fail_open.py | Observation-only |"
+            },
+            {
+              "file": "docs/architecture.md",
+              "line": 92,
+              "text": "| Dashboard | Governance | docs/governance_readiness_latest.md | logs/activation_controller_report.json | tests/test_pipeline_telemetry_fail_open.py | Observation-only |"
+            },
+            {
+              "file": "docs/activation_controller_runbook.md",
+              "line": 70,
+              "text": "- `logs/activation_controller_report.json`"
+            },
+            {
+              "file": "logs/runtime_optimization_evidence_latest.json",
+              "line": 19,
+              "text": "      \"stdout_tail\": \"  ],\\n  \\\"kpi_catalog\\\": [\\n    \\\"click_through_rate\\\",\\n    \\\"retention\\\",\\n    \\\"watch_time\\\",\\n    \\\"upload_success_rate\\\",\\n    \\\"dna_violations\\\",\\n    \\\"metadata_repairs\\\",\\n    \\\"thumbnail_40"
+            },
+            {
+              "file": "logs/runtime_optimization_evidence_latest.json",
+              "line": 136,
+              "text": "          \"report_path\": \"/Users/klara/Downloads/adsız klasör/logs/activation_controller_report.json\","
+            },
+            {
+              "file": "logs/activation_go_no_go_evidence_2026-07-10.md",
+              "line": 26,
+              "text": "- source: logs/activation_controller_report.json"
+            },
+            {
+              "file": "logs/governance_summary_2026-07-10.md",
+              "line": 15,
+              "text": "- logs/activation_controller_report.json"
+            },
+            {
+              "file": "logs/executive_dashboard.json",
+              "line": 23,
+              "text": "    \"report\": \"/Users/klara/Downloads/adsız klasör/logs/activation_controller_report.json\""
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-09T19-16-04.json",
+              "line": 134,
+              "text": "    \"report_path\": \"/Users/klara/Downloads/adsız klasör/logs/activation_controller_report.json\","
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-10T06-03-15.json",
+              "line": 73,
+              "text": "    \"report_path\": \"/Users/klara/Downloads/adsız klasör/logs/activation_controller_report.json\","
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-09T18-43-16.json",
+              "line": 63,
+              "text": "    \"report_path\": \"/Users/klara/Downloads/adsız klasör/logs/activation_controller_report.json\","
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-09T18-19-23.json",
+              "line": 73,
+              "text": "    \"report_path\": \"/Users/klara/Downloads/adsız klasör/logs/activation_controller_report.json\","
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-10T09-20-03.json",
+              "line": 116,
+              "text": "    \"report_path\": \"/Users/klara/Downloads/adsız klasör/logs/activation_controller_report.json\","
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-10T08-51-06.json",
+              "line": 116,
+              "text": "    \"report_path\": \"/Users/klara/Downloads/adsız klasör/logs/activation_controller_report.json\","
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-10T09-19-37.json",
+              "line": 116,
+              "text": "    \"report_path\": \"/Users/klara/Downloads/adsız klasör/logs/activation_controller_report.json\","
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-09T18-31-43.json",
+              "line": 63,
+              "text": "    \"report_path\": \"/Users/klara/Downloads/adsız klasör/logs/activation_controller_report.json\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3022,
+              "text": "      \"logs/activation_controller_report.json\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4753,
+              "text": "          \"logs/activation_controller_report.json\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 10,
+              "text": "  - logs/activation_controller_report.json (operational evidence artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "logs/governance_summary_2026-07-10.md",
+              "line": 22,
+              "text": "| Activation gate evaluation | PROVEN | UNKNOWN | NOT_ROLLED_OUT | activation_controller_report.json gate outputs |"
+            },
+            {
+              "file": "ops/activation_controller.py",
+              "line": 25,
+              "text": "DEFAULT_REPORT_PATH = ROOT / \"logs\" / \"activation_controller_report.json\""
+            },
+            {
+              "file": "ops/executive_dashboard_report.py",
+              "line": 23,
+              "text": "ACTIVATION_PATH = ROOT / \"logs\" / \"activation_controller_report.json\""
+            }
+          ]
+        },
+        {
+          "path": "logs/activation_controller_report_latest.json",
+          "basename": "activation_controller_report_latest.json",
+          "path_ref_count": 18,
+          "basename_ref_count": 3,
+          "path_refs_sample": [
+            {
+              "file": "logs/p0_p1_session_closeout_2026-07-10.md",
+              "line": 15,
+              "text": "\t- logs/activation_controller_report_latest.json"
+            },
+            {
+              "file": "logs/p0_p1_session_closeout_2026-07-10.md",
+              "line": 95,
+              "text": "- source: logs/activation_controller_report_latest.json"
+            },
+            {
+              "file": "logs/p0_p1_artifacts_bundle_latest.json",
+              "line": 352,
+              "text": "      \"path\": \"/Users/klara/Downloads/adsız klasör/logs/activation_controller_report_latest.json\","
+            },
+            {
+              "file": "logs/p0_p1_artifacts_bundle_latest.json",
+              "line": 457,
+              "text": "          \"report_path\": \"logs/activation_controller_report_latest.json\","
+            },
+            {
+              "file": "logs/todo_closeout_2026-07-10.md",
+              "line": 38,
+              "text": "  - logs/activation_controller_report_latest.json"
+            },
+            {
+              "file": "logs/strict_evidence_report_2026-07-10.md",
+              "line": 16,
+              "text": "  - logs/activation_controller_report_latest.json"
+            },
+            {
+              "file": "logs/strict_evidence_report_latest.md",
+              "line": 16,
+              "text": "  - logs/activation_controller_report_latest.json"
+            },
+            {
+              "file": "ops/generate_strict_evidence_report.py",
+              "line": 187,
+              "text": "  - logs/activation_controller_report_latest.json"
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-10T12-36-09.json",
+              "line": 103,
+              "text": "    \"report_path\": \"logs/activation_controller_report_latest.json\","
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-10T13-50-55.json",
+              "line": 63,
+              "text": "    \"report_path\": \"logs/activation_controller_report_latest.json\","
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-10T11-25-24.json",
+              "line": 113,
+              "text": "    \"report_path\": \"logs/activation_controller_report_latest.json\","
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-10T13-31-26.json",
+              "line": 73,
+              "text": "    \"report_path\": \"logs/activation_controller_report_latest.json\","
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-10T13-31-27.json",
+              "line": 73,
+              "text": "    \"report_path\": \"logs/activation_controller_report_latest.json\","
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-10T12-38-38.json",
+              "line": 103,
+              "text": "    \"report_path\": \"logs/activation_controller_report_latest.json\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3023,
+              "text": "      \"logs/activation_controller_report_latest.json\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4607,
+              "text": "        \"src\": \"logs/activation_controller_report_latest.json\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4754,
+              "text": "          \"logs/activation_controller_report_latest.json\""
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 11,
+              "text": "  - logs/activation_controller_report_latest.json (latest snapshot artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "ops/p0_p1_artifact_bundle.py",
+              "line": 19,
+              "text": "    \"activation_go_no_go\": ROOT / \"logs\" / \"activation_controller_report_latest.json\","
+            },
+            {
+              "file": "ops/generate_strict_evidence_report.py",
+              "line": 24,
+              "text": "ACTIVATION_PATH = LOGS / \"activation_controller_report_latest.json\""
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4608,
+              "text": "        \"dst\": \"logs/archive/2026/07/activation_controller_report_latest.json\""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "group": "auditl",
+      "recommendation": "ARCHIVE",
+      "files": [
+        {
+          "path": "logs/_sim_canary_clean/audit.jsonl",
+          "basename": "audit.jsonl",
+          "path_ref_count": 3,
+          "basename_ref_count": 8,
+          "path_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4514,
+              "text": "      \"logs/_sim_canary_clean/audit.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4760,
+              "text": "          \"logs/_sim_canary_clean/audit.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 18,
+              "text": "  - logs/_sim_canary_clean/audit.jsonl (simulation sandbox artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "tests/test_content_platform_control_loop_ops.py",
+              "line": 19,
+              "text": "    audit = tmp_path / \"audit.jsonl\""
+            },
+            {
+              "file": "docs/content_platform_weekly_review.md",
+              "line": 54,
+              "text": "- Every learned adjustment is persisted in content_platform_learning_audit.jsonl."
+            },
+            {
+              "file": "ops/content_platform_control_loop.py",
+              "line": 22,
+              "text": "DEFAULT_LEARNING_AUDIT_PATH = LOGS / \"content_platform_learning_audit.jsonl\""
+            },
+            {
+              "file": "ops/content_platform_control_loop.py",
+              "line": 124,
+              "text": "        \"- Every learned adjustment is persisted in content_platform_learning_audit.jsonl.\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4518,
+              "text": "      \"logs/_sim_rollback_clean/audit.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4536,
+              "text": "      \"logs/content_platform_learning_audit.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4761,
+              "text": "          \"logs/_sim_rollback_clean/audit.jsonl\""
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 19,
+              "text": "  - logs/_sim_rollback_clean/audit.jsonl (simulation sandbox artifact)"
+            }
+          ]
+        },
+        {
+          "path": "logs/_sim_rollback_clean/audit.jsonl",
+          "basename": "audit.jsonl",
+          "path_ref_count": 3,
+          "basename_ref_count": 8,
+          "path_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4518,
+              "text": "      \"logs/_sim_rollback_clean/audit.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4761,
+              "text": "          \"logs/_sim_rollback_clean/audit.jsonl\""
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 19,
+              "text": "  - logs/_sim_rollback_clean/audit.jsonl (simulation sandbox artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "tests/test_content_platform_control_loop_ops.py",
+              "line": 19,
+              "text": "    audit = tmp_path / \"audit.jsonl\""
+            },
+            {
+              "file": "docs/content_platform_weekly_review.md",
+              "line": 54,
+              "text": "- Every learned adjustment is persisted in content_platform_learning_audit.jsonl."
+            },
+            {
+              "file": "ops/content_platform_control_loop.py",
+              "line": 22,
+              "text": "DEFAULT_LEARNING_AUDIT_PATH = LOGS / \"content_platform_learning_audit.jsonl\""
+            },
+            {
+              "file": "ops/content_platform_control_loop.py",
+              "line": 124,
+              "text": "        \"- Every learned adjustment is persisted in content_platform_learning_audit.jsonl.\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4514,
+              "text": "      \"logs/_sim_canary_clean/audit.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4536,
+              "text": "      \"logs/content_platform_learning_audit.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4760,
+              "text": "          \"logs/_sim_canary_clean/audit.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 18,
+              "text": "  - logs/_sim_canary_clean/audit.jsonl (simulation sandbox artifact)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "group": "channel_performancel",
+      "recommendation": "ARCHIVE",
+      "files": [
+        {
+          "path": "logs/_sim_canary_clean/channel_performance.jsonl",
+          "basename": "channel_performance.jsonl",
+          "path_ref_count": 3,
+          "basename_ref_count": 43,
+          "path_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4515,
+              "text": "      \"logs/_sim_canary_clean/channel_performance.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4767,
+              "text": "          \"logs/_sim_canary_clean/channel_performance.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 26,
+              "text": "  - logs/_sim_canary_clean/channel_performance.jsonl (simulation sandbox artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "tests/test_p0_validation_metrics_report.py",
+              "line": 17,
+              "text": "    perf_path = tmp_path / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "tests/test_p0_validation_metrics_report.py",
+              "line": 68,
+              "text": "    perf_path = tmp_path / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "tests/test_p0_validation_metrics_report.py",
+              "line": 120,
+              "text": "    perf_path = tmp_path / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "tests/test_content_platform_control_loop_ops.py",
+              "line": 16,
+              "text": "    perf = tmp_path / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "docs/architecture.md",
+              "line": 81,
+              "text": "| Content Generation | Content Platform | output/content_*.json | logs/channel_performance.jsonl | tests/test_content_generator_prompting.py | Active |"
+            },
+            {
+              "file": "docs/architecture.md",
+              "line": 84,
+              "text": "| Visual Intelligence | Thumbnail System | output/thumbnails/* | logs/channel_performance.jsonl | tests/test_thumbnail_selection_policy.py | Shadow |"
+            },
+            {
+              "file": "docs/architecture.md",
+              "line": 90,
+              "text": "| Learning | Optimization Platform | docs/experiment_registry_schema.md | logs/channel_performance.jsonl | tests/test_pipeline_telemetry_fail_open.py | Shadow |"
+            },
+            {
+              "file": "docs/architecture.md",
+              "line": 91,
+              "text": "| Recommendation | Optimization Platform | docs/selection_policy_v2_design.md | logs/channel_performance.jsonl | tests/test_thumbnail_selection_policy.py | Shadow |"
+            },
+            {
+              "file": "logs/runtime_optimization_evidence_latest.json",
+              "line": 65,
+              "text": "              \"performance_path\": \"/Users/klara/Downloads/adsız klasör/logs/channel_performance.jsonl\","
+            },
+            {
+              "file": "logs/p0_p1_artifacts_bundle_latest.json",
+              "line": 121,
+              "text": "          \"performance\": \"/Users/klara/Downloads/adsız klasör/logs/channel_performance.jsonl\","
+            },
+            {
+              "file": "logs/trace_completeness_latest.json",
+              "line": 3,
+              "text": "    \"performance\": \"/Users/klara/Downloads/adsız klasör/logs/channel_performance.jsonl\","
+            },
+            {
+              "file": "logs/optimization_memory.json",
+              "line": 4,
+              "text": "    \"performance_path\": \"/Users/klara/Downloads/adsız klasör/logs/channel_performance.jsonl\","
+            },
+            {
+              "file": "logs/activation_controller_report.json",
+              "line": 45,
+              "text": "        \"performance_path\": \"/Users/klara/Downloads/adsız klasör/logs/channel_performance.jsonl\","
+            },
+            {
+              "file": "logs/metrics_health_report_2026-07-10.json",
+              "line": 3,
+              "text": "    \"performance\": \"/Users/klara/Downloads/adsız klasör/logs/channel_performance.jsonl\","
+            },
+            {
+              "file": "ops/optimization_memory_engine.py",
+              "line": 18,
+              "text": "PERFORMANCE_PATH = ROOT / \"logs\" / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "ops/metrics_health_report.py",
+              "line": 12,
+              "text": "PERF_FILE = ROOT / \"logs\" / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "ops/p0_validation_metrics_report.py",
+              "line": 17,
+              "text": "PERF_PATH = ROOT / \"logs\" / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "ops/content_platform_control_loop.py",
+              "line": 19,
+              "text": "DEFAULT_PERFORMANCE_PATH = LOGS / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "ops/optimization_backlog_engine.py",
+              "line": 16,
+              "text": "PERFORMANCE_PATH = ROOT / \"logs\" / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "ops/fleet_health_report.py",
+              "line": 21,
+              "text": "PERFORMANCE_PATH = ROOT / \"logs\" / \"channel_performance.jsonl\""
+            }
+          ]
+        },
+        {
+          "path": "logs/_sim_rollback_clean/channel_performance.jsonl",
+          "basename": "channel_performance.jsonl",
+          "path_ref_count": 3,
+          "basename_ref_count": 43,
+          "path_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4519,
+              "text": "      \"logs/_sim_rollback_clean/channel_performance.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4768,
+              "text": "          \"logs/_sim_rollback_clean/channel_performance.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 27,
+              "text": "  - logs/_sim_rollback_clean/channel_performance.jsonl (simulation sandbox artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "tests/test_p0_validation_metrics_report.py",
+              "line": 17,
+              "text": "    perf_path = tmp_path / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "tests/test_p0_validation_metrics_report.py",
+              "line": 68,
+              "text": "    perf_path = tmp_path / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "tests/test_p0_validation_metrics_report.py",
+              "line": 120,
+              "text": "    perf_path = tmp_path / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "tests/test_content_platform_control_loop_ops.py",
+              "line": 16,
+              "text": "    perf = tmp_path / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "docs/architecture.md",
+              "line": 81,
+              "text": "| Content Generation | Content Platform | output/content_*.json | logs/channel_performance.jsonl | tests/test_content_generator_prompting.py | Active |"
+            },
+            {
+              "file": "docs/architecture.md",
+              "line": 84,
+              "text": "| Visual Intelligence | Thumbnail System | output/thumbnails/* | logs/channel_performance.jsonl | tests/test_thumbnail_selection_policy.py | Shadow |"
+            },
+            {
+              "file": "docs/architecture.md",
+              "line": 90,
+              "text": "| Learning | Optimization Platform | docs/experiment_registry_schema.md | logs/channel_performance.jsonl | tests/test_pipeline_telemetry_fail_open.py | Shadow |"
+            },
+            {
+              "file": "docs/architecture.md",
+              "line": 91,
+              "text": "| Recommendation | Optimization Platform | docs/selection_policy_v2_design.md | logs/channel_performance.jsonl | tests/test_thumbnail_selection_policy.py | Shadow |"
+            },
+            {
+              "file": "logs/runtime_optimization_evidence_latest.json",
+              "line": 65,
+              "text": "              \"performance_path\": \"/Users/klara/Downloads/adsız klasör/logs/channel_performance.jsonl\","
+            },
+            {
+              "file": "logs/p0_p1_artifacts_bundle_latest.json",
+              "line": 121,
+              "text": "          \"performance\": \"/Users/klara/Downloads/adsız klasör/logs/channel_performance.jsonl\","
+            },
+            {
+              "file": "logs/trace_completeness_latest.json",
+              "line": 3,
+              "text": "    \"performance\": \"/Users/klara/Downloads/adsız klasör/logs/channel_performance.jsonl\","
+            },
+            {
+              "file": "logs/optimization_memory.json",
+              "line": 4,
+              "text": "    \"performance_path\": \"/Users/klara/Downloads/adsız klasör/logs/channel_performance.jsonl\","
+            },
+            {
+              "file": "logs/activation_controller_report.json",
+              "line": 45,
+              "text": "        \"performance_path\": \"/Users/klara/Downloads/adsız klasör/logs/channel_performance.jsonl\","
+            },
+            {
+              "file": "logs/metrics_health_report_2026-07-10.json",
+              "line": 3,
+              "text": "    \"performance\": \"/Users/klara/Downloads/adsız klasör/logs/channel_performance.jsonl\","
+            },
+            {
+              "file": "ops/optimization_memory_engine.py",
+              "line": 18,
+              "text": "PERFORMANCE_PATH = ROOT / \"logs\" / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "ops/metrics_health_report.py",
+              "line": 12,
+              "text": "PERF_FILE = ROOT / \"logs\" / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "ops/p0_validation_metrics_report.py",
+              "line": 17,
+              "text": "PERF_PATH = ROOT / \"logs\" / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "ops/content_platform_control_loop.py",
+              "line": 19,
+              "text": "DEFAULT_PERFORMANCE_PATH = LOGS / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "ops/optimization_backlog_engine.py",
+              "line": 16,
+              "text": "PERFORMANCE_PATH = ROOT / \"logs\" / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "ops/fleet_health_report.py",
+              "line": 21,
+              "text": "PERFORMANCE_PATH = ROOT / \"logs\" / \"channel_performance.jsonl\""
+            }
+          ]
+        },
+        {
+          "path": "logs/channel_performance.jsonl",
+          "basename": "channel_performance.jsonl",
+          "path_ref_count": 18,
+          "basename_ref_count": 28,
+          "path_refs_sample": [
+            {
+              "file": "docs/architecture.md",
+              "line": 81,
+              "text": "| Content Generation | Content Platform | output/content_*.json | logs/channel_performance.jsonl | tests/test_content_generator_prompting.py | Active |"
+            },
+            {
+              "file": "docs/architecture.md",
+              "line": 84,
+              "text": "| Visual Intelligence | Thumbnail System | output/thumbnails/* | logs/channel_performance.jsonl | tests/test_thumbnail_selection_policy.py | Shadow |"
+            },
+            {
+              "file": "docs/architecture.md",
+              "line": 90,
+              "text": "| Learning | Optimization Platform | docs/experiment_registry_schema.md | logs/channel_performance.jsonl | tests/test_pipeline_telemetry_fail_open.py | Shadow |"
+            },
+            {
+              "file": "docs/architecture.md",
+              "line": 91,
+              "text": "| Recommendation | Optimization Platform | docs/selection_policy_v2_design.md | logs/channel_performance.jsonl | tests/test_thumbnail_selection_policy.py | Shadow |"
+            },
+            {
+              "file": "logs/runtime_optimization_evidence_latest.json",
+              "line": 65,
+              "text": "              \"performance_path\": \"/Users/klara/Downloads/adsız klasör/logs/channel_performance.jsonl\","
+            },
+            {
+              "file": "logs/p0_p1_artifacts_bundle_latest.json",
+              "line": 121,
+              "text": "          \"performance\": \"/Users/klara/Downloads/adsız klasör/logs/channel_performance.jsonl\","
+            },
+            {
+              "file": "logs/trace_completeness_latest.json",
+              "line": 3,
+              "text": "    \"performance\": \"/Users/klara/Downloads/adsız klasör/logs/channel_performance.jsonl\","
+            },
+            {
+              "file": "logs/optimization_memory.json",
+              "line": 4,
+              "text": "    \"performance_path\": \"/Users/klara/Downloads/adsız klasör/logs/channel_performance.jsonl\","
+            },
+            {
+              "file": "logs/activation_controller_report.json",
+              "line": 45,
+              "text": "        \"performance_path\": \"/Users/klara/Downloads/adsız klasör/logs/channel_performance.jsonl\","
+            },
+            {
+              "file": "logs/metrics_health_report_2026-07-10.json",
+              "line": 3,
+              "text": "    \"performance\": \"/Users/klara/Downloads/adsız klasör/logs/channel_performance.jsonl\","
+            },
+            {
+              "file": "src/channel_performance.py",
+              "line": 14,
+              "text": "DEFAULT_PERFORMANCE_PATH = Path(\"logs/channel_performance.jsonl\")"
+            },
+            {
+              "file": "output/scripts/verify_borsa_snapshot.py",
+              "line": 12,
+              "text": "snap_path = Path(\"logs/channel_performance.jsonl\")"
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-10T09-20-03.json",
+              "line": 45,
+              "text": "        \"performance_path\": \"/Users/klara/Downloads/adsız klasör/logs/channel_performance.jsonl\","
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-10T08-51-06.json",
+              "line": 45,
+              "text": "        \"performance_path\": \"/Users/klara/Downloads/adsız klasör/logs/channel_performance.jsonl\","
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-10T09-19-37.json",
+              "line": 45,
+              "text": "        \"performance_path\": \"/Users/klara/Downloads/adsız klasör/logs/channel_performance.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4534,
+              "text": "      \"logs/channel_performance.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4769,
+              "text": "          \"logs/channel_performance.jsonl\""
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 28,
+              "text": "  - logs/channel_performance.jsonl (append-only event stream)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "tests/test_p0_validation_metrics_report.py",
+              "line": 17,
+              "text": "    perf_path = tmp_path / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "tests/test_p0_validation_metrics_report.py",
+              "line": 68,
+              "text": "    perf_path = tmp_path / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "tests/test_p0_validation_metrics_report.py",
+              "line": 120,
+              "text": "    perf_path = tmp_path / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "tests/test_content_platform_control_loop_ops.py",
+              "line": 16,
+              "text": "    perf = tmp_path / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "ops/optimization_memory_engine.py",
+              "line": 18,
+              "text": "PERFORMANCE_PATH = ROOT / \"logs\" / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "ops/metrics_health_report.py",
+              "line": 12,
+              "text": "PERF_FILE = ROOT / \"logs\" / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "ops/p0_validation_metrics_report.py",
+              "line": 17,
+              "text": "PERF_PATH = ROOT / \"logs\" / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "ops/content_platform_control_loop.py",
+              "line": 19,
+              "text": "DEFAULT_PERFORMANCE_PATH = LOGS / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "ops/optimization_backlog_engine.py",
+              "line": 16,
+              "text": "PERFORMANCE_PATH = ROOT / \"logs\" / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "ops/fleet_health_report.py",
+              "line": 21,
+              "text": "PERFORMANCE_PATH = ROOT / \"logs\" / \"channel_performance.jsonl\""
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-10T09-19-32.json",
+              "line": 57,
+              "text": "            \"performance_path\": \"/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-161/test_activation_controller_run0/channel_performance.jsonl\","
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-10T09-19-32.json",
+              "line": 76,
+              "text": "        \"performance_path\": \"/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-161/test_activation_controller_run0/channel_performance.jsonl\","
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-10T09-28-20.json",
+              "line": 57,
+              "text": "            \"performance_path\": \"/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-163/test_activation_controller_run0/channel_performance.jsonl\","
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-10T09-28-20.json",
+              "line": 76,
+              "text": "        \"performance_path\": \"/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-163/test_activation_controller_run0/channel_performance.jsonl\","
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-10T08-44-56.json",
+              "line": 57,
+              "text": "            \"performance_path\": \"/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-158/test_activation_controller_run0/channel_performance.jsonl\","
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-10T08-44-56.json",
+              "line": 76,
+              "text": "        \"performance_path\": \"/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-158/test_activation_controller_run0/channel_performance.jsonl\","
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-10T08-50-50.json",
+              "line": 57,
+              "text": "            \"performance_path\": \"/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-159/test_activation_controller_run0/channel_performance.jsonl\","
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-10T08-50-50.json",
+              "line": 76,
+              "text": "        \"performance_path\": \"/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-159/test_activation_controller_run0/channel_performance.jsonl\","
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-10T09-31-49.json",
+              "line": 57,
+              "text": "            \"performance_path\": \"/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-165/test_activation_controller_run0/channel_performance.jsonl\","
+            },
+            {
+              "file": "output/state/activation_reports/2026-07-10T09-31-49.json",
+              "line": 76,
+              "text": "        \"performance_path\": \"/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-165/test_activation_controller_run0/channel_performance.jsonl\","
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "group": "experimentsl",
+      "recommendation": "ARCHIVE",
+      "files": [
+        {
+          "path": "logs/_sim_canary_clean/experiments.jsonl",
+          "basename": "experiments.jsonl",
+          "path_ref_count": 3,
+          "basename_ref_count": 36,
+          "path_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4516,
+              "text": "      \"logs/_sim_canary_clean/experiments.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4775,
+              "text": "          \"logs/_sim_canary_clean/experiments.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 35,
+              "text": "  - logs/_sim_canary_clean/experiments.jsonl (simulation sandbox artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "tests/test_thumbnail_experiment_registry_binding.py",
+              "line": 38,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_thumbnail_experiment_registry_binding.py",
+              "line": 68,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_thumbnail_experiment_registry_binding.py",
+              "line": 84,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_thumbnail_experiment_registry_binding.py",
+              "line": 102,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_thumbnail_experiment_registry_binding.py",
+              "line": 120,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 46,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 73,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 92,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 116,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 124,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 137,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 150,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 159,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 172,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 183,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry_recovery.py",
+              "line": 25,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry_recovery.py",
+              "line": 43,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_content_platform_control_loop_ops.py",
+              "line": 18,
+              "text": "    registry = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_pipeline_experiment_registry_integration.py",
+              "line": 176,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_pipeline_experiment_registry_integration.py",
+              "line": 205,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            }
+          ]
+        },
+        {
+          "path": "logs/_sim_rollback_clean/experiments.jsonl",
+          "basename": "experiments.jsonl",
+          "path_ref_count": 3,
+          "basename_ref_count": 36,
+          "path_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4520,
+              "text": "      \"logs/_sim_rollback_clean/experiments.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4776,
+              "text": "          \"logs/_sim_rollback_clean/experiments.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 36,
+              "text": "  - logs/_sim_rollback_clean/experiments.jsonl (simulation sandbox artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "tests/test_thumbnail_experiment_registry_binding.py",
+              "line": 38,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_thumbnail_experiment_registry_binding.py",
+              "line": 68,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_thumbnail_experiment_registry_binding.py",
+              "line": 84,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_thumbnail_experiment_registry_binding.py",
+              "line": 102,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_thumbnail_experiment_registry_binding.py",
+              "line": 120,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 46,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 73,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 92,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 116,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 124,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 137,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 150,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 159,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 172,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 183,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry_recovery.py",
+              "line": 25,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry_recovery.py",
+              "line": 43,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_content_platform_control_loop_ops.py",
+              "line": 18,
+              "text": "    registry = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_pipeline_experiment_registry_integration.py",
+              "line": 176,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_pipeline_experiment_registry_integration.py",
+              "line": 205,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            }
+          ]
+        },
+        {
+          "path": "output/telemetry/experiments.jsonl",
+          "basename": "experiments.jsonl",
+          "path_ref_count": 10,
+          "basename_ref_count": 29,
+          "path_refs_sample": [
+            {
+              "file": "docs/experiment_registry_schema.md",
+              "line": 77,
+              "text": "- Recommended path pattern: `output/telemetry/experiments.jsonl`."
+            },
+            {
+              "file": "logs/content_platform_experiments_latest.json",
+              "line": 182,
+              "text": "  \"registry_path\": \"/Users/klara/Downloads/adsız klasör/output/telemetry/experiments.jsonl\""
+            },
+            {
+              "file": "logs/p0_p1_artifacts_bundle_latest.json",
+              "line": 123,
+              "text": "          \"registry\": \"/Users/klara/Downloads/adsız klasör/output/telemetry/experiments.jsonl\""
+            },
+            {
+              "file": "logs/trace_completeness_latest.json",
+              "line": 5,
+              "text": "    \"registry\": \"/Users/klara/Downloads/adsız klasör/output/telemetry/experiments.jsonl\""
+            },
+            {
+              "file": "logs/metrics_health_report_2026-07-10.json",
+              "line": 5,
+              "text": "    \"registry\": \"/Users/klara/Downloads/adsız klasör/output/telemetry/experiments.jsonl\""
+            },
+            {
+              "file": "src/experiment_registry.py",
+              "line": 16,
+              "text": "DEFAULT_REGISTRY_PATH = Path(\"output/telemetry/experiments.jsonl\")"
+            },
+            {
+              "file": "src/pipeline.py",
+              "line": 307,
+              "text": "    registry_path = Path(os.getenv(\"EXPERIMENT_REGISTRY_PATH\", \"output/telemetry/experiments.jsonl\"))"
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4477,
+              "text": "      \"output/telemetry/experiments.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4777,
+              "text": "          \"output/telemetry/experiments.jsonl\""
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 37,
+              "text": "  - output/telemetry/experiments.jsonl (append-only event stream)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "tests/test_thumbnail_experiment_registry_binding.py",
+              "line": 38,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_thumbnail_experiment_registry_binding.py",
+              "line": 68,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_thumbnail_experiment_registry_binding.py",
+              "line": 84,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_thumbnail_experiment_registry_binding.py",
+              "line": 102,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_thumbnail_experiment_registry_binding.py",
+              "line": 120,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 46,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 73,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 92,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 116,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 124,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 137,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 150,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 159,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 172,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry.py",
+              "line": 183,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry_recovery.py",
+              "line": 25,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_experiment_registry_recovery.py",
+              "line": 43,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_content_platform_control_loop_ops.py",
+              "line": 18,
+              "text": "    registry = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_pipeline_experiment_registry_integration.py",
+              "line": 176,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            },
+            {
+              "file": "tests/test_pipeline_experiment_registry_integration.py",
+              "line": 205,
+              "text": "    registry_path = tmp_path / \"experiments.jsonl\""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "group": "library",
+      "recommendation": "REVIEW",
+      "files": [
+        {
+          "path": "output/tmp_music_smoke2/library.json",
+          "basename": "library.json",
+          "path_ref_count": 3,
+          "basename_ref_count": 3,
+          "path_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4479,
+              "text": "      \"output/tmp_music_smoke2/library.json\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4783,
+              "text": "          \"output/tmp_music_smoke2/library.json\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 44,
+              "text": "  - output/tmp_music_smoke2/library.json (repository file)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4483,
+              "text": "      \"output/tmp_music_smoke3/library.json\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4784,
+              "text": "          \"output/tmp_music_smoke3/library.json\""
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 45,
+              "text": "  - output/tmp_music_smoke3/library.json (repository file)"
+            }
+          ]
+        },
+        {
+          "path": "output/tmp_music_smoke3/library.json",
+          "basename": "library.json",
+          "path_ref_count": 3,
+          "basename_ref_count": 3,
+          "path_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4483,
+              "text": "      \"output/tmp_music_smoke3/library.json\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4784,
+              "text": "          \"output/tmp_music_smoke3/library.json\""
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 45,
+              "text": "  - output/tmp_music_smoke3/library.json (repository file)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4479,
+              "text": "      \"output/tmp_music_smoke2/library.json\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4783,
+              "text": "          \"output/tmp_music_smoke2/library.json\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 44,
+              "text": "  - output/tmp_music_smoke2/library.json (repository file)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "group": "original_status_short.txt",
+      "recommendation": "REVIEW",
+      "files": [
+        {
+          "path": "logs/two_state_validation_20260710_204806/original_status_short.txt",
+          "basename": "original_status_short.txt",
+          "path_ref_count": 3,
+          "basename_ref_count": 5,
+          "path_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3658,
+              "text": "      \"logs/two_state_validation_20260710_204806/original_status_short.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4797,
+              "text": "          \"logs/two_state_validation_20260710_204806/original_status_short.txt\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 60,
+              "text": "  - logs/two_state_validation_20260710_204806/original_status_short.txt (operational evidence artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3675,
+              "text": "      \"logs/two_state_validation_20260710_204854/original_status_short.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4795,
+              "text": "        \"normalized_name\": \"original_status_short.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4798,
+              "text": "          \"logs/two_state_validation_20260710_204854/original_status_short.txt\""
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 55,
+              "text": "## 7. original_status_short.txt"
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 61,
+              "text": "  - logs/two_state_validation_20260710_204854/original_status_short.txt (operational evidence artifact)"
+            }
+          ]
+        },
+        {
+          "path": "logs/two_state_validation_20260710_204854/original_status_short.txt",
+          "basename": "original_status_short.txt",
+          "path_ref_count": 3,
+          "basename_ref_count": 5,
+          "path_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3675,
+              "text": "      \"logs/two_state_validation_20260710_204854/original_status_short.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4798,
+              "text": "          \"logs/two_state_validation_20260710_204854/original_status_short.txt\""
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 61,
+              "text": "  - logs/two_state_validation_20260710_204854/original_status_short.txt (operational evidence artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3658,
+              "text": "      \"logs/two_state_validation_20260710_204806/original_status_short.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4795,
+              "text": "        \"normalized_name\": \"original_status_short.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4797,
+              "text": "          \"logs/two_state_validation_20260710_204806/original_status_short.txt\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 55,
+              "text": "## 7. original_status_short.txt"
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 60,
+              "text": "  - logs/two_state_validation_20260710_204806/original_status_short.txt (operational evidence artifact)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "group": "patch_id_matches.txt",
+      "recommendation": "ARCHIVE",
+      "files": [
+        {
+          "path": "logs/approved_governance_equivalence_work_20260711_111255/patch_id_matches.txt",
+          "basename": "patch_id_matches.txt",
+          "path_ref_count": 3,
+          "basename_ref_count": 5,
+          "path_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3049,
+              "text": "      \"logs/approved_governance_equivalence_work_20260711_111255/patch_id_matches.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4804,
+              "text": "          \"logs/approved_governance_equivalence_work_20260711_111255/patch_id_matches.txt\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 68,
+              "text": "  - logs/approved_governance_equivalence_work_20260711_111255/patch_id_matches.txt (temporary equivalence work artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3061,
+              "text": "      \"logs/approved_governance_equivalence_work_final/patch_id_matches.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4802,
+              "text": "        \"normalized_name\": \"patch_id_matches.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4805,
+              "text": "          \"logs/approved_governance_equivalence_work_final/patch_id_matches.txt\""
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 63,
+              "text": "## 8. patch_id_matches.txt"
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 69,
+              "text": "  - logs/approved_governance_equivalence_work_final/patch_id_matches.txt (temporary equivalence work artifact)"
+            }
+          ]
+        },
+        {
+          "path": "logs/approved_governance_equivalence_work_final/patch_id_matches.txt",
+          "basename": "patch_id_matches.txt",
+          "path_ref_count": 3,
+          "basename_ref_count": 5,
+          "path_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3061,
+              "text": "      \"logs/approved_governance_equivalence_work_final/patch_id_matches.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4805,
+              "text": "          \"logs/approved_governance_equivalence_work_final/patch_id_matches.txt\""
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 69,
+              "text": "  - logs/approved_governance_equivalence_work_final/patch_id_matches.txt (temporary equivalence work artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3049,
+              "text": "      \"logs/approved_governance_equivalence_work_20260711_111255/patch_id_matches.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4802,
+              "text": "        \"normalized_name\": \"patch_id_matches.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4804,
+              "text": "          \"logs/approved_governance_equivalence_work_20260711_111255/patch_id_matches.txt\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 63,
+              "text": "## 8. patch_id_matches.txt"
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 68,
+              "text": "  - logs/approved_governance_equivalence_work_20260711_111255/patch_id_matches.txt (temporary equivalence work artifact)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "group": "patch_ids.txt",
+      "recommendation": "ARCHIVE",
+      "files": [
+        {
+          "path": "logs/approved_governance_equivalence_work_20260711_111255/patch_ids.txt",
+          "basename": "patch_ids.txt",
+          "path_ref_count": 3,
+          "basename_ref_count": 5,
+          "path_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3050,
+              "text": "      \"logs/approved_governance_equivalence_work_20260711_111255/patch_ids.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4811,
+              "text": "          \"logs/approved_governance_equivalence_work_20260711_111255/patch_ids.txt\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 76,
+              "text": "  - logs/approved_governance_equivalence_work_20260711_111255/patch_ids.txt (temporary equivalence work artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3062,
+              "text": "      \"logs/approved_governance_equivalence_work_final/patch_ids.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4809,
+              "text": "        \"normalized_name\": \"patch_ids.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4812,
+              "text": "          \"logs/approved_governance_equivalence_work_final/patch_ids.txt\""
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 71,
+              "text": "## 9. patch_ids.txt"
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 77,
+              "text": "  - logs/approved_governance_equivalence_work_final/patch_ids.txt (temporary equivalence work artifact)"
+            }
+          ]
+        },
+        {
+          "path": "logs/approved_governance_equivalence_work_final/patch_ids.txt",
+          "basename": "patch_ids.txt",
+          "path_ref_count": 3,
+          "basename_ref_count": 5,
+          "path_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3062,
+              "text": "      \"logs/approved_governance_equivalence_work_final/patch_ids.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4812,
+              "text": "          \"logs/approved_governance_equivalence_work_final/patch_ids.txt\""
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 77,
+              "text": "  - logs/approved_governance_equivalence_work_final/patch_ids.txt (temporary equivalence work artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3050,
+              "text": "      \"logs/approved_governance_equivalence_work_20260711_111255/patch_ids.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4809,
+              "text": "        \"normalized_name\": \"patch_ids.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4811,
+              "text": "          \"logs/approved_governance_equivalence_work_20260711_111255/patch_ids.txt\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 71,
+              "text": "## 9. patch_ids.txt"
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 76,
+              "text": "  - logs/approved_governance_equivalence_work_20260711_111255/patch_ids.txt (temporary equivalence work artifact)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "group": "routing_guard_decisionsl",
+      "recommendation": "ARCHIVE",
+      "files": [
+        {
+          "path": "logs/_sim_canary_clean/routing_guard_decisions.jsonl",
+          "basename": "routing_guard_decisions.jsonl",
+          "path_ref_count": 3,
+          "basename_ref_count": 15,
+          "path_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4517,
+              "text": "      \"logs/_sim_canary_clean/routing_guard_decisions.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4825,
+              "text": "          \"logs/_sim_canary_clean/routing_guard_decisions.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 92,
+              "text": "  - logs/_sim_canary_clean/routing_guard_decisions.jsonl (simulation sandbox artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "tests/test_p0_validation_metrics_report.py",
+              "line": 19,
+              "text": "    guard_path = tmp_path / \"routing_guard_decisions.jsonl\""
+            },
+            {
+              "file": "tests/test_p0_validation_metrics_report.py",
+              "line": 70,
+              "text": "    guard_path = tmp_path / \"routing_guard_decisions.jsonl\""
+            },
+            {
+              "file": "tests/test_p0_validation_metrics_report.py",
+              "line": 122,
+              "text": "    guard_path = tmp_path / \"routing_guard_decisions.jsonl\""
+            },
+            {
+              "file": "tests/test_content_platform_control_loop_ops.py",
+              "line": 17,
+              "text": "    guards = tmp_path / \"routing_guard_decisions.jsonl\""
+            },
+            {
+              "file": "logs/p0_p1_artifacts_bundle_latest.json",
+              "line": 527,
+              "text": "        \"source\": \"/Users/klara/Downloads/adsız klasör/logs/routing_guard_decisions.jsonl\","
+            },
+            {
+              "file": "logs/routing_guard_review_queue_latest.json",
+              "line": 3,
+              "text": "  \"source\": \"/Users/klara/Downloads/adsız klasör/logs/routing_guard_decisions.jsonl\","
+            },
+            {
+              "file": "ops/p0_validation_metrics_report.py",
+              "line": 19,
+              "text": "ROUTING_GUARD_DECISIONS_PATH = ROOT / \"logs\" / \"routing_guard_decisions.jsonl\""
+            },
+            {
+              "file": "ops/content_platform_control_loop.py",
+              "line": 20,
+              "text": "DEFAULT_ROUTING_GUARD_PATH = LOGS / \"routing_guard_decisions.jsonl\""
+            },
+            {
+              "file": "src/content_platform_control_loop.py",
+              "line": 265,
+              "text": "    for event in _load_jsonl(routing_guard_path or Path(\"logs/routing_guard_decisions.jsonl\")):"
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4521,
+              "text": "      \"logs/_sim_rollback_clean/routing_guard_decisions.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4565,
+              "text": "      \"logs/routing_guard_decisions.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4826,
+              "text": "          \"logs/_sim_rollback_clean/routing_guard_decisions.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4827,
+              "text": "          \"logs/routing_guard_decisions.jsonl\""
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 93,
+              "text": "  - logs/_sim_rollback_clean/routing_guard_decisions.jsonl (simulation sandbox artifact)"
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 94,
+              "text": "  - logs/routing_guard_decisions.jsonl (append-only event stream)"
+            }
+          ]
+        },
+        {
+          "path": "logs/_sim_rollback_clean/routing_guard_decisions.jsonl",
+          "basename": "routing_guard_decisions.jsonl",
+          "path_ref_count": 3,
+          "basename_ref_count": 15,
+          "path_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4521,
+              "text": "      \"logs/_sim_rollback_clean/routing_guard_decisions.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4826,
+              "text": "          \"logs/_sim_rollback_clean/routing_guard_decisions.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 93,
+              "text": "  - logs/_sim_rollback_clean/routing_guard_decisions.jsonl (simulation sandbox artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "tests/test_p0_validation_metrics_report.py",
+              "line": 19,
+              "text": "    guard_path = tmp_path / \"routing_guard_decisions.jsonl\""
+            },
+            {
+              "file": "tests/test_p0_validation_metrics_report.py",
+              "line": 70,
+              "text": "    guard_path = tmp_path / \"routing_guard_decisions.jsonl\""
+            },
+            {
+              "file": "tests/test_p0_validation_metrics_report.py",
+              "line": 122,
+              "text": "    guard_path = tmp_path / \"routing_guard_decisions.jsonl\""
+            },
+            {
+              "file": "tests/test_content_platform_control_loop_ops.py",
+              "line": 17,
+              "text": "    guards = tmp_path / \"routing_guard_decisions.jsonl\""
+            },
+            {
+              "file": "logs/p0_p1_artifacts_bundle_latest.json",
+              "line": 527,
+              "text": "        \"source\": \"/Users/klara/Downloads/adsız klasör/logs/routing_guard_decisions.jsonl\","
+            },
+            {
+              "file": "logs/routing_guard_review_queue_latest.json",
+              "line": 3,
+              "text": "  \"source\": \"/Users/klara/Downloads/adsız klasör/logs/routing_guard_decisions.jsonl\","
+            },
+            {
+              "file": "ops/p0_validation_metrics_report.py",
+              "line": 19,
+              "text": "ROUTING_GUARD_DECISIONS_PATH = ROOT / \"logs\" / \"routing_guard_decisions.jsonl\""
+            },
+            {
+              "file": "ops/content_platform_control_loop.py",
+              "line": 20,
+              "text": "DEFAULT_ROUTING_GUARD_PATH = LOGS / \"routing_guard_decisions.jsonl\""
+            },
+            {
+              "file": "src/content_platform_control_loop.py",
+              "line": 265,
+              "text": "    for event in _load_jsonl(routing_guard_path or Path(\"logs/routing_guard_decisions.jsonl\")):"
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4517,
+              "text": "      \"logs/_sim_canary_clean/routing_guard_decisions.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4565,
+              "text": "      \"logs/routing_guard_decisions.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4825,
+              "text": "          \"logs/_sim_canary_clean/routing_guard_decisions.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4827,
+              "text": "          \"logs/routing_guard_decisions.jsonl\""
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 92,
+              "text": "  - logs/_sim_canary_clean/routing_guard_decisions.jsonl (simulation sandbox artifact)"
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 94,
+              "text": "  - logs/routing_guard_decisions.jsonl (append-only event stream)"
+            }
+          ]
+        },
+        {
+          "path": "logs/routing_guard_decisions.jsonl",
+          "basename": "routing_guard_decisions.jsonl",
+          "path_ref_count": 6,
+          "basename_ref_count": 12,
+          "path_refs_sample": [
+            {
+              "file": "logs/p0_p1_artifacts_bundle_latest.json",
+              "line": 527,
+              "text": "        \"source\": \"/Users/klara/Downloads/adsız klasör/logs/routing_guard_decisions.jsonl\","
+            },
+            {
+              "file": "logs/routing_guard_review_queue_latest.json",
+              "line": 3,
+              "text": "  \"source\": \"/Users/klara/Downloads/adsız klasör/logs/routing_guard_decisions.jsonl\","
+            },
+            {
+              "file": "src/content_platform_control_loop.py",
+              "line": 265,
+              "text": "    for event in _load_jsonl(routing_guard_path or Path(\"logs/routing_guard_decisions.jsonl\")):"
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4565,
+              "text": "      \"logs/routing_guard_decisions.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4827,
+              "text": "          \"logs/routing_guard_decisions.jsonl\""
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 94,
+              "text": "  - logs/routing_guard_decisions.jsonl (append-only event stream)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "tests/test_p0_validation_metrics_report.py",
+              "line": 19,
+              "text": "    guard_path = tmp_path / \"routing_guard_decisions.jsonl\""
+            },
+            {
+              "file": "tests/test_p0_validation_metrics_report.py",
+              "line": 70,
+              "text": "    guard_path = tmp_path / \"routing_guard_decisions.jsonl\""
+            },
+            {
+              "file": "tests/test_p0_validation_metrics_report.py",
+              "line": 122,
+              "text": "    guard_path = tmp_path / \"routing_guard_decisions.jsonl\""
+            },
+            {
+              "file": "tests/test_content_platform_control_loop_ops.py",
+              "line": 17,
+              "text": "    guards = tmp_path / \"routing_guard_decisions.jsonl\""
+            },
+            {
+              "file": "ops/p0_validation_metrics_report.py",
+              "line": 19,
+              "text": "ROUTING_GUARD_DECISIONS_PATH = ROOT / \"logs\" / \"routing_guard_decisions.jsonl\""
+            },
+            {
+              "file": "ops/content_platform_control_loop.py",
+              "line": 20,
+              "text": "DEFAULT_ROUTING_GUARD_PATH = LOGS / \"routing_guard_decisions.jsonl\""
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4517,
+              "text": "      \"logs/_sim_canary_clean/routing_guard_decisions.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4521,
+              "text": "      \"logs/_sim_rollback_clean/routing_guard_decisions.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4825,
+              "text": "          \"logs/_sim_canary_clean/routing_guard_decisions.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4826,
+              "text": "          \"logs/_sim_rollback_clean/routing_guard_decisions.jsonl\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 92,
+              "text": "  - logs/_sim_canary_clean/routing_guard_decisions.jsonl (simulation sandbox artifact)"
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 93,
+              "text": "  - logs/_sim_rollback_clean/routing_guard_decisions.jsonl (simulation sandbox artifact)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "group": "runtime_flag_ab_evidence",
+      "recommendation": "MERGE",
+      "files": [
+        {
+          "path": "logs/runtime_flag_ab_evidence.json",
+          "basename": "runtime_flag_ab_evidence.json",
+          "path_ref_count": 5,
+          "basename_ref_count": 1,
+          "path_refs_sample": [
+            {
+              "file": "logs/runtime_optimization_evidence_latest.json",
+              "line": 210,
+              "text": "      \"stdout_tail\": \"{\\n  \\\"report\\\": \\\"/Users/klara/Downloads/adsız klasör/logs/runtime_flag_ab_evidence.json\\\",\\n  \\\"ok\\\": true,\\n  \\\"channel_id\\\": \\\"para_pusulasi\\\",\\n  \\\"behavior_changed_when_on\\\": true,\\n  \\\"behav"
+            },
+            {
+              "file": "logs/runtime_optimization_evidence_latest.json",
+              "line": 213,
+              "text": "        \"report\": \"/Users/klara/Downloads/adsız klasör/logs/runtime_flag_ab_evidence.json\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3633,
+              "text": "      \"logs/runtime_flag_ab_evidence.json\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4833,
+              "text": "          \"logs/runtime_flag_ab_evidence.json\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 101,
+              "text": "  - logs/runtime_flag_ab_evidence.json (operational evidence artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "ops/runtime_flag_ab_evidence.py",
+              "line": 161,
+              "text": "    parser.add_argument(\"--output\", default=str(ROOT / \"logs\" / \"runtime_flag_ab_evidence.json\"))"
+            }
+          ]
+        },
+        {
+          "path": "logs/runtime_flag_ab_evidence_latest.json",
+          "basename": "runtime_flag_ab_evidence_latest.json",
+          "path_ref_count": 5,
+          "basename_ref_count": 2,
+          "path_refs_sample": [
+            {
+              "file": "logs/p0_p1_artifacts_bundle_latest.json",
+              "line": 464,
+              "text": "      \"path\": \"/Users/klara/Downloads/adsız klasör/logs/runtime_flag_ab_evidence_latest.json\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3634,
+              "text": "      \"logs/runtime_flag_ab_evidence_latest.json\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4711,
+              "text": "        \"src\": \"logs/runtime_flag_ab_evidence_latest.json\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4834,
+              "text": "          \"logs/runtime_flag_ab_evidence_latest.json\""
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 102,
+              "text": "  - logs/runtime_flag_ab_evidence_latest.json (latest snapshot artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "ops/p0_p1_artifact_bundle.py",
+              "line": 20,
+              "text": "    \"runtime_flag_ab_evidence\": ROOT / \"logs\" / \"runtime_flag_ab_evidence_latest.json\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4712,
+              "text": "        \"dst\": \"logs/archive/2026/07/runtime_flag_ab_evidence_latest.json\""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "group": "state.txt",
+      "recommendation": "ARCHIVE",
+      "files": [
+        {
+          "path": "logs/approved_governance_equivalence_work_20260711_111255/state.txt",
+          "basename": "state.txt",
+          "path_ref_count": 3,
+          "basename_ref_count": 7,
+          "path_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3052,
+              "text": "      \"logs/approved_governance_equivalence_work_20260711_111255/state.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4840,
+              "text": "          \"logs/approved_governance_equivalence_work_20260711_111255/state.txt\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 109,
+              "text": "  - logs/approved_governance_equivalence_work_20260711_111255/state.txt (temporary equivalence work artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3036,
+              "text": "      \"logs/approved_ancestry_merge_20260711_105728/step1_state.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3060,
+              "text": "      \"logs/approved_governance_equivalence_work_final/merge_state.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3067,
+              "text": "      \"logs/approved_governance_equivalence_work_final/state.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4838,
+              "text": "        \"normalized_name\": \"state.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4841,
+              "text": "          \"logs/approved_governance_equivalence_work_final/state.txt\""
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 104,
+              "text": "## 13. state.txt"
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 110,
+              "text": "  - logs/approved_governance_equivalence_work_final/state.txt (temporary equivalence work artifact)"
+            }
+          ]
+        },
+        {
+          "path": "logs/approved_governance_equivalence_work_final/state.txt",
+          "basename": "state.txt",
+          "path_ref_count": 3,
+          "basename_ref_count": 7,
+          "path_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3067,
+              "text": "      \"logs/approved_governance_equivalence_work_final/state.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4841,
+              "text": "          \"logs/approved_governance_equivalence_work_final/state.txt\""
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 110,
+              "text": "  - logs/approved_governance_equivalence_work_final/state.txt (temporary equivalence work artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3036,
+              "text": "      \"logs/approved_ancestry_merge_20260711_105728/step1_state.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3052,
+              "text": "      \"logs/approved_governance_equivalence_work_20260711_111255/state.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3060,
+              "text": "      \"logs/approved_governance_equivalence_work_final/merge_state.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4838,
+              "text": "        \"normalized_name\": \"state.txt\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4840,
+              "text": "          \"logs/approved_governance_equivalence_work_20260711_111255/state.txt\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 104,
+              "text": "## 13. state.txt"
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 109,
+              "text": "  - logs/approved_governance_equivalence_work_20260711_111255/state.txt (temporary equivalence work artifact)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "group": "validate_git_diff_check.out",
+      "recommendation": "ARCHIVE",
+      "files": [
+        {
+          "path": "logs/approved_governance_equivalence_work_20260711_111255/validate_git_diff_check.out",
+          "basename": "validate_git_diff_check.out",
+          "path_ref_count": 3,
+          "basename_ref_count": 5,
+          "path_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4524,
+              "text": "      \"logs/approved_governance_equivalence_work_20260711_111255/validate_git_diff_check.out\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4854,
+              "text": "          \"logs/approved_governance_equivalence_work_20260711_111255/validate_git_diff_check.out\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 125,
+              "text": "  - logs/approved_governance_equivalence_work_20260711_111255/validate_git_diff_check.out (temporary equivalence work artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4530,
+              "text": "      \"logs/approved_governance_equivalence_work_final/validate_git_diff_check.out\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4852,
+              "text": "        \"normalized_name\": \"validate_git_diff_check.out\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4855,
+              "text": "          \"logs/approved_governance_equivalence_work_final/validate_git_diff_check.out\""
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 120,
+              "text": "## 15. validate_git_diff_check.out"
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 126,
+              "text": "  - logs/approved_governance_equivalence_work_final/validate_git_diff_check.out (temporary equivalence work artifact)"
+            }
+          ]
+        },
+        {
+          "path": "logs/approved_governance_equivalence_work_final/validate_git_diff_check.out",
+          "basename": "validate_git_diff_check.out",
+          "path_ref_count": 3,
+          "basename_ref_count": 5,
+          "path_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4530,
+              "text": "      \"logs/approved_governance_equivalence_work_final/validate_git_diff_check.out\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4855,
+              "text": "          \"logs/approved_governance_equivalence_work_final/validate_git_diff_check.out\""
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 126,
+              "text": "  - logs/approved_governance_equivalence_work_final/validate_git_diff_check.out (temporary equivalence work artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4524,
+              "text": "      \"logs/approved_governance_equivalence_work_20260711_111255/validate_git_diff_check.out\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4852,
+              "text": "        \"normalized_name\": \"validate_git_diff_check.out\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4854,
+              "text": "          \"logs/approved_governance_equivalence_work_20260711_111255/validate_git_diff_check.out\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 120,
+              "text": "## 15. validate_git_diff_check.out"
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 125,
+              "text": "  - logs/approved_governance_equivalence_work_20260711_111255/validate_git_diff_check.out (temporary equivalence work artifact)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "group": "validate_git_diff_check.rc",
+      "recommendation": "ARCHIVE",
+      "files": [
+        {
+          "path": "logs/approved_governance_equivalence_work_20260711_111255/validate_git_diff_check.rc",
+          "basename": "validate_git_diff_check.rc",
+          "path_ref_count": 3,
+          "basename_ref_count": 5,
+          "path_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3053,
+              "text": "      \"logs/approved_governance_equivalence_work_20260711_111255/validate_git_diff_check.rc\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4861,
+              "text": "          \"logs/approved_governance_equivalence_work_20260711_111255/validate_git_diff_check.rc\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 133,
+              "text": "  - logs/approved_governance_equivalence_work_20260711_111255/validate_git_diff_check.rc (temporary equivalence work artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3072,
+              "text": "      \"logs/approved_governance_equivalence_work_final/validate_git_diff_check.rc\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4859,
+              "text": "        \"normalized_name\": \"validate_git_diff_check.rc\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4862,
+              "text": "          \"logs/approved_governance_equivalence_work_final/validate_git_diff_check.rc\""
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 128,
+              "text": "## 16. validate_git_diff_check.rc"
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 134,
+              "text": "  - logs/approved_governance_equivalence_work_final/validate_git_diff_check.rc (temporary equivalence work artifact)"
+            }
+          ]
+        },
+        {
+          "path": "logs/approved_governance_equivalence_work_final/validate_git_diff_check.rc",
+          "basename": "validate_git_diff_check.rc",
+          "path_ref_count": 3,
+          "basename_ref_count": 5,
+          "path_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3072,
+              "text": "      \"logs/approved_governance_equivalence_work_final/validate_git_diff_check.rc\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4862,
+              "text": "          \"logs/approved_governance_equivalence_work_final/validate_git_diff_check.rc\""
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 134,
+              "text": "  - logs/approved_governance_equivalence_work_final/validate_git_diff_check.rc (temporary equivalence work artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 3053,
+              "text": "      \"logs/approved_governance_equivalence_work_20260711_111255/validate_git_diff_check.rc\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4859,
+              "text": "        \"normalized_name\": \"validate_git_diff_check.rc\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4861,
+              "text": "          \"logs/approved_governance_equivalence_work_20260711_111255/validate_git_diff_check.rc\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 128,
+              "text": "## 16. validate_git_diff_check.rc"
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 133,
+              "text": "  - logs/approved_governance_equivalence_work_20260711_111255/validate_git_diff_check.rc (temporary equivalence work artifact)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "group": "validate_import_integrity.out",
+      "recommendation": "ARCHIVE",
+      "files": [
+        {
+          "path": "logs/approved_governance_equivalence_work_20260711_111255/validate_import_integrity.out",
+          "basename": "validate_import_integrity.out",
+          "path_ref_count": 3,
+          "basename_ref_count": 5,
+          "path_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4525,
+              "text": "      \"logs/approved_governance_equivalence_work_20260711_111255/validate_import_integrity.out\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4868,
+              "text": "          \"logs/approved_governance_equivalence_work_20260711_111255/validate_import_integrity.out\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 141,
+              "text": "  - logs/approved_governance_equivalence_work_20260711_111255/validate_import_integrity.out (temporary equivalence work artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4532,
+              "text": "      \"logs/approved_governance_equivalence_work_final/validate_import_integrity.out\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4866,
+              "text": "        \"normalized_name\": \"validate_import_integrity.out\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4869,
+              "text": "          \"logs/approved_governance_equivalence_work_final/validate_import_integrity.out\""
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 136,
+              "text": "## 17. validate_import_integrity.out"
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 142,
+              "text": "  - logs/approved_governance_equivalence_work_final/validate_import_integrity.out (temporary equivalence work artifact)"
+            }
+          ]
+        },
+        {
+          "path": "logs/approved_governance_equivalence_work_final/validate_import_integrity.out",
+          "basename": "validate_import_integrity.out",
+          "path_ref_count": 3,
+          "basename_ref_count": 5,
+          "path_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4532,
+              "text": "      \"logs/approved_governance_equivalence_work_final/validate_import_integrity.out\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4869,
+              "text": "          \"logs/approved_governance_equivalence_work_final/validate_import_integrity.out\""
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 142,
+              "text": "  - logs/approved_governance_equivalence_work_final/validate_import_integrity.out (temporary equivalence work artifact)"
+            }
+          ],
+          "basename_refs_sample": [
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4525,
+              "text": "      \"logs/approved_governance_equivalence_work_20260711_111255/validate_import_integrity.out\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4866,
+              "text": "        \"normalized_name\": \"validate_import_integrity.out\","
+            },
+            {
+              "file": "artifacts/latest/maintenance_dry_run_plan.json",
+              "line": 4868,
+              "text": "          \"logs/approved_governance_equivalence_work_20260711_111255/validate_import_integrity.out\","
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 136,
+              "text": "## 17. validate_import_integrity.out"
+            },
+            {
+              "file": "artifacts/latest/collision_analysis.md",
+              "line": 141,
+              "text": "  - logs/approved_governance_equivalence_work_20260711_111255/validate_import_integrity.out (temporary equivalence work artifact)"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

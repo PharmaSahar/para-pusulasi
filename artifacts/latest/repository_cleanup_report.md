@@ -1,0 +1,171 @@
+# Repository Cleanup Report
+
+Production impact: NONE
+One oversized artifact was preserved outside Git at /tmp/parapusulasi_large_archive_2026-07/topic_domain_quarantine_regression_before.txt.
+Repository archive remains complete through the external manifest reference in /tmp/parapusulasi_large_archive_2026-07/MANIFEST.md.
+
+## Files Archived
+- docs/architecture_audit_2026-07-09.md -> docs/archive/architecture_audit_2026-07-09.md (docs-history)
+- docs/content_platform_weekly_review.md -> docs/archive/content_platform_weekly_review.md (docs-history)
+- docs/queue_publish_catchup_postmortem_20260710.md -> docs/archive/queue_publish_catchup_postmortem_20260710.md (docs-history)
+- docs/session_archive_2026-07-10.md -> docs/archive/session_archive_2026-07-10.md (docs-history)
+- docs/t3.2_go_no_go_report.md -> docs/archive/t3.2_go_no_go_report.md (docs-history)
+- docs/v0.2.0_planning.md -> docs/archive/v0.2.0_planning.md (docs-history)
+- archive/2026-07-production-hardening/deployment/post_push_workspace_audit.md -> archive/2026-07-production-hardening/deployment/post_push_workspace_audit.md (deployment)
+- archive/2026-07-production-hardening/deployment/postdeploy_soak_baseline.md -> archive/2026-07-production-hardening/deployment/postdeploy_soak_baseline.md (deployment)
+- archive/2026-07-production-hardening/deployment/postdeploy_soak_checkpoints.jsonl -> archive/2026-07-production-hardening/deployment/postdeploy_soak_checkpoints.jsonl (deployment)
+- archive/2026-07-production-hardening/deployment/pre_push_repository_state.txt -> archive/2026-07-production-hardening/deployment/pre_push_repository_state.txt (deployment)
+- archive/2026-07-production-hardening/deployment/push_verification.md -> archive/2026-07-production-hardening/deployment/push_verification.md (deployment)
+- archive/2026-07-production-hardening/deployment/vps_deploy_c732427.sh -> archive/2026-07-production-hardening/deployment/vps_deploy_c732427.sh (deployment)
+- archive/2026-07-production-hardening/deployment/vps_predeploy_verification.md -> archive/2026-07-production-hardening/deployment/vps_predeploy_verification.md (deployment)
+- archive/2026-07-production-hardening/incidents/telegram_incident_policy.md -> archive/2026-07-production-hardening/incidents/telegram_incident_policy.md (incidents)
+- archive/2026-07-production-hardening/investigation/collision_analysis.md -> archive/2026-07-production-hardening/investigation/collision_analysis.md (investigation)
+- archive/2026-07-production-hardening/investigation/observability_before_after_trace.json -> archive/2026-07-production-hardening/investigation/observability_before_after_trace.json (investigation)
+- archive/2026-07-production-hardening/investigation/observability_line_level_proof.md -> archive/2026-07-production-hardening/investigation/observability_line_level_proof.md (investigation)
+- archive/2026-07-production-hardening/investigation/observability_line_proof_diff.patch -> archive/2026-07-production-hardening/investigation/observability_line_proof_diff.patch (investigation)
+- archive/2026-07-production-hardening/investigation/observability_root_cause.md -> archive/2026-07-production-hardening/investigation/observability_root_cause.md (investigation)
+- archive/2026-07-production-hardening/investigation/observability_scope_audit.md -> archive/2026-07-production-hardening/investigation/observability_scope_audit.md (investigation)
+- archive/2026-07-production-hardening/investigation/production_observability_audit.md -> archive/2026-07-production-hardening/investigation/production_observability_audit.md (investigation)
+- archive/2026-07-production-hardening/investigation/repository_state_before_recovery.txt -> archive/2026-07-production-hardening/investigation/repository_state_before_recovery.txt (investigation)
+- archive/2026-07-production-hardening/investigation/runtime_manifest_review.md -> archive/2026-07-production-hardening/investigation/runtime_manifest_review.md (investigation)
+- archive/2026-07-production-hardening/investigation/runtime_storage_cleanstate_after.txt -> archive/2026-07-production-hardening/investigation/runtime_storage_cleanstate_after.txt (investigation)
+- archive/2026-07-production-hardening/investigation/runtime_storage_cleanstate_baseline.json -> archive/2026-07-production-hardening/investigation/runtime_storage_cleanstate_baseline.json (investigation)
+- archive/2026-07-production-hardening/investigation/runtime_storage_cleanstate_before.txt -> archive/2026-07-production-hardening/investigation/runtime_storage_cleanstate_before.txt (investigation)
+- archive/2026-07-production-hardening/investigation/runtime_storage_contract.md -> archive/2026-07-production-hardening/investigation/runtime_storage_contract.md (investigation)
+- archive/2026-07-production-hardening/investigation/runtime_storage_final_verification.md -> archive/2026-07-production-hardening/investigation/runtime_storage_final_verification.md (investigation)
+- archive/2026-07-production-hardening/investigation/runtime_storage_focused_gate.txt -> archive/2026-07-production-hardening/investigation/runtime_storage_focused_gate.txt (investigation)
+- archive/2026-07-production-hardening/investigation/runtime_storage_path_resolution_check.txt -> archive/2026-07-production-hardening/investigation/runtime_storage_path_resolution_check.txt (investigation)
+- archive/2026-07-production-hardening/investigation/runtime_storage_restore_step.txt -> archive/2026-07-production-hardening/investigation/runtime_storage_restore_step.txt (investigation)
+- archive/2026-07-production-hardening/investigation/runtime_storage_unexpected_mutation_investigation.txt -> archive/2026-07-production-hardening/investigation/runtime_storage_unexpected_mutation_investigation.txt (investigation)
+- archive/2026-07-production-hardening/investigation/runtime_storage_writer_stop.txt -> archive/2026-07-production-hardening/investigation/runtime_storage_writer_stop.txt (investigation)
+- archive/2026-07-production-hardening/investigation/runtime_write_inventory.md -> archive/2026-07-production-hardening/investigation/runtime_write_inventory.md (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_before_after.json -> archive/2026-07-production-hardening/investigation/unknown_contract_before_after.json (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/after_production_like_exception_probe.out -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/after_production_like_exception_probe.out (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/before_production_like_exception_probe.out -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/before_production_like_exception_probe.out (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/commit_631eb704_meta.txt -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/commit_631eb704_meta.txt (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/commit_631eb704_scheduler_topic_guard.patch -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/commit_631eb704_scheduler_topic_guard.patch (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/commit_72b4bb2_meta.txt -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/commit_72b4bb2_meta.txt (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/commit_72b4bb2_scheduler_topic_guard.patch -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/commit_72b4bb2_scheduler_topic_guard.patch (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/domain_exception_probe.py -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/domain_exception_probe.py (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/test_scheduler_quarantines_topic_domain_block.meta.json -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/test_scheduler_quarantines_topic_domain_block.meta.json (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/test_scheduler_quarantines_topic_domain_block.out -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/test_scheduler_quarantines_topic_domain_block.out (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/test_scheduler_topic_domain_block_is_not_retried.meta.json -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/test_scheduler_topic_domain_block_is_not_retried.meta.json (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/test_scheduler_topic_domain_block_is_not_retried.out -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/test_scheduler_topic_domain_block_is_not_retried.out (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/topic_domain_doc_hits.txt -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/topic_domain_doc_hits.txt (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.meta.json -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.meta.json (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.out -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.out (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.meta.json -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.meta.json (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.out -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.out (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.meta.json -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.meta.json (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.out -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.out (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.meta.json -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.meta.json (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.out -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.out (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs_v2/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.meta.json -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs_v2/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.meta.json (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs_v2/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.out -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs_v2/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.out (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs_v2/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.meta.json -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs_v2/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.meta.json (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs_v2/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.out -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs_v2/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.out (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs_v2/base631_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.meta.json -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs_v2/base631_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.meta.json (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs_v2/base631_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.out -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs_v2/base631_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.out (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs_v2/base631_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.meta.json -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs_v2/base631_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.meta.json (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs_v2/base631_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.out -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs_v2/base631_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.out (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs_v2/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.meta.json -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs_v2/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.meta.json (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs_v2/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.out -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs_v2/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.out (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs_v2/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.meta.json -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs_v2/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.meta.json (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs_v2/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.out -> archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs_v2/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.out (investigation)
+- archive/2026-07-production-hardening/investigation/unknown_contract_resolution.md -> archive/2026-07-production-hardening/investigation/unknown_contract_resolution.md (investigation)
+- archive/2026-07-production-hardening/misc/_lifecycle_noise_probe.json -> archive/2026-07-production-hardening/misc/_lifecycle_noise_probe.json (misc)
+- archive/2026-07-production-hardening/misc/archive_execution_plan.md -> archive/2026-07-production-hardening/misc/archive_execution_plan.md (misc)
+- archive/2026-07-production-hardening/misc/dashboard_forensics_baseline.md -> archive/2026-07-production-hardening/misc/dashboard_forensics_baseline.md (misc)
+- archive/2026-07-production-hardening/misc/dashboard_mutation_forensics.md -> archive/2026-07-production-hardening/misc/dashboard_mutation_forensics.md (misc)
+- archive/2026-07-production-hardening/misc/first_smoke_failure_evidence.md -> archive/2026-07-production-hardening/misc/first_smoke_failure_evidence.md (misc)
+- archive/2026-07-production-hardening/misc/maintenance_dry_run_plan.json -> archive/2026-07-production-hardening/misc/maintenance_dry_run_plan.json (misc)
+- archive/2026-07-production-hardening/misc/phase2b_blocker_resolution.md -> archive/2026-07-production-hardening/misc/phase2b_blocker_resolution.md (misc)
+- archive/2026-07-production-hardening/misc/phase2b_reference_scan.json -> archive/2026-07-production-hardening/misc/phase2b_reference_scan.json (misc)
+- archive/2026-07-production-hardening/misc/production_go_evidence_audit.md -> archive/2026-07-production-hardening/misc/production_go_evidence_audit.md (misc)
+- archive/2026-07-production-hardening/misc/production_recovery_todos.md -> archive/2026-07-production-hardening/misc/production_recovery_todos.md (misc)
+- archive/2026-07-production-hardening/misc/pytest_warning_analysis.md -> archive/2026-07-production-hardening/misc/pytest_warning_analysis.md (misc)
+- archive/2026-07-production-hardening/misc/pytest_warning_remediation.md -> archive/2026-07-production-hardening/misc/pytest_warning_remediation.md (misc)
+- archive/2026-07-production-hardening/misc/repository_hygiene_actions.txt -> archive/2026-07-production-hardening/misc/repository_hygiene_actions.txt (misc)
+- archive/2026-07-production-hardening/misc/repository_hygiene_classification.md -> archive/2026-07-production-hardening/misc/repository_hygiene_classification.md (misc)
+- archive/2026-07-production-hardening/misc/repository_hygiene_tracked_diff_evidence.patch -> archive/2026-07-production-hardening/misc/repository_hygiene_tracked_diff_evidence.patch (misc)
+- archive/2026-07-production-hardening/misc/system_status.json -> archive/2026-07-production-hardening/misc/system_status.json (misc)
+- archive/2026-07-production-hardening/misc/topic_domain_quarantine_before_after.json -> archive/2026-07-production-hardening/misc/topic_domain_quarantine_before_after.json (misc)
+- archive/2026-07-production-hardening/misc/topic_domain_quarantine_regression_before.txt -> archive/2026-07-production-hardening/misc/topic_domain_quarantine_regression_before.txt (misc)
+- archive/2026-07-production-hardening/reports/final_authoritative_contracts.md -> archive/2026-07-production-hardening/reports/final_authoritative_contracts.md (reports)
+- archive/2026-07-production-hardening/reports/final_commit_plan.md -> archive/2026-07-production-hardening/reports/final_commit_plan.md (reports)
+- archive/2026-07-production-hardening/reports/final_production_recovery_report.md -> archive/2026-07-production-hardening/reports/final_production_recovery_report.md (reports)
+- archive/2026-07-production-hardening/reports/final_production_recovery_todos.md -> archive/2026-07-production-hardening/reports/final_production_recovery_todos.md (reports)
+- archive/2026-07-production-hardening/reports/final_production_validation.txt -> archive/2026-07-production-hardening/reports/final_production_validation.txt (reports)
+- archive/2026-07-production-hardening/reports/final_push_readiness.md -> archive/2026-07-production-hardening/reports/final_push_readiness.md (reports)
+- archive/2026-07-production-hardening/reports/final_recovery_repo_state.txt -> archive/2026-07-production-hardening/reports/final_recovery_repo_state.txt (reports)
+- archive/2026-07-production-hardening/reports/final_redeploy_result.md -> archive/2026-07-production-hardening/reports/final_redeploy_result.md (reports)
+- archive/2026-07-production-hardening/reports/final_report_consistency_resolution.md -> archive/2026-07-production-hardening/reports/final_report_consistency_resolution.md (reports)
+- archive/2026-07-production-hardening/reports/final_three_commit_release_plan.md -> archive/2026-07-production-hardening/reports/final_three_commit_release_plan.md (reports)
+- archive/2026-07-production-hardening/reports/final_vps_deployment_report.md -> archive/2026-07-production-hardening/reports/final_vps_deployment_report.md (reports)
+- archive/2026-07-production-hardening/reports/outdated_test_migration_report.md -> archive/2026-07-production-hardening/reports/outdated_test_migration_report.md (reports)
+- archive/2026-07-production-hardening/reports/postdeploy_soak_and_job_report.md -> archive/2026-07-production-hardening/reports/postdeploy_soak_and_job_report.md (reports)
+- archive/2026-07-production-hardening/reports/production_observability_hardening_report.md -> archive/2026-07-production-hardening/reports/production_observability_hardening_report.md (reports)
+- archive/2026-07-production-hardening/reports/runtime_storage_separation_report.md -> archive/2026-07-production-hardening/reports/runtime_storage_separation_report.md (reports)
+- archive/2026-07-production-hardening/telemetry/dashboard_write_trace.jsonl -> archive/2026-07-production-hardening/telemetry/dashboard_write_trace.jsonl (telemetry)
+- archive/2026-07-production-hardening/temporary-tests/repro_target_startup.sh -> archive/2026-07-production-hardening/temporary-tests/repro_target_startup.sh (temporary-tests)
+- archive/2026-07-production-hardening/temporary-tests/repro_target_startup_service_like.sh -> archive/2026-07-production-hardening/temporary-tests/repro_target_startup_service_like.sh (temporary-tests)
+- archive/2026-07-production-hardening/temporary-tests/strict_storage_run_1.txt -> archive/2026-07-production-hardening/temporary-tests/strict_storage_run_1.txt (temporary-tests)
+- archive/2026-07-production-hardening/temporary-tests/strict_storage_run_2.txt -> archive/2026-07-production-hardening/temporary-tests/strict_storage_run_2.txt (temporary-tests)
+- archive/2026-07-production-hardening/temporary-tests/strict_storage_run_3.txt -> archive/2026-07-production-hardening/temporary-tests/strict_storage_run_3.txt (temporary-tests)
+- archive/2026-07-production-hardening/temporary-tests/strict_storage_run_4.txt -> archive/2026-07-production-hardening/temporary-tests/strict_storage_run_4.txt (temporary-tests)
+- archive/2026-07-production-hardening/temporary-tests/strict_storage_run_5.txt -> archive/2026-07-production-hardening/temporary-tests/strict_storage_run_5.txt (temporary-tests)
+- archive/2026-07-production-hardening/temporary-tests/topic_domain_quarantine_repro_output.json -> archive/2026-07-production-hardening/temporary-tests/topic_domain_quarantine_repro_output.json (temporary-tests)
+- archive/2026-07-production-hardening/temporary-tests/validate_fix_isolated.sh -> archive/2026-07-production-hardening/temporary-tests/validate_fix_isolated.sh (temporary-tests)
+- archive/2026-07-production-hardening/validation/concurrency_storage_validation.json -> archive/2026-07-production-hardening/validation/concurrency_storage_validation.json (validation)
+- archive/2026-07-production-hardening/validation/incident_lifecycle_validation.json -> archive/2026-07-production-hardening/validation/incident_lifecycle_validation.json (validation)
+- archive/2026-07-production-hardening/validation/observability_fail_open_validation.json -> archive/2026-07-production-hardening/validation/observability_fail_open_validation.json (validation)
+- archive/2026-07-production-hardening/validation/production_contract_validation.md -> archive/2026-07-production-hardening/validation/production_contract_validation.md (validation)
+- archive/2026-07-production-hardening/validation/runtime_storage_export_boundary_validation.txt -> archive/2026-07-production-hardening/validation/runtime_storage_export_boundary_validation.txt (validation)
+- archive/2026-07-production-hardening/validation/runtime_storage_validation_evidence.txt -> archive/2026-07-production-hardening/validation/runtime_storage_validation_evidence.txt (validation)
+- archive/2026-07-production-hardening/validation/smoke_failure_state_before.md -> archive/2026-07-production-hardening/validation/smoke_failure_state_before.md (validation)
+- archive/2026-07-production-hardening/validation/smoke_fix_validation.md -> archive/2026-07-production-hardening/validation/smoke_fix_validation.md (validation)
+- archive/2026-07-production-hardening/validation/t09_observability_fail_open_validation.txt -> archive/2026-07-production-hardening/validation/t09_observability_fail_open_validation.txt (validation)
+- archive/2026-07-production-hardening/validation/telegram_noise_validation.json -> archive/2026-07-production-hardening/validation/telegram_noise_validation.json (validation)
+
+## Files Intentionally Left
+- artifacts/latest/current_production_contracts.md
+- artifacts/latest/repository_cleanup_report.md
+- artifacts/latest/system_status.md
+- docs/activation_controller_runbook.md
+- docs/adr
+- docs/architecture.md
+- docs/audio_intelligence_contract.md
+- docs/collector_contract.md
+- docs/current
+- docs/experiment_registry_schema.md
+- docs/finance_data_first.md
+- docs/governance_readiness_latest.md
+- docs/kpi_contract_phase2.md
+- docs/pending_oauth_onboarding_readiness_checklist.md
+- docs/phase2_audience_performance_engine.md
+- docs/production_dashboard_latest.md
+- docs/production_readiness_checklist.md
+- docs/production_system_blueprint_v2.md
+- docs/proven_validated_criteria.md
+- docs/runbooks
+- docs/selection_policy_v2_design.md
+- docs/single_root_operations.md
+- docs/strict_evidence_launchagent.md
+- docs/t3.2_collector_contract.md
+- docs/thumbnail_intelligence_contract.md
+
+## Duplicate Inventory
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/test_scheduler_topic_domain_block_is_not_retried.out ; archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.out -> recommend keep one active copy and retain archived history only when required.
+- archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.out ; archive/2026-07-production-hardening/investigation/unknown_contract_evidence/worktree_runs/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.out -> recommend keep one active copy and retain archived history only when required.
+
+## Unknown Files
+- None
+
+## Runtime Verification
+- No files under src/, tests/, config/, ops/, runtime paths, deployment paths, or service configuration were moved or modified.
+- Production-facing runtime state remained outside this archival pass.
+
+## Notes
+- Archived file count: 121
+- Duplicate groups detected: 2
+- Production impact: NONE

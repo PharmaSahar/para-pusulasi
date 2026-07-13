@@ -1,0 +1,23 @@
+[step6] ts_start_utc=2026-07-12T18:14:45Z
+pre_dashboard_sha256=6840cc7832d0df12f688e5ae981b53288908d205c74bece9bc61cc0d6127e6db
+pre_dashboard_status=<empty>
+pre_tracked_docs_diff=M       docs/governance_readiness_latest.md
+pre_writer_processes=<none>
+pre_runtime_dashboard_md=/Users/klara/Downloads/adsız klasör/output/runtime/state/production_dashboard_latest.md
+pre_runtime_dashboard_json=/Users/klara/Downloads/adsız klasör/output/runtime/state/production_dashboard_latest.json
+pre_runtime_observability_json=/Users/klara/Downloads/adsız klasör/output/runtime/telemetry/production_observability_latest.json
+pre_governance_readiness_md=/Users/klara/Downloads/adsız klasör/output/runtime/state/governance_readiness_latest.md
+pre_incident_state=output/state/incident_state.json
+pre_incident_jsonl=logs/production_incidents.jsonl
+pre_incident_metrics=output/state/incident_metrics_latest.json
+[pytest_command]
+.venv-2/bin/python -m pytest -q -W error tests/test_production_quality_platform.py tests/test_preprod_isolation_paths.py tests/test_refresh_governance_readiness.py tests/test_render_metrics.py
+[pytest_result]
+26 passed in 2.09s
+pytest_exit=0
+post_dashboard_sha256=6840cc7832d0df12f688e5ae981b53288908d205c74bece9bc61cc0d6127e6db
+post_dashboard_status=<empty>
+post_tracked_docs_diff=M       docs/governance_readiness_latest.md
+post_writer_processes=<none>
+ts_end_utc=2026-07-12T18:15:58Z
+step6_decision=PASS

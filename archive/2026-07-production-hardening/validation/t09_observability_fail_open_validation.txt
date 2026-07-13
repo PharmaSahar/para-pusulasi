@@ -1,0 +1,40 @@
+[T09] started: 2026-07-12T15:48:58Z
+[T09] repo: /Users/klara/Downloads/adsız klasör
+[T09] python: /Users/klara/Downloads/adsız klasör/.venv-2/bin/python
+
+$ git status --short
+[exit] 0
+[result] dirty worktree present (pre-existing tracked + untracked artifacts)
+
+$ git diff --check
+[exit] 0
+[result] no diff-check errors
+
+$ /Users/klara/Downloads/adsız klasör/.venv-2/bin/python -m py_compile src/scheduler_utils.py
+[exit] 0
+[result] compile check passed
+
+$ /Users/klara/Downloads/adsız klasör/.venv-2/bin/python -m pytest -vv -s --tb=long -W error tests/test_observability_incident_safety.py::test_notify_error_redacts_filesystem_paths_in_telegram_payload tests/test_observability_incident_safety.py::test_corrupted_incident_state_json_is_fail_open tests/test_observability_incident_safety.py::test_notify_error_fail_open_when_incident_lock_fails tests/test_observability_incident_safety.py::test_notify_error_fail_open_when_incident_write_fails tests/test_observability_incident_safety.py::test_notify_error_fail_open_when_alert_state_write_fails
+[exit] 0
+[pytest] collected=5 passed=5 failed=0 skipped=0 errors=0 xfailed=0 xpassed=0
+[warnings] none (executed with -W error)
+
+$ /Users/klara/Downloads/adsız klasör/.venv-2/bin/python -m pytest -vv --tb=long -W error tests/test_observability_incident_safety.py
+[exit] 0
+[pytest] collected=10 passed=10 failed=0 skipped=0 errors=0 xfailed=0 xpassed=0
+[warnings] none (executed with -W error)
+
+$ /Users/klara/Downloads/adsız klasör/.venv-2/bin/python -m pytest -vv --tb=long -W error tests/test_scheduler_provider_guardrails.py::test_notify_error_dedupes_anthropic_cooldown_across_channels tests/test_scheduler_provider_guardrails.py::test_notify_error_keeps_non_cooldown_alerts_channel_scoped tests/test_scheduler_provider_guardrails.py::test_render_and_schedule_quarantines_when_upload_precheck_blocked tests/test_scheduler_topic_domain_guard.py::test_scheduler_topic_domain_block_is_not_retried tests/test_scheduler_topic_domain_guard.py::test_blocked_main_content_cannot_upload_short
+[exit] 0
+[pytest] collected=5 passed=5 failed=0 skipped=0 errors=0 xfailed=0 xpassed=0
+[warnings] none (executed with -W error)
+
+[T09 assertions]
+- Sanitizer patch scope is limited to observability output redaction in _sanitize_operator_text.
+- Non-debug redaction validated for: /tmp, /var, /opt, /home, /Users, Windows drive paths, UNC paths, and relative roots channels/output/logs/artifacts/config/src/tests.
+- No raw filesystem path leaked in non-debug Telegram payload for the covered matrix.
+- Observability fail-open preserved on incident write failure, lock failure, alert-state write failure, and corrupted incident-state JSON.
+- Business decision integrity preserved in tested fail-open paths.
+- Scheduler/quarantine/upload-precheck guardrail invariants remained unchanged in focused regression nodes.
+
+[T09] finished: 2026-07-12T15:49:00Z

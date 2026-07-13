@@ -1,0 +1,396 @@
+[snapshot_time_utc] 2026-07-12T20:02:45Z
+[pwd] /Users/klara/Downloads/adsız klasör
+[branch] master
+[head] 1097cc8fcd8c282a7a38b577f6d7f7d3964e046c
+
+[git_log_3_oneline]
+1097cc8 fix: harden content fallback and trend metadata contract
+6224118 fix: quarantine terminal topic-domain blocks exactly once
+47a241e fix: separate runtime storage and harden scheduler observability
+
+[git_status_short]
+ M PROGRESS.md
+ M docs/governance_readiness_latest.md
+ M output/state/activation_reports/latest.json
+?? artifacts/deployment/
+?? artifacts/incidents/cross_channel_contamination/adjacent_run_comparison.md
+?? artifacts/incidents/cross_channel_contamination/cross_channel_audit.json
+?? artifacts/incidents/cross_channel_contamination/first_divergence.md
+?? artifacts/incidents/cross_channel_contamination/known_incident_report.md
+?? artifacts/incidents/cross_channel_contamination/lineage_report.md
+?? artifacts/incidents/cross_channel_contamination/permanent_fix_spec.md
+?? artifacts/incidents/cross_channel_contamination/producer_trace.md
+?? artifacts/incidents/cross_channel_contamination/regression_test_plan.md
+?? artifacts/incidents/cross_channel_contamination/remediation_approval_plan.md
+?? artifacts/incidents/cross_channel_contamination/replay/
+?? artifacts/incidents/cross_channel_contamination/reproduction_report.md
+?? artifacts/incidents/cross_channel_contamination/root_cause_analysis.md
+?? artifacts/incidents/cross_channel_contamination/root_cause_final.md
+?? artifacts/incidents/cross_channel_contamination/root_cause_proof.md
+?? artifacts/incidents/cross_channel_contamination/safety_gate_design.md
+?? artifacts/incidents/cross_channel_contamination/topics_call_graph.md
+?? artifacts/incidents/cross_channel_contamination/topics_producer_proof.md
+?? artifacts/incidents/cross_channel_contamination/topics_value_trace.md
+?? artifacts/incidents/cross_channel_contamination/topics_writer_map.md
+?? artifacts/latest/_lifecycle_noise_probe.json
+?? artifacts/latest/archive_execution_plan.md
+?? artifacts/latest/collision_analysis.md
+?? artifacts/latest/concurrency_storage_validation.json
+?? artifacts/latest/current_production_contracts.md
+?? artifacts/latest/dashboard_forensics_baseline.md
+?? artifacts/latest/dashboard_mutation_forensics.md
+?? artifacts/latest/dashboard_write_trace.jsonl
+?? artifacts/latest/final_authoritative_contracts.md
+?? artifacts/latest/final_commit_plan.md
+?? artifacts/latest/final_production_recovery_report.md
+?? artifacts/latest/final_production_recovery_todos.md
+?? artifacts/latest/final_production_validation.txt
+?? artifacts/latest/final_recovery_repo_state.txt
+?? artifacts/latest/final_report_consistency_resolution.md
+?? artifacts/latest/final_three_commit_release_plan.md
+?? artifacts/latest/incident_lifecycle_validation.json
+?? artifacts/latest/maintenance_dry_run_plan.json
+?? artifacts/latest/observability_before_after_trace.json
+?? artifacts/latest/observability_fail_open_validation.json
+?? artifacts/latest/observability_line_level_proof.md
+?? artifacts/latest/observability_line_proof_diff.patch
+?? artifacts/latest/observability_root_cause.md
+?? artifacts/latest/observability_scope_audit.md
+?? artifacts/latest/outdated_test_migration_report.md
+?? artifacts/latest/phase2b_blocker_resolution.md
+?? artifacts/latest/phase2b_reference_scan.json
+?? artifacts/latest/pre_push_repository_state.txt
+?? artifacts/latest/production_contract_validation.md
+?? artifacts/latest/production_go_evidence_audit.md
+?? artifacts/latest/production_observability_audit.md
+?? artifacts/latest/production_observability_hardening_report.md
+?? artifacts/latest/production_recovery_todos.md
+?? artifacts/latest/pytest_warning_analysis.md
+?? artifacts/latest/repository_state_before_recovery.txt
+?? artifacts/latest/runtime_manifest_review.md
+?? artifacts/latest/runtime_storage_cleanstate_after.txt
+?? artifacts/latest/runtime_storage_cleanstate_baseline.json
+?? artifacts/latest/runtime_storage_cleanstate_before.txt
+?? artifacts/latest/runtime_storage_contract.md
+?? artifacts/latest/runtime_storage_export_boundary_validation.txt
+?? artifacts/latest/runtime_storage_final_verification.md
+?? artifacts/latest/runtime_storage_focused_gate.txt
+?? artifacts/latest/runtime_storage_path_resolution_check.txt
+?? artifacts/latest/runtime_storage_restore_step.txt
+?? artifacts/latest/runtime_storage_separation_report.md
+?? artifacts/latest/runtime_storage_unexpected_mutation_investigation.txt
+?? artifacts/latest/runtime_storage_validation_evidence.txt
+?? artifacts/latest/runtime_storage_writer_stop.txt
+?? artifacts/latest/runtime_write_inventory.md
+?? artifacts/latest/strict_storage_run_1.txt
+?? artifacts/latest/strict_storage_run_2.txt
+?? artifacts/latest/strict_storage_run_3.txt
+?? artifacts/latest/strict_storage_run_4.txt
+?? artifacts/latest/strict_storage_run_5.txt
+?? artifacts/latest/system_status.json
+?? artifacts/latest/system_status.md
+?? artifacts/latest/t09_observability_fail_open_validation.txt
+?? artifacts/latest/telegram_incident_policy.md
+?? artifacts/latest/telegram_noise_validation.json
+?? artifacts/latest/topic_domain_quarantine_before_after.json
+?? artifacts/latest/topic_domain_quarantine_regression_before.txt
+?? artifacts/latest/topic_domain_quarantine_repro_output.json
+?? artifacts/latest/unknown_contract_before_after.json
+?? artifacts/latest/unknown_contract_evidence/
+?? artifacts/latest/unknown_contract_resolution.md
+?? config/runtime_manifest.json
+?? ops/maintenance.py
+?? tests/repro_topic_domain_quarantine.py
+?? tests/test_maintenance.py
+
+[git_diff_stat]
+ PROGRESS.md                                 | 20 ++++++++++----------
+ docs/governance_readiness_latest.md         | 18 ++++++++++++++----
+ output/state/activation_reports/latest.json | 12 ++++++------
+ 3 files changed, 30 insertions(+), 20 deletions(-)
+
+[git_diff_name_status]
+M	PROGRESS.md
+M	docs/governance_readiness_latest.md
+M	output/state/activation_reports/latest.json
+
+[git_diff_check]
+
+[staged_files]
+
+[unstaged_files]
+PROGRESS.md
+docs/governance_readiness_latest.md
+output/state/activation_reports/latest.json
+
+[untracked_files]
+artifacts/deployment/final_certification_report.md
+artifacts/deployment/final_certification_results.json
+artifacts/deployment/final_integrity_report.md
+artifacts/deployment/final_runtime_environment.md
+artifacts/deployment/i_health_fix_validation.json
+artifacts/deployment/i_health_root_cause.md
+artifacts/deployment/isolated_staging/runtime_manifests/runtime_environment_snapshot.json
+artifacts/deployment/isolated_staging/state/content_ownership/a_content_a_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/b_content_b_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/c_content_c_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/d_content_d_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/e_content_e_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/f_content_f_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/g_content_g_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/h_content_h_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_concurrent_content_i_finance_concurrent_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_content_i_finance_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_0_content_i_finance_loop_0_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_1_content_i_finance_loop_1_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_2_content_i_finance_loop_2_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_3_content_i_finance_loop_3_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_4_content_i_finance_loop_4_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_5_content_i_finance_loop_5_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_6_content_i_finance_loop_6_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_7_content_i_finance_loop_7_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_8_content_i_finance_loop_8_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_9_content_i_finance_loop_9_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_bug_demo_content_i_health_bug_demo_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_concurrent_content_i_health_concurrent_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_content_i_health_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_0_content_i_health_loop_0_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_1_content_i_health_loop_1_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_2_content_i_health_loop_2_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_3_content_i_health_loop_3_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_4_content_i_health_loop_4_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_5_content_i_health_loop_5_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_6_content_i_health_loop_6_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_7_content_i_health_loop_7_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_8_content_i_health_loop_8_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_9_content_i_health_loop_9_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_single_1_content_i_health_single_1_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_single_2_content_i_health_single_2_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_single_3_content_i_health_single_3_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/j_long_content_j_long_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/j_short_content_j_short_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/ug_missing_rendered_video_content_ug_missing_rendered_video_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/ug_missing_script_content_ug_missing_script_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/ug_missing_thumbnail_content_ug_missing_thumbnail_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/ug_wrong_channel_content_ug_wrong_channel_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/ug_wrong_content_id_content_ug_wrong_content_id_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/ug_wrong_run_id_content_ug_wrong_run_id_run.json
+artifacts/deployment/predeploy_validation.md
+artifacts/deployment/predeploy_validation_runner.py
+artifacts/deployment/preprod_build_identity_diagnosis.md
+artifacts/deployment/preprod_provenance_evidence.json
+artifacts/deployment/preprod_quarantine_evidence.json
+artifacts/deployment/preprod_runner_diagnosis.md
+artifacts/deployment/preprod_runner_final_validation.md
+artifacts/deployment/preprod_runner_mini_validation.md
+artifacts/deployment/preprod_runner_phase_log.jsonl
+artifacts/deployment/preprod_runner_runtime_identity_validation.md
+artifacts/deployment/preprod_runner_selftest.json
+artifacts/deployment/preprod_runtime_environment.md
+artifacts/deployment/preprod_runtime_path_map.json
+artifacts/deployment/preprod_runtime_smoke_results.json
+artifacts/deployment/preprod_runtime_validation.md
+artifacts/deployment/preprod_tracked_mutation_analysis.md
+artifacts/deployment/production_rollback_plan.md
+artifacts/deployment/production_rollout_plan.md
+artifacts/deployment/provenance_validation.md
+artifacts/deployment/runtime_environment.md
+artifacts/deployment/runtime_identity_trace.json
+artifacts/deployment/runtime_launch_forensics.md
+artifacts/deployment/smoke_results.json
+artifacts/deployment/upload_gate_validation.md
+artifacts/incidents/cross_channel_contamination/adjacent_run_comparison.md
+artifacts/incidents/cross_channel_contamination/cross_channel_audit.json
+artifacts/incidents/cross_channel_contamination/first_divergence.md
+artifacts/incidents/cross_channel_contamination/known_incident_report.md
+artifacts/incidents/cross_channel_contamination/lineage_report.md
+artifacts/incidents/cross_channel_contamination/permanent_fix_spec.md
+artifacts/incidents/cross_channel_contamination/producer_trace.md
+artifacts/incidents/cross_channel_contamination/regression_test_plan.md
+artifacts/incidents/cross_channel_contamination/remediation_approval_plan.md
+artifacts/incidents/cross_channel_contamination/replay/replay_results.json
+artifacts/incidents/cross_channel_contamination/replay/topics_replay_results.json
+artifacts/incidents/cross_channel_contamination/reproduction_report.md
+artifacts/incidents/cross_channel_contamination/root_cause_analysis.md
+artifacts/incidents/cross_channel_contamination/root_cause_final.md
+artifacts/incidents/cross_channel_contamination/root_cause_proof.md
+artifacts/incidents/cross_channel_contamination/safety_gate_design.md
+artifacts/incidents/cross_channel_contamination/topics_call_graph.md
+artifacts/incidents/cross_channel_contamination/topics_producer_proof.md
+artifacts/incidents/cross_channel_contamination/topics_value_trace.md
+artifacts/incidents/cross_channel_contamination/topics_writer_map.md
+artifacts/latest/_lifecycle_noise_probe.json
+artifacts/latest/archive_execution_plan.md
+artifacts/latest/collision_analysis.md
+artifacts/latest/concurrency_storage_validation.json
+artifacts/latest/current_production_contracts.md
+artifacts/latest/dashboard_forensics_baseline.md
+artifacts/latest/dashboard_mutation_forensics.md
+artifacts/latest/dashboard_write_trace.jsonl
+artifacts/latest/final_authoritative_contracts.md
+artifacts/latest/final_commit_plan.md
+artifacts/latest/final_production_recovery_report.md
+artifacts/latest/final_production_recovery_todos.md
+artifacts/latest/final_production_validation.txt
+artifacts/latest/final_recovery_repo_state.txt
+artifacts/latest/final_report_consistency_resolution.md
+artifacts/latest/final_three_commit_release_plan.md
+artifacts/latest/incident_lifecycle_validation.json
+artifacts/latest/maintenance_dry_run_plan.json
+artifacts/latest/observability_before_after_trace.json
+artifacts/latest/observability_fail_open_validation.json
+artifacts/latest/observability_line_level_proof.md
+artifacts/latest/observability_line_proof_diff.patch
+artifacts/latest/observability_root_cause.md
+artifacts/latest/observability_scope_audit.md
+artifacts/latest/outdated_test_migration_report.md
+artifacts/latest/phase2b_blocker_resolution.md
+artifacts/latest/phase2b_reference_scan.json
+artifacts/latest/pre_push_repository_state.txt
+artifacts/latest/production_contract_validation.md
+artifacts/latest/production_go_evidence_audit.md
+artifacts/latest/production_observability_audit.md
+artifacts/latest/production_observability_hardening_report.md
+artifacts/latest/production_recovery_todos.md
+artifacts/latest/pytest_warning_analysis.md
+artifacts/latest/repository_state_before_recovery.txt
+artifacts/latest/runtime_manifest_review.md
+artifacts/latest/runtime_storage_cleanstate_after.txt
+artifacts/latest/runtime_storage_cleanstate_baseline.json
+artifacts/latest/runtime_storage_cleanstate_before.txt
+artifacts/latest/runtime_storage_contract.md
+artifacts/latest/runtime_storage_export_boundary_validation.txt
+artifacts/latest/runtime_storage_final_verification.md
+artifacts/latest/runtime_storage_focused_gate.txt
+artifacts/latest/runtime_storage_path_resolution_check.txt
+artifacts/latest/runtime_storage_restore_step.txt
+artifacts/latest/runtime_storage_separation_report.md
+artifacts/latest/runtime_storage_unexpected_mutation_investigation.txt
+artifacts/latest/runtime_storage_validation_evidence.txt
+artifacts/latest/runtime_storage_writer_stop.txt
+artifacts/latest/runtime_write_inventory.md
+artifacts/latest/strict_storage_run_1.txt
+artifacts/latest/strict_storage_run_2.txt
+artifacts/latest/strict_storage_run_3.txt
+artifacts/latest/strict_storage_run_4.txt
+artifacts/latest/strict_storage_run_5.txt
+artifacts/latest/system_status.json
+artifacts/latest/system_status.md
+artifacts/latest/t09_observability_fail_open_validation.txt
+artifacts/latest/telegram_incident_policy.md
+artifacts/latest/telegram_noise_validation.json
+artifacts/latest/topic_domain_quarantine_before_after.json
+artifacts/latest/topic_domain_quarantine_regression_before.txt
+artifacts/latest/topic_domain_quarantine_repro_output.json
+artifacts/latest/unknown_contract_before_after.json
+artifacts/latest/unknown_contract_evidence/after_production_like_exception_probe.out
+artifacts/latest/unknown_contract_evidence/before_production_like_exception_probe.out
+artifacts/latest/unknown_contract_evidence/commit_631eb704_meta.txt
+artifacts/latest/unknown_contract_evidence/commit_631eb704_scheduler_topic_guard.patch
+artifacts/latest/unknown_contract_evidence/commit_72b4bb2_meta.txt
+artifacts/latest/unknown_contract_evidence/commit_72b4bb2_scheduler_topic_guard.patch
+artifacts/latest/unknown_contract_evidence/domain_exception_probe.py
+artifacts/latest/unknown_contract_evidence/test_scheduler_quarantines_topic_domain_block.meta.json
+artifacts/latest/unknown_contract_evidence/test_scheduler_quarantines_topic_domain_block.out
+artifacts/latest/unknown_contract_evidence/test_scheduler_topic_domain_block_is_not_retried.meta.json
+artifacts/latest/unknown_contract_evidence/test_scheduler_topic_domain_block_is_not_retried.out
+artifacts/latest/unknown_contract_evidence/topic_domain_doc_hits.txt
+artifacts/latest/unknown_contract_evidence/worktree_runs/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.out
+artifacts/latest/unknown_contract_evidence/worktree_runs/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.out
+artifacts/latest/unknown_contract_evidence/worktree_runs/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.out
+artifacts/latest/unknown_contract_evidence/worktree_runs/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.out
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.out
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.out
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/base631_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/base631_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.out
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/base631_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/base631_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.out
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.out
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.out
+artifacts/latest/unknown_contract_resolution.md
+config/runtime_manifest.json
+ops/maintenance.py
+tests/repro_topic_domain_quarantine.py
+tests/test_maintenance.py
+
+[gitignore_contents:.gitignore]
+# Güvenlik — asla commit etme
+.env
+**/*.pickle
+**/client_secrets.json
+**/.env
+
+# Büyük dosyalar
+**/output/
+**/clips/
+**/*.mp3
+**/*.mp4
+**/*.jpg
+**/*.jpeg
+**/*.png
+**/logs/
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Geçici
+/tmp/
+*.m4a
+
+[git_worktree_list]
+/Users/klara/Downloads/adsız klasör                           1097cc8 [master]
+/private/tmp/candidate1_proof_85065                           d51e315 (detached HEAD)
+/private/tmp/candidate1_revised_proof_85065                   d51e315 (detached HEAD)
+/private/tmp/candidate2_proof_85065                           d51e315 (detached HEAD)
+/private/tmp/candidate2_with_runtime_85065                    d51e315 (detached HEAD)
+/private/tmp/candidate3_proof_85065                           d51e315 (detached HEAD)
+/private/tmp/candidate4_proof_85065                           d51e315 (detached HEAD)
+/private/tmp/candidate5_proof_85065                           d51e315 (detached HEAD)
+/private/tmp/candidate5_tests_only_85065                      d51e315 (detached HEAD)
+/private/tmp/domain_guard_probe_adc021b                       adc021b (detached HEAD)
+/private/tmp/final_commit1_85065                              d51e315 (detached HEAD)
+/private/tmp/final_commit2_85065                              d51e315 (detached HEAD)
+/private/tmp/governance_producer_execution                    e2df46a [review/governance-producer-recovery]
+/private/tmp/governance_producer_execution_clean              e2df46a (detached HEAD)
+/private/tmp/governance_producer_review_repo                  95ae84e (detached HEAD)
+/private/tmp/obs_baseline_worktree                            d51e315 (detached HEAD)
+/private/tmp/preprod-wt-CnaB3B                                d51e315 (detached HEAD)
+/private/tmp/preprod_cert_39b28aa_1783845980                  39b28aa (detached HEAD)
+/private/tmp/preprod_cert_afad342_1783847350                  afad342 (detached HEAD)
+/private/tmp/preprod_cert_d51e315_1783848624                  d51e315 (detached HEAD)
+/private/tmp/preprod_cert_e1771bc_1783848224                  e1771bc (detached HEAD)
+/private/tmp/preprod_runner_dev_631eb70                       631eb70 (detached HEAD)
+/private/tmp/preprod_runtime_631eb70                          631eb70 (detached HEAD)
+/private/tmp/preprod_runtime_bisect_49512bf_1783834362        49512bf (detached HEAD)
+/private/tmp/preprod_runtime_bisect_72b4bb2_1783830118        72b4bb2 (detached HEAD)
+/private/tmp/preprod_runtime_continue_adc021b_1783802427      adc021b (detached HEAD)
+/private/tmp/preprod_runtime_final_72b4bb2                    72b4bb2 (detached HEAD)
+/private/tmp/preprod_runtime_final_adc021b                    adc021b (detached HEAD)
+/private/tmp/preprod_runtime_target2_631eb70                  631eb70 (detached HEAD)
+/private/tmp/preprod_runtime_target3_631eb70                  631eb70 (detached HEAD)
+/private/tmp/preprod_runtime_target4_631eb70                  631eb70 (detached HEAD)
+/private/tmp/preprod_runtime_target5_631eb70                  631eb70 (detached HEAD)
+/private/tmp/preprod_runtime_target6_631eb70                  631eb70 (detached HEAD)
+/private/tmp/preprod_runtime_target6_c5a7d35                  c5a7d35 (detached HEAD)
+/private/tmp/preprod_runtime_target_631eb70                   631eb70 (detached HEAD)
+/private/tmp/preprod_test_mutation_trace2_d51e315_1783852067  d51e315 (detached HEAD)
+/private/tmp/preprod_test_mutation_trace_d51e315_1783849257   d51e315 (detached HEAD)
+/private/tmp/preprod_test_node_trace_d51e315_1783850906       d51e315 (detached HEAD)
+/private/tmp/preprod_verify_patch_d51e315_1783856384          d51e315 (detached HEAD)
+/private/tmp/preprod_write_probe_d51e315_1783854057           d51e315 (detached HEAD)
+/private/tmp/preprod_write_probe_raw_d51e315_1783854274       d51e315 (detached HEAD)
+/private/tmp/preprod_writer_trace_49512bf_1783843466          49512bf (detached HEAD)
+/private/tmp/provider_guard_with_runtime_85065                d51e315 (detached HEAD)
+/private/tmp/runtime_observability_85065                      d51e315 (detached HEAD)
+/private/tmp/unknown_contract_worktrees/after_d51e315         d51e315 (detached HEAD)
+/private/tmp/unknown_contract_worktrees/base_631eb70          631eb70 (detached HEAD)
+/private/tmp/unknown_contract_worktrees/before_adc021b        adc021b (detached HEAD)

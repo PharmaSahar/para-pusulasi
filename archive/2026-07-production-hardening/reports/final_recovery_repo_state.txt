@@ -1,0 +1,564 @@
+PWD: /Users/klara/Downloads/adsız klasör
+
+BRANCH: master
+HEAD: d51e31578e3f3bd18674441f2f7545a2dce2dd05
+
+--- git status --short ---
+ M PROGRESS.md
+ M docs/governance_readiness_latest.md
+ M docs/production_dashboard_latest.md
+ M output/state/activation_reports/latest.json
+ M scheduler.py
+ M src/content_generator.py
+ M src/pipeline.py
+ M src/scheduler_utils.py
+ M src/trends_fetcher.py
+ M tests/test_analytics_join.py
+ M tests/test_content_generator_anthropic_guard.py
+ M tests/test_content_generator_prompting.py
+ M tests/test_editor_review.py
+ M tests/test_render_metrics.py
+ M tests/test_scheduler_provider_guardrails.py
+ M tests/test_scheduler_topic_domain_guard.py
+?? artifacts/deployment/
+?? artifacts/incidents/cross_channel_contamination/adjacent_run_comparison.md
+?? artifacts/incidents/cross_channel_contamination/cross_channel_audit.json
+?? artifacts/incidents/cross_channel_contamination/first_divergence.md
+?? artifacts/incidents/cross_channel_contamination/known_incident_report.md
+?? artifacts/incidents/cross_channel_contamination/lineage_report.md
+?? artifacts/incidents/cross_channel_contamination/permanent_fix_spec.md
+?? artifacts/incidents/cross_channel_contamination/producer_trace.md
+?? artifacts/incidents/cross_channel_contamination/regression_test_plan.md
+?? artifacts/incidents/cross_channel_contamination/remediation_approval_plan.md
+?? artifacts/incidents/cross_channel_contamination/replay/
+?? artifacts/incidents/cross_channel_contamination/reproduction_report.md
+?? artifacts/incidents/cross_channel_contamination/root_cause_analysis.md
+?? artifacts/incidents/cross_channel_contamination/root_cause_final.md
+?? artifacts/incidents/cross_channel_contamination/root_cause_proof.md
+?? artifacts/incidents/cross_channel_contamination/safety_gate_design.md
+?? artifacts/incidents/cross_channel_contamination/topics_call_graph.md
+?? artifacts/incidents/cross_channel_contamination/topics_producer_proof.md
+?? artifacts/incidents/cross_channel_contamination/topics_value_trace.md
+?? artifacts/incidents/cross_channel_contamination/topics_writer_map.md
+?? artifacts/latest/archive_execution_plan.md
+?? artifacts/latest/collision_analysis.md
+?? artifacts/latest/current_production_contracts.md
+?? artifacts/latest/final_production_recovery_todos.md
+?? artifacts/latest/final_recovery_repo_state.txt
+?? artifacts/latest/maintenance_dry_run_plan.json
+?? artifacts/latest/observability_before_after_trace.json
+?? artifacts/latest/observability_line_level_proof.md
+?? artifacts/latest/observability_line_proof_diff.patch
+?? artifacts/latest/observability_root_cause.md
+?? artifacts/latest/phase2b_blocker_resolution.md
+?? artifacts/latest/phase2b_reference_scan.json
+?? artifacts/latest/production_contract_validation.md
+?? artifacts/latest/production_observability_audit.md
+?? artifacts/latest/production_observability_hardening_report.md
+?? artifacts/latest/production_recovery_todos.md
+?? artifacts/latest/pytest_warning_analysis.md
+?? artifacts/latest/repository_state_before_recovery.txt
+?? artifacts/latest/runtime_manifest_review.md
+?? artifacts/latest/system_status.json
+?? artifacts/latest/system_status.md
+?? artifacts/latest/topic_domain_quarantine_regression_before.txt
+?? artifacts/latest/unknown_contract_before_after.json
+?? artifacts/latest/unknown_contract_evidence/
+?? artifacts/latest/unknown_contract_resolution.md
+?? config/runtime_manifest.json
+?? ops/maintenance.py
+?? tests/conftest.py
+?? tests/test_maintenance.py
+?? tests/test_observability_incident_safety.py
+
+--- git diff --stat ---
+ PROGRESS.md                                     |  20 +-
+ docs/governance_readiness_latest.md             |  18 +-
+ docs/production_dashboard_latest.md             |  32 +-
+ output/state/activation_reports/latest.json     |  12 +-
+ scheduler.py                                    | 159 ++++--
+ src/content_generator.py                        | 100 +++-
+ src/pipeline.py                                 |  49 +-
+ src/scheduler_utils.py                          | 625 +++++++++++++++++++++++-
+ src/trends_fetcher.py                           |  62 ++-
+ tests/test_analytics_join.py                    |   1 +
+ tests/test_content_generator_anthropic_guard.py |  42 ++
+ tests/test_content_generator_prompting.py       |  36 +-
+ tests/test_editor_review.py                     |   1 +
+ tests/test_render_metrics.py                    |  42 +-
+ tests/test_scheduler_provider_guardrails.py     | 147 ++++++
+ tests/test_scheduler_topic_domain_guard.py      |  13 +
+ 16 files changed, 1241 insertions(+), 118 deletions(-)
+
+--- git diff --check ---
+
+--- git diff --name-status ---
+M	PROGRESS.md
+M	docs/governance_readiness_latest.md
+M	docs/production_dashboard_latest.md
+M	output/state/activation_reports/latest.json
+M	scheduler.py
+M	src/content_generator.py
+M	src/pipeline.py
+M	src/scheduler_utils.py
+M	src/trends_fetcher.py
+M	tests/test_analytics_join.py
+M	tests/test_content_generator_anthropic_guard.py
+M	tests/test_content_generator_prompting.py
+M	tests/test_editor_review.py
+M	tests/test_render_metrics.py
+M	tests/test_scheduler_provider_guardrails.py
+M	tests/test_scheduler_topic_domain_guard.py
+
+--- git worktree list ---
+/Users/klara/Downloads/adsız klasör                           d51e315 [master]
+/private/tmp/domain_guard_probe_adc021b                       adc021b (detached HEAD)
+/private/tmp/governance_producer_execution                    e2df46a [review/governance-producer-recovery]
+/private/tmp/governance_producer_execution_clean              e2df46a (detached HEAD)
+/private/tmp/governance_producer_review_repo                  95ae84e (detached HEAD)
+/private/tmp/obs_baseline_worktree                            d51e315 (detached HEAD)
+/private/tmp/preprod-wt-CnaB3B                                d51e315 (detached HEAD)
+/private/tmp/preprod_cert_39b28aa_1783845980                  39b28aa (detached HEAD)
+/private/tmp/preprod_cert_afad342_1783847350                  afad342 (detached HEAD)
+/private/tmp/preprod_cert_d51e315_1783848624                  d51e315 (detached HEAD)
+/private/tmp/preprod_cert_e1771bc_1783848224                  e1771bc (detached HEAD)
+/private/tmp/preprod_runner_dev_631eb70                       631eb70 (detached HEAD)
+/private/tmp/preprod_runtime_631eb70                          631eb70 (detached HEAD)
+/private/tmp/preprod_runtime_bisect_49512bf_1783834362        49512bf (detached HEAD)
+/private/tmp/preprod_runtime_bisect_72b4bb2_1783830118        72b4bb2 (detached HEAD)
+/private/tmp/preprod_runtime_continue_adc021b_1783802427      adc021b (detached HEAD)
+/private/tmp/preprod_runtime_final_72b4bb2                    72b4bb2 (detached HEAD)
+/private/tmp/preprod_runtime_final_adc021b                    adc021b (detached HEAD)
+/private/tmp/preprod_runtime_target2_631eb70                  631eb70 (detached HEAD)
+/private/tmp/preprod_runtime_target3_631eb70                  631eb70 (detached HEAD)
+/private/tmp/preprod_runtime_target4_631eb70                  631eb70 (detached HEAD)
+/private/tmp/preprod_runtime_target5_631eb70                  631eb70 (detached HEAD)
+/private/tmp/preprod_runtime_target6_631eb70                  631eb70 (detached HEAD)
+/private/tmp/preprod_runtime_target6_c5a7d35                  c5a7d35 (detached HEAD)
+/private/tmp/preprod_runtime_target_631eb70                   631eb70 (detached HEAD)
+/private/tmp/preprod_test_mutation_trace2_d51e315_1783852067  d51e315 (detached HEAD)
+/private/tmp/preprod_test_mutation_trace_d51e315_1783849257   d51e315 (detached HEAD)
+/private/tmp/preprod_test_node_trace_d51e315_1783850906       d51e315 (detached HEAD)
+/private/tmp/preprod_verify_patch_d51e315_1783856384          d51e315 (detached HEAD)
+/private/tmp/preprod_write_probe_d51e315_1783854057           d51e315 (detached HEAD)
+/private/tmp/preprod_write_probe_raw_d51e315_1783854274       d51e315 (detached HEAD)
+/private/tmp/preprod_writer_trace_49512bf_1783843466          49512bf (detached HEAD)
+/private/tmp/unknown_contract_worktrees/after_d51e315         d51e315 (detached HEAD)
+/private/tmp/unknown_contract_worktrees/base_631eb70          631eb70 (detached HEAD)
+/private/tmp/unknown_contract_worktrees/before_adc021b        adc021b (detached HEAD)
+
+--- tracked files (modified/untracked split) ---
+artifacts/deployment/final_certification_report.md
+artifacts/deployment/final_certification_results.json
+artifacts/deployment/final_integrity_report.md
+artifacts/deployment/final_runtime_environment.md
+artifacts/deployment/i_health_fix_validation.json
+artifacts/deployment/i_health_root_cause.md
+artifacts/deployment/isolated_staging/runtime_manifests/runtime_environment_snapshot.json
+artifacts/deployment/isolated_staging/state/content_ownership/a_content_a_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/b_content_b_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/c_content_c_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/d_content_d_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/e_content_e_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/f_content_f_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/g_content_g_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/h_content_h_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_concurrent_content_i_finance_concurrent_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_content_i_finance_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_0_content_i_finance_loop_0_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_1_content_i_finance_loop_1_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_2_content_i_finance_loop_2_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_3_content_i_finance_loop_3_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_4_content_i_finance_loop_4_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_5_content_i_finance_loop_5_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_6_content_i_finance_loop_6_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_7_content_i_finance_loop_7_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_8_content_i_finance_loop_8_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_9_content_i_finance_loop_9_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_bug_demo_content_i_health_bug_demo_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_concurrent_content_i_health_concurrent_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_content_i_health_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_0_content_i_health_loop_0_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_1_content_i_health_loop_1_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_2_content_i_health_loop_2_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_3_content_i_health_loop_3_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_4_content_i_health_loop_4_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_5_content_i_health_loop_5_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_6_content_i_health_loop_6_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_7_content_i_health_loop_7_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_8_content_i_health_loop_8_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_9_content_i_health_loop_9_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_single_1_content_i_health_single_1_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_single_2_content_i_health_single_2_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_single_3_content_i_health_single_3_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/j_long_content_j_long_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/j_short_content_j_short_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/ug_missing_rendered_video_content_ug_missing_rendered_video_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/ug_missing_script_content_ug_missing_script_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/ug_missing_thumbnail_content_ug_missing_thumbnail_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/ug_wrong_channel_content_ug_wrong_channel_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/ug_wrong_content_id_content_ug_wrong_content_id_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/ug_wrong_run_id_content_ug_wrong_run_id_run.json
+artifacts/deployment/predeploy_validation.md
+artifacts/deployment/predeploy_validation_runner.py
+artifacts/deployment/preprod_build_identity_diagnosis.md
+artifacts/deployment/preprod_provenance_evidence.json
+artifacts/deployment/preprod_quarantine_evidence.json
+artifacts/deployment/preprod_runner_diagnosis.md
+artifacts/deployment/preprod_runner_final_validation.md
+artifacts/deployment/preprod_runner_mini_validation.md
+artifacts/deployment/preprod_runner_phase_log.jsonl
+artifacts/deployment/preprod_runner_runtime_identity_validation.md
+artifacts/deployment/preprod_runner_selftest.json
+artifacts/deployment/preprod_runtime_environment.md
+artifacts/deployment/preprod_runtime_path_map.json
+artifacts/deployment/preprod_runtime_smoke_results.json
+artifacts/deployment/preprod_runtime_validation.md
+artifacts/deployment/preprod_tracked_mutation_analysis.md
+artifacts/deployment/production_rollback_plan.md
+artifacts/deployment/production_rollout_plan.md
+artifacts/deployment/provenance_validation.md
+artifacts/deployment/runtime_environment.md
+artifacts/deployment/runtime_identity_trace.json
+artifacts/deployment/runtime_launch_forensics.md
+artifacts/deployment/smoke_results.json
+artifacts/deployment/upload_gate_validation.md
+artifacts/incidents/cross_channel_contamination/adjacent_run_comparison.md
+artifacts/incidents/cross_channel_contamination/cross_channel_audit.json
+artifacts/incidents/cross_channel_contamination/first_divergence.md
+artifacts/incidents/cross_channel_contamination/known_incident_report.md
+artifacts/incidents/cross_channel_contamination/lineage_report.md
+artifacts/incidents/cross_channel_contamination/permanent_fix_spec.md
+artifacts/incidents/cross_channel_contamination/producer_trace.md
+artifacts/incidents/cross_channel_contamination/regression_test_plan.md
+artifacts/incidents/cross_channel_contamination/remediation_approval_plan.md
+artifacts/incidents/cross_channel_contamination/replay/replay_results.json
+artifacts/incidents/cross_channel_contamination/replay/topics_replay_results.json
+artifacts/incidents/cross_channel_contamination/reproduction_report.md
+artifacts/incidents/cross_channel_contamination/root_cause_analysis.md
+artifacts/incidents/cross_channel_contamination/root_cause_final.md
+artifacts/incidents/cross_channel_contamination/root_cause_proof.md
+artifacts/incidents/cross_channel_contamination/safety_gate_design.md
+artifacts/incidents/cross_channel_contamination/topics_call_graph.md
+artifacts/incidents/cross_channel_contamination/topics_producer_proof.md
+artifacts/incidents/cross_channel_contamination/topics_value_trace.md
+artifacts/incidents/cross_channel_contamination/topics_writer_map.md
+artifacts/latest/archive_execution_plan.md
+artifacts/latest/collision_analysis.md
+artifacts/latest/current_production_contracts.md
+artifacts/latest/final_production_recovery_todos.md
+artifacts/latest/final_recovery_repo_state.txt
+artifacts/latest/maintenance_dry_run_plan.json
+artifacts/latest/observability_before_after_trace.json
+artifacts/latest/observability_line_level_proof.md
+artifacts/latest/observability_line_proof_diff.patch
+artifacts/latest/observability_root_cause.md
+artifacts/latest/phase2b_blocker_resolution.md
+artifacts/latest/phase2b_reference_scan.json
+artifacts/latest/production_contract_validation.md
+artifacts/latest/production_observability_audit.md
+artifacts/latest/production_observability_hardening_report.md
+artifacts/latest/production_recovery_todos.md
+artifacts/latest/pytest_warning_analysis.md
+artifacts/latest/repository_state_before_recovery.txt
+artifacts/latest/runtime_manifest_review.md
+artifacts/latest/system_status.json
+artifacts/latest/system_status.md
+artifacts/latest/topic_domain_quarantine_regression_before.txt
+artifacts/latest/unknown_contract_before_after.json
+artifacts/latest/unknown_contract_evidence/after_production_like_exception_probe.out
+artifacts/latest/unknown_contract_evidence/before_production_like_exception_probe.out
+artifacts/latest/unknown_contract_evidence/commit_631eb704_meta.txt
+artifacts/latest/unknown_contract_evidence/commit_631eb704_scheduler_topic_guard.patch
+artifacts/latest/unknown_contract_evidence/commit_72b4bb2_meta.txt
+artifacts/latest/unknown_contract_evidence/commit_72b4bb2_scheduler_topic_guard.patch
+artifacts/latest/unknown_contract_evidence/domain_exception_probe.py
+artifacts/latest/unknown_contract_evidence/test_scheduler_quarantines_topic_domain_block.meta.json
+artifacts/latest/unknown_contract_evidence/test_scheduler_quarantines_topic_domain_block.out
+artifacts/latest/unknown_contract_evidence/test_scheduler_topic_domain_block_is_not_retried.meta.json
+artifacts/latest/unknown_contract_evidence/test_scheduler_topic_domain_block_is_not_retried.out
+artifacts/latest/unknown_contract_evidence/topic_domain_doc_hits.txt
+artifacts/latest/unknown_contract_evidence/worktree_runs/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.out
+artifacts/latest/unknown_contract_evidence/worktree_runs/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.out
+artifacts/latest/unknown_contract_evidence/worktree_runs/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.out
+artifacts/latest/unknown_contract_evidence/worktree_runs/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.out
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.out
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.out
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/base631_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/base631_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.out
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/base631_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/base631_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.out
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.out
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.out
+artifacts/latest/unknown_contract_resolution.md
+config/runtime_manifest.json
+ops/maintenance.py
+tests/conftest.py
+tests/test_maintenance.py
+tests/test_observability_incident_safety.py
+PROGRESS.md
+docs/governance_readiness_latest.md
+docs/production_dashboard_latest.md
+output/state/activation_reports/latest.json
+scheduler.py
+src/content_generator.py
+src/pipeline.py
+src/scheduler_utils.py
+src/trends_fetcher.py
+tests/test_analytics_join.py
+tests/test_content_generator_anthropic_guard.py
+tests/test_content_generator_prompting.py
+tests/test_editor_review.py
+tests/test_render_metrics.py
+tests/test_scheduler_provider_guardrails.py
+tests/test_scheduler_topic_domain_guard.py
+
+--- modified runtime/artifact files ---
+artifacts/latest/production_contract_validation.md
+artifacts/latest/maintenance_dry_run_plan.json
+artifacts/latest/production_observability_audit.md
+artifacts/latest/production_observability_hardening_report.md
+artifacts/latest/observability_line_level_proof.md
+artifacts/latest/current_production_contracts.md
+artifacts/latest/pytest_warning_analysis.md
+artifacts/latest/collision_analysis.md
+artifacts/latest/phase2b_reference_scan.json
+artifacts/latest/final_production_recovery_todos.md
+artifacts/latest/observability_line_proof_diff.patch
+artifacts/latest/archive_execution_plan.md
+artifacts/latest/unknown_contract_resolution.md
+artifacts/latest/production_recovery_todos.md
+artifacts/latest/final_recovery_repo_state.txt
+artifacts/latest/repository_state_before_recovery.txt
+artifacts/latest/system_status.json
+artifacts/latest/observability_root_cause.md
+artifacts/latest/unknown_contract_evidence/topic_domain_doc_hits.txt
+artifacts/latest/unknown_contract_evidence/commit_72b4bb2_meta.txt
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/base631_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/base631_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs_v2/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.meta.json
+artifacts/latest/unknown_contract_evidence/worktree_runs/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.meta.json
+artifacts/latest/unknown_contract_evidence/test_scheduler_topic_domain_block_is_not_retried.meta.json
+artifacts/latest/unknown_contract_evidence/commit_72b4bb2_scheduler_topic_guard.patch
+artifacts/latest/unknown_contract_evidence/commit_631eb704_scheduler_topic_guard.patch
+artifacts/latest/unknown_contract_evidence/test_scheduler_quarantines_topic_domain_block.meta.json
+artifacts/latest/unknown_contract_evidence/commit_631eb704_meta.txt
+artifacts/latest/system_status.md
+artifacts/latest/pytest_warning_remediation.md
+artifacts/latest/runtime_manifest_review.md
+artifacts/latest/unknown_contract_before_after.json
+artifacts/latest/observability_before_after_trace.json
+artifacts/latest/phase2b_blocker_resolution.md
+artifacts/latest/topic_domain_quarantine_regression_before.txt
+artifacts/deployment/provenance_validation.md
+artifacts/deployment/production_rollback_plan.md
+artifacts/deployment/predeploy_validation.md
+artifacts/deployment/preprod_runner_final_validation.md
+artifacts/deployment/final_certification_results.json
+artifacts/deployment/preprod_runner_runtime_identity_validation.md
+artifacts/deployment/preprod_provenance_evidence.json
+artifacts/deployment/preprod_runner_phase_log.jsonl
+artifacts/deployment/preprod_runtime_path_map.json
+artifacts/deployment/final_runtime_environment.md
+artifacts/deployment/runtime_environment.md
+artifacts/deployment/preprod_quarantine_evidence.json
+artifacts/deployment/preprod_runner_selftest.json
+artifacts/deployment/preprod_runtime_validation.md
+artifacts/deployment/preprod_runner_diagnosis.md
+artifacts/deployment/i_health_fix_validation.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/j_short_run/j_short_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/i_health_run/i_health_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/j_long_run/j_long_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/i_health_loop_8_run/i_health_loop_8_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/h_run/h_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/i_health_loop_9_run/i_health_loop_9_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/ug_wrong_channel_run/ug_wrong_channel_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/ug_missing_script_run/ug_missing_script_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/ug_wrong_run_id_run/ug_wrong_run_id_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/i_health_loop_1_run/i_health_loop_1_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/i_health_bug_demo_run/i_health_bug_demo_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/a_run/a_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/i_health_loop_0_run/i_health_loop_0_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/i_health_loop_2_run/i_health_loop_2_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/c_run/c_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/i_health_loop_3_run/i_health_loop_3_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/i_health_loop_7_run/i_health_loop_7_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/ug_missing_rendered_video_run/ug_missing_rendered_video_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/g_run/g_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/f_run/f_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/i_health_loop_6_run/i_health_loop_6_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/i_health_loop_4_run/i_health_loop_4_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/d_run/d_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/e_run/e_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/i_health_loop_5_run/i_health_loop_5_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/i_health_single_1_run/i_health_single_1_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/ug_missing_thumbnail_run/ug_missing_thumbnail_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/i_health_single_2_run/i_health_single_2_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/i_health_single_3_run/i_health_single_3_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/ug_wrong_content_id_run/ug_wrong_content_id_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/health/i_health_concurrent_run/i_health_concurrent_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/finance/i_finance_loop_8_run/i_finance_loop_8_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/finance/i_finance_loop_9_run/i_finance_loop_9_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/finance/i_finance_run/i_finance_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/finance/i_finance_loop_2_run/i_finance_loop_2_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/finance/i_finance_loop_3_run/i_finance_loop_3_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/finance/i_finance_loop_1_run/i_finance_loop_1_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/finance/b_run/b_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/finance/i_finance_loop_0_run/i_finance_loop_0_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/finance/i_finance_loop_4_run/i_finance_loop_4_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/finance/i_finance_loop_5_run/i_finance_loop_5_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/finance/i_finance_loop_7_run/i_finance_loop_7_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/finance/i_finance_concurrent_run/i_finance_concurrent_content.json
+artifacts/deployment/isolated_staging/output/topic_provenance/finance/i_finance_loop_6_run/i_finance_loop_6_content.json
+artifacts/deployment/isolated_staging/output/scripts/health/i_health_bug_demo_run/i_health_bug_demo_content.json
+artifacts/deployment/isolated_staging/output/scripts/health/i_health_single_1_run/i_health_single_1_content.json
+artifacts/deployment/isolated_staging/output/scripts/health/i_health_single_2_run/i_health_single_2_content.json
+artifacts/deployment/isolated_staging/output/scripts/health/i_health_single_3_run/i_health_single_3_content.json
+artifacts/deployment/isolated_staging/output/scripts/finance/i_finance_loop_8_run/i_finance_loop_8_content.json
+artifacts/deployment/isolated_staging/output/scripts/finance/i_finance_loop_9_run/i_finance_loop_9_content.json
+artifacts/deployment/isolated_staging/output/scripts/finance/i_finance_loop_2_run/i_finance_loop_2_content.json
+artifacts/deployment/isolated_staging/output/scripts/finance/i_finance_loop_3_run/i_finance_loop_3_content.json
+artifacts/deployment/isolated_staging/output/scripts/finance/i_finance_loop_1_run/i_finance_loop_1_content.json
+artifacts/deployment/isolated_staging/output/scripts/finance/i_finance_loop_0_run/i_finance_loop_0_content.json
+artifacts/deployment/isolated_staging/output/scripts/finance/i_finance_loop_4_run/i_finance_loop_4_content.json
+artifacts/deployment/isolated_staging/output/scripts/finance/i_finance_loop_5_run/i_finance_loop_5_content.json
+artifacts/deployment/isolated_staging/output/scripts/finance/i_finance_loop_7_run/i_finance_loop_7_content.json
+artifacts/deployment/isolated_staging/output/scripts/finance/i_finance_concurrent_run/i_finance_concurrent_content.json
+artifacts/deployment/isolated_staging/output/scripts/finance/i_finance_loop_6_run/i_finance_loop_6_content.json
+artifacts/deployment/isolated_staging/output/channels/health/scripts/j_short_run/j_short_content.json
+artifacts/deployment/isolated_staging/output/channels/health/scripts/i_health_run/i_health_content.json
+artifacts/deployment/isolated_staging/output/channels/health/scripts/j_long_run/j_long_content.json
+artifacts/deployment/isolated_staging/output/channels/health/scripts/h_run/h_content.json
+artifacts/deployment/isolated_staging/output/channels/health/scripts/ug_wrong_channel_run/ug_wrong_channel_content.json
+artifacts/deployment/isolated_staging/output/channels/health/scripts/ug_wrong_run_id_run/ug_wrong_run_id_content.json
+artifacts/deployment/isolated_staging/output/channels/health/scripts/a_run/a_content.json
+artifacts/deployment/isolated_staging/output/channels/health/scripts/c_run/c_content.json
+artifacts/deployment/isolated_staging/output/channels/health/scripts/ug_missing_rendered_video_run/ug_missing_rendered_video_content.json
+artifacts/deployment/isolated_staging/output/channels/health/scripts/g_run/g_content.json
+artifacts/deployment/isolated_staging/output/channels/health/scripts/f_run/f_content.json
+artifacts/deployment/isolated_staging/output/channels/health/scripts/d_run/d_content.json
+artifacts/deployment/isolated_staging/output/channels/health/scripts/e_run/e_content.json
+artifacts/deployment/isolated_staging/output/channels/health/scripts/ug_missing_thumbnail_run/ug_missing_thumbnail_content.json
+artifacts/deployment/isolated_staging/output/channels/health/scripts/ug_wrong_content_id_run/ug_wrong_content_id_content.json
+artifacts/deployment/isolated_staging/output/channels/other/scripts/f_run/other.json
+artifacts/deployment/isolated_staging/output/channels/finance/scripts/i_finance_run/i_finance_content.json
+artifacts/deployment/isolated_staging/output/channels/finance/scripts/b_run/b_content.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_1_content_i_health_loop_1_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/ug_missing_rendered_video_content_ug_missing_rendered_video_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_0_content_i_finance_loop_0_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_single_1_content_i_health_single_1_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_4_content_i_finance_loop_4_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/ug_missing_thumbnail_content_ug_missing_thumbnail_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_content_i_finance_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_6_content_i_health_loop_6_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/d_content_d_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_bug_demo_content_i_health_bug_demo_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/ug_wrong_run_id_content_ug_wrong_run_id_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_8_content_i_health_loop_8_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/ug_wrong_channel_content_ug_wrong_channel_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/b_content_b_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_single_3_content_i_health_single_3_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_8_content_i_finance_loop_8_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/f_content_f_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/j_long_content_j_long_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/ug_missing_script_content_ug_missing_script_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_1_content_i_finance_loop_1_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_5_content_i_finance_loop_5_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_3_content_i_health_loop_3_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_content_i_health_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_4_content_i_health_loop_4_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_single_2_content_i_health_single_2_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_9_content_i_finance_loop_9_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_2_content_i_finance_loop_2_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_9_content_i_health_loop_9_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_6_content_i_finance_loop_6_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/ug_wrong_content_id_content_ug_wrong_content_id_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/g_content_g_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/j_short_content_j_short_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_7_content_i_health_loop_7_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_0_content_i_health_loop_0_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/h_content_h_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/a_content_a_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_3_content_i_finance_loop_3_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_concurrent_content_i_health_concurrent_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_5_content_i_health_loop_5_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/e_content_e_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_concurrent_content_i_finance_concurrent_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_health_loop_2_content_i_health_loop_2_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/c_content_c_run.json
+artifacts/deployment/isolated_staging/state/content_ownership/i_finance_loop_7_content_i_finance_loop_7_run.json
+artifacts/deployment/isolated_staging/runtime_manifests/runtime_environment_snapshot.json
+artifacts/deployment/preprod_tracked_mutation_analysis.md
+artifacts/deployment/runtime_launch_forensics.md
+artifacts/deployment/upload_gate_validation.md
+artifacts/deployment/preprod_runner_mini_validation.md
+artifacts/deployment/runtime_identity_trace.json
+artifacts/deployment/final_integrity_report.md
+artifacts/deployment/production_rollout_plan.md
+artifacts/deployment/smoke_results.json
+artifacts/deployment/preprod_runtime_environment.md
+artifacts/deployment/final_certification_report.md
+artifacts/deployment/preprod_runtime_smoke_results.json
+artifacts/deployment/preprod_build_identity_diagnosis.md
+artifacts/deployment/i_health_root_cause.md
+artifacts/incidents/cross_channel_contamination/first_divergence.md
+artifacts/incidents/cross_channel_contamination/topic_filter_regression_report.md
+artifacts/incidents/cross_channel_contamination/safety_gate_design.md
+artifacts/incidents/cross_channel_contamination/fail_closed_upload_safety_report.md
+artifacts/incidents/cross_channel_contamination/topics_call_graph.md
+artifacts/incidents/cross_channel_contamination/lineage_report.md
+artifacts/incidents/cross_channel_contamination/root_cause_final.md
+artifacts/incidents/cross_channel_contamination/reproduction_report.md
+artifacts/incidents/cross_channel_contamination/topics_writer_map.md
+artifacts/incidents/cross_channel_contamination/topics_value_trace.md
+artifacts/incidents/cross_channel_contamination/regression_test_plan.md
+artifacts/incidents/cross_channel_contamination/permanent_fix_spec.md
+artifacts/incidents/cross_channel_contamination/topic_provenance_fix_report.md
+artifacts/incidents/cross_channel_contamination/cross_channel_audit.json
+artifacts/incidents/cross_channel_contamination/root_cause_proof.md
+artifacts/incidents/cross_channel_contamination/root_cause_analysis.md
+artifacts/incidents/cross_channel_contamination/replay/topics_replay_results.json
+artifacts/incidents/cross_channel_contamination/replay/replay_results.json
+artifacts/incidents/cross_channel_contamination/adjacent_run_comparison.md
+artifacts/incidents/cross_channel_contamination/known_incident_report.md
+artifacts/incidents/cross_channel_contamination/producer_trace.md
+artifacts/incidents/cross_channel_contamination/remediation_approval_plan.md
+artifacts/incidents/cross_channel_contamination/topics_producer_proof.md
+output/state/incident_state.json
+output/state/learning_activation_flags.json
+output/state/scheduler_singleton_meta.json
+output/state/channel_optimization/kariyer_pusulasi.json
+output/state/channel_optimization/kripto_rehber.json
+output/state/channel_optimization/borsa_akademi.json
+output/state/channel_optimization/egitim_rehberi.json
+output/state/channel_optimization/para_pusulasi.json
+output/state/channel_optimization/teknoloji_pusulasi.json
+output/state/channel_optimization/saglik_pusulasi.json
+output/state/channel_optimization/girisim_okulu.json
+output/state/content_ownership/content_d20bd17ef1f04f96a7d8f56b145c0bbd_run_1f8d537c0948495f922619d40026233c.json
+output/state/content_ownership/content_71bb1a95574d4bf0b741a3a4d41ce01f_run_34970ff26917444bb70010812597d6e9.json
+output/state/content_ownership/content_f08dcadf1a7041428b22c40f6c55ea5d_run_c38b8069b62a4992af62452cd8b09f54.json
+output/state/content_ownership/content_a8bf28f31ff54e7c912e8cc4dd71e8c0_run_54fbbaaec7774a4dae20a35d675f37c3.json
+output/state/content_ownership/content_77dc8769c9944cef829ac1fd85f3c87c_run_21a20db724e1484690946a67e4e01c5c.json
+output/state/content_ownership/content_d1630d75dedf48838de708f31a1e30f8_run_8e0cbed5fda04b369293335c154a2f50.json
+output/state/content_ownership/content_0a4d1b4c98554214865472d028721b8e_run_84c3262f7ec048cf88be7a86f57a5885.json
+output/state/content_ownership/content_e947e47afb0b415c8a4dc0670c5a87af_run_81f1cf1978cc431e87deaf064f167554.json
+output/state/content_ownership/content_1ce82d10ebcd49d2a635c646fc609fa7_run_155ee528315f4bb18c53023011707482.json
+output/state/content_ownership/content_0000b148926140f69347b79ae917c632_run_dd0081680bdc415c903e0f0e9387e31c.json
+output/state/content_ownership/content_2dd5028ba7ef40c0a7b4fefaf0cda042_run_b64b47c5606c4b8abb70618033f57d49.json
+output/state/content_ownership/content_079607a46ba544a29bec2b9e11df4f6c_run_0672cf2fbc404f4590229efd8819e203.json
+output/state/content_ownership/content_ef5dbb0b52074b20bafeaf62c95d223c_run_d99690beba9b445fae97189f00aad688.json

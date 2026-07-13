@@ -1,0 +1,22 @@
+{
+  "20_concurrent_incident_writes": true,
+  "same_incident_concurrent_writes": true,
+  "two_channels_concurrent_writes": true,
+  "stale_cleanup": true,
+  "state_record_cap": true,
+  "jsonl_maximum_line_cap": true,
+  "rotation_boundary": true,
+  "truncated_json_recovery": true,
+  "malformed_jsonl_recovery": true,
+  "bounded_metrics_scan": true,
+  "lock_timeout": true,
+  "atomic_replacement_failure": true,
+  "production_safe_defaults": true,
+  "no_corrupted_json": true,
+  "no_unbounded_growth": true,
+  "notes": [
+    "The storage probe used direct threaded notify_error calls plus prune/bounds helpers under silenced logging.",
+    "JSONL max-line cap was validated with INCIDENT_EVENTS_MAX_LINES=100 and a 105-line file.",
+    "Stale incident pruning now removes old open incidents as well as resolved incidents older than retention."
+  ]
+}

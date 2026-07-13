@@ -1,0 +1,7 @@
+commit 72b4bb208a84c93eff5a471e142853e01a5c28a4
+Author:     Sahar <klara@Sahars-MacBook-Pro.local>
+AuthorDate: Sun Jul 12 06:51:52 2026 +0300
+Commit:     Sahar <klara@Sahars-MacBook-Pro.local>
+CommitDate: Sun Jul 12 06:51:52 2026 +0300
+
+    fix: quarantine terminal domain blocks and isolate preprod outputs

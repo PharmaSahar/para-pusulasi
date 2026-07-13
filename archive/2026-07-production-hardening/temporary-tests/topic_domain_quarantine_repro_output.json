@@ -1,0 +1,76 @@
+{
+  "without_terminal_attrs": {
+    "add_terminal_attrs": false,
+    "attempt_count": 1,
+    "queue_before": {},
+    "queue_after": {
+      "demo_channel": [
+        {
+          "queue_entry_id": "qe_beac4493cb6c49e7",
+          "video_id": null,
+          "title": "",
+          "youtube_url": "",
+          "publish_at": "2026-07-13T10:00:00+03:00",
+          "rendered_at": "2026-07-12T18:16:28.061957+03:00",
+          "status": "quarantined",
+          "channel_id": "demo_channel",
+          "quarantine_reason": "topic_domain_blocked",
+          "guard_reason_codes": [
+            "topic_domain_blocked"
+          ],
+          "quarantined_at": "2026-07-12T18:16:28.061961+03:00",
+          "recoverable": false,
+          "review_status": "pending",
+          "error": "topic_domain_blocked:no_valid_candidate niche=saglik",
+          "run_id": "",
+          "content_id": "",
+          "topic": "",
+          "expected_niche": "saglik",
+          "detected_domain": "unknown",
+          "retry_count": 1,
+          "source_stage": "scheduler.render_and_schedule",
+          "prevent_upload": true,
+          "prevent_shorts_upload": true
+        }
+      ]
+    },
+    "quarantine_created": true
+  },
+  "with_terminal_attrs": {
+    "add_terminal_attrs": true,
+    "attempt_count": 1,
+    "queue_before": {},
+    "queue_after": {
+      "demo_channel": [
+        {
+          "queue_entry_id": "qe_b9b35349eacb4ffa",
+          "video_id": null,
+          "title": "",
+          "youtube_url": "",
+          "publish_at": "2026-07-13T10:00:00+03:00",
+          "rendered_at": "2026-07-12T18:16:28.437699+03:00",
+          "status": "quarantined",
+          "channel_id": "demo_channel",
+          "quarantine_reason": "topic_domain_blocked",
+          "guard_reason_codes": [
+            "topic_domain_blocked"
+          ],
+          "quarantined_at": "2026-07-12T18:16:28.437702+03:00",
+          "recoverable": false,
+          "review_status": "pending",
+          "error": "topic_domain_blocked:no_valid_candidate niche=saglik",
+          "run_id": "run_probe",
+          "content_id": "content_probe",
+          "topic": "Probe Topic",
+          "expected_niche": "saglik",
+          "detected_domain": "finance",
+          "retry_count": 1,
+          "source_stage": "scheduler.render_and_schedule",
+          "prevent_upload": true,
+          "prevent_shorts_upload": true
+        }
+      ]
+    },
+    "quarantine_created": true
+  }
+}

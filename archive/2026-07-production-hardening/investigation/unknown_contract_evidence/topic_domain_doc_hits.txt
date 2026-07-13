@@ -1,0 +1,145 @@
+docs/session_archive_2026-07-10.md:13:- Queue quarantine and runtime maturity monitoring were added.
+docs/session_archive_2026-07-10.md:20:- `a92de69` - Harden scheduler queue guardrails and quarantine flow
+docs/session_archive_2026-07-10.md:25:- Scheduler quarantine flow
+docs/session_archive_2026-07-10.md:32:- Queue quarantine runtime
+ops/queue_quarantine_admin.py:2:"""Queue quarantine admin CLI.
+ops/queue_quarantine_admin.py:5:- list quarantined entries
+ops/queue_quarantine_admin.py:9:- append-only decision trail is written by scheduler_utils.restore_quarantined_entry
+ops/queue_quarantine_admin.py:22:from src.scheduler_utils import restore_quarantined_entry
+ops/queue_quarantine_admin.py:25:DEFAULT_REPORT_PATH = Path("logs/queue_quarantine_admin_latest.json")
+ops/queue_quarantine_admin.py:45:def _iter_quarantined_entries(queue: dict[str, Any]) -> list[dict[str, Any]]:
+ops/queue_quarantine_admin.py:52:            if status != "quarantined":
+ops/queue_quarantine_admin.py:60:                    "quarantine_reason": str(entry.get("quarantine_reason") or ""),
+ops/queue_quarantine_admin.py:64:                    "quarantined_at": entry.get("quarantined_at"),
+ops/queue_quarantine_admin.py:67:    rows.sort(key=lambda row: (row.get("channel_id") or "", row.get("quarantined_at") or ""))
+ops/queue_quarantine_admin.py:83:    rows = _iter_quarantined_entries(queue)
+ops/queue_quarantine_admin.py:89:            "quarantined_count": len(rows),
+ops/queue_quarantine_admin.py:112:        for row in _iter_quarantined_entries(queue):
+ops/queue_quarantine_admin.py:132:    changed = restore_quarantined_entry(
+ops/queue_quarantine_admin.py:161:    parser = argparse.ArgumentParser(description="Queue quarantine admin")
+ops/queue_quarantine_admin.py:167:    sub.add_parser("list", help="List quarantined queue entries")
+ops/queue_quarantine_admin.py:169:    restore = sub.add_parser("restore", help="Restore a quarantined entry")
+ops/preprod_validation_runner.py:478:                "tests/test_upload_precheck.py",
+ops/cross_channel_contamination_scan.py:127:                            "quarantine_reason": str((entry or {}).get("quarantine_reason") or ""),
+src/upload_precheck.py:21:    quarantine_reason: str
+src/upload_precheck.py:29:            "quarantine_reason": self.quarantine_reason,
+src/upload_precheck.py:151:def evaluate_upload_precheck(
+src/upload_precheck.py:170:            quarantine_reason="",
+src/upload_precheck.py:181:            quarantine_reason="precheck_manifest_unreadable",
+src/upload_precheck.py:182:            guard_reason_codes=["upload_precheck_manifest_unreadable"],
+src/upload_precheck.py:205:        reason_codes.append("upload_precheck_tuple_mismatch")
+src/upload_precheck.py:209:        reason_codes.append("upload_precheck_video_path_channel_scope_violation")
+src/upload_precheck.py:211:        reason_codes.append("upload_precheck_thumbnail_path_channel_scope_violation")
+src/upload_precheck.py:220:                reason_codes.append(f"upload_precheck_{label}_missing")
+src/upload_precheck.py:226:                reason_codes.append(f"upload_precheck_{label}_missing")
+src/upload_precheck.py:229:            reason_codes.append(f"upload_precheck_{label}_unreadable")
+src/upload_precheck.py:233:            reason_codes.append(f"upload_precheck_{label}_ownership_metadata_missing")
+src/upload_precheck.py:238:            reason_codes.append(f"upload_precheck_{label}_hash_unavailable")
+src/upload_precheck.py:244:            reason_codes.append(f"upload_precheck_{label}_ownership_metadata_missing")
+src/upload_precheck.py:246:            reason_codes.append(f"upload_precheck_{label}_hash_mismatch")
+src/upload_precheck.py:250:            reason_codes.append(f"upload_precheck_{label}_ownership_metadata_mismatch")
+src/upload_precheck.py:274:        reason_codes.append("domain_policy_forbidden_keyword")
+src/upload_precheck.py:280:            quarantine_reason="channel_dna_mismatch" if "channel_dna_mismatch" in reason_codes else "upload_precheck_blocked",
+src/upload_precheck.py:281:            guard_reason_codes=sorted(set(reason_codes + ["upload_precheck_final_guard"])),
+src/upload_precheck.py:288:        quarantine_reason="",
+src/scheduler_utils.py:31:QUARANTINE_TRAIL_PATH = Path("logs/queue_quarantine_decisions.jsonl")
+src/scheduler_utils.py:186:    if "cross_channel_topic_contamination" in txt or "topic_provenance_collision" in txt:
+src/scheduler_utils.py:203:    if "topic_domain_blocked" in txt:
+src/scheduler_utils.py:204:        return "topic_domain_blocked"
+src/scheduler_utils.py:315:                "next_action": str(context.get("next_action") or "quarantine_for_review"),
+src/scheduler_utils.py:1629:                    new_status="quarantined",
+src/scheduler_utils.py:1634:                _append_queue_quarantine_decision(
+src/scheduler_utils.py:1636:                        "event": "queue_entry_quarantined",
+src/scheduler_utils.py:1646:                    f"[{cid}] Yanlis kanal kuyruk girisi quarantine: {str(entry.get('title') or '')[:80]}"
+src/scheduler_utils.py:1672:                    _append_queue_quarantine_decision(
+src/scheduler_utils.py:1720:def _append_queue_quarantine_decision(entry: dict) -> None:
+src/scheduler_utils.py:1735:    if status not in {"active", "quarantined", "restored", "permanently_rejected"}:
+src/scheduler_utils.py:1765:    if status not in {"quarantined", "restored", "permanently_rejected", "active"}:
+src/scheduler_utils.py:1769:    entry["quarantine_reason"] = reason
+src/scheduler_utils.py:1772:    if status == "quarantined":
+src/scheduler_utils.py:1773:        entry["quarantined_at"] = now_iso
+src/scheduler_utils.py:1781:def restore_quarantined_entry(
+src/scheduler_utils.py:1789:    """Restore quarantined queue entry in-place. Idempotent and append-only audited."""
+src/scheduler_utils.py:1800:        if status != "quarantined":
+src/scheduler_utils.py:1814:        _append_queue_quarantine_decision(
+src/pipeline.py:43:from .upload_precheck import evaluate_upload_precheck, persist_ownership_manifest
+src/pipeline.py:878:            setattr(topic_error, "_quarantine_reason", "topic_provenance_collision" if is_collision else "topic_domain_blocked")
+src/pipeline.py:883:            if (not is_collision) and "topic_domain_blocked" not in guard_reason_codes:
+src/pipeline.py:884:                guard_reason_codes.append("topic_domain_blocked")
+src/pipeline.py:898:            setattr(topic_error, "_error_type", "topic_provenance_collision" if is_collision else "topic_domain_blocked")
+src/pipeline.py:1501:    precheck = evaluate_upload_precheck(
+src/pipeline.py:1514:    result["upload_precheck"] = precheck
+src/pipeline.py:1530:                "error": "upload_precheck_blocked",
+src/pipeline.py:1637:    elif result.get("upload_precheck", {}).get("status") == "blocked":
+src/pipeline.py:1851:    elif result.get("upload_precheck", {}).get("status") == "blocked":
+src/content_generator.py:1082:                f"topic_domain_blocked:no_valid_candidate niche={normalized_niche}",
+src/content_generator.py:1193:            f"topic_domain_blocked:explicit_topic_invalid niche={(self.niche or '').strip().lower()}",
+tests/test_editor_review.py:299:        "evaluate_upload_precheck",
+tests/test_editor_review.py:302:            "quarantine_reason": "",
+tests/test_scheduler_topic_domain_guard.py:33:    trail = tmp_path / "queue_quarantine_decisions.jsonl"
+tests/test_scheduler_topic_domain_guard.py:52:def test_scheduler_quarantines_topic_domain_block(monkeypatch, tmp_path):
+tests/test_scheduler_topic_domain_guard.py:60:        raise RuntimeError("topic_domain_blocked:no_valid_candidate niche=saglik")
+tests/test_scheduler_topic_domain_guard.py:68:    assert entry["status"] == "quarantined"
+tests/test_scheduler_topic_domain_guard.py:69:    assert entry["quarantine_reason"] == "topic_domain_blocked"
+tests/test_scheduler_topic_domain_guard.py:70:    assert "topic_domain_blocked" in entry.get("guard_reason_codes", [])
+tests/test_scheduler_topic_domain_guard.py:95:            raise RuntimeError("topic_domain_blocked:no_valid_candidate niche=saglik")
+tests/test_scheduler_topic_domain_guard.py:124:def test_quarantine_entry_contains_identity_fields(monkeypatch, tmp_path):
+tests/test_scheduler_topic_domain_guard.py:130:        exc = RuntimeError("channel_topic_domain_mismatch: finance_in_health")
+tests/test_scheduler_topic_domain_guard.py:135:        setattr(exc, "_guard_reason_codes", ["channel_topic_domain_mismatch"])
+tests/test_scheduler_topic_domain_guard.py:153:def test_quarantine_duplicate_handling_is_idempotent(monkeypatch, tmp_path):
+tests/test_scheduler_topic_domain_guard.py:159:        exc = RuntimeError("cross_channel_topic_contamination")
+tests/test_scheduler_topic_domain_guard.py:164:        setattr(exc, "_guard_reason_codes", ["cross_channel_topic_contamination"])
+tests/test_scheduler_topic_domain_guard.py:185:        raise RuntimeError("domain_policy_forbidden_keyword")
+tests/test_scheduler_topic_domain_guard.py:212:    assert entry["status"] == "quarantined"
+tests/test_scheduler_topic_domain_guard.py:225:        raise RuntimeError("domain_policy_forbidden_keyword")
+tests/test_scheduler_provider_guardrails.py:265:def test_render_and_schedule_quarantines_when_upload_precheck_blocked(monkeypatch, tmp_path):
+tests/test_scheduler_provider_guardrails.py:279:    trail = tmp_path / "queue_quarantine_decisions.jsonl"
+tests/test_scheduler_provider_guardrails.py:302:            "upload_precheck": {
+tests/test_scheduler_provider_guardrails.py:304:                "quarantine_reason": "channel_dna_mismatch",
+tests/test_scheduler_provider_guardrails.py:305:                "guard_reason_codes": ["channel_dna_mismatch", "upload_precheck_final_guard"],
+tests/test_scheduler_provider_guardrails.py:315:    assert entry["status"] == "quarantined"
+tests/test_scheduler_provider_guardrails.py:316:    assert entry["quarantine_reason"] == "channel_dna_mismatch"
+tests/test_pipeline_telemetry_fail_open.py:358:        assert result.get("upload_precheck", {}).get("status") == "blocked"
+tests/test_pipeline_telemetry_fail_open.py:359:        assert "upload_precheck_final_guard" in (result.get("upload_precheck", {}).get("guard_reason_codes") or [])
+tests/test_pipeline_telemetry_fail_open.py:482:        assert result.get("upload_precheck", {}).get("status") == "blocked"
+tests/test_pipeline_telemetry_fail_open.py:679:        assert result.get("upload_precheck", {}).get("status") == "blocked"
+tests/test_pipeline_telemetry_fail_open.py:795:        assert result.get("upload_precheck", {}).get("status") == "blocked"
+tests/test_upload_precheck.py:6:from src.upload_precheck import evaluate_upload_precheck, persist_ownership_manifest
+tests/test_upload_precheck.py:29:def test_upload_precheck_allows_valid_manifest(tmp_path, monkeypatch):
+tests/test_upload_precheck.py:52:    res = evaluate_upload_precheck(
+tests/test_upload_precheck.py:71:def test_upload_precheck_blocks_tuple_mismatch(tmp_path, monkeypatch):
+tests/test_upload_precheck.py:94:    res = evaluate_upload_precheck(
+tests/test_upload_precheck.py:110:    assert "upload_precheck_tuple_mismatch" in res["guard_reason_codes"]
+tests/test_upload_precheck.py:113:def test_upload_precheck_blocks_hash_mismatch(tmp_path, monkeypatch):
+tests/test_upload_precheck.py:139:    res = evaluate_upload_precheck(
+tests/test_upload_precheck.py:155:    assert "upload_precheck_video_hash_mismatch" in res["guard_reason_codes"]
+tests/test_upload_precheck.py:158:def test_upload_precheck_blocks_cross_domain_content(tmp_path, monkeypatch):
+tests/test_upload_precheck.py:197:    res = evaluate_upload_precheck(
+tests/test_upload_precheck.py:213:    assert "domain_policy_forbidden_keyword" in res["guard_reason_codes"]
+tests/test_upload_precheck.py:216:def test_upload_precheck_blocks_missing_script_file(tmp_path, monkeypatch):
+tests/test_upload_precheck.py:241:    res = evaluate_upload_precheck(
+tests/test_upload_precheck.py:257:    assert "upload_precheck_script_missing" in res["guard_reason_codes"]
+tests/test_upload_precheck.py:260:def test_upload_precheck_blocks_missing_video_file(tmp_path, monkeypatch):
+tests/test_upload_precheck.py:285:    res = evaluate_upload_precheck(
+tests/test_upload_precheck.py:301:    assert "upload_precheck_video_missing" in res["guard_reason_codes"]
+tests/test_upload_precheck.py:304:def test_upload_precheck_blocks_missing_thumbnail_when_required(tmp_path, monkeypatch):
+tests/test_upload_precheck.py:329:    res = evaluate_upload_precheck(
+tests/test_upload_precheck.py:345:    assert "upload_precheck_thumbnail_missing" in res["guard_reason_codes"]
+tests/test_upload_precheck.py:348:def test_upload_precheck_blocks_unreadable_artifact(tmp_path, monkeypatch):
+tests/test_upload_precheck.py:371:    original_sha256 = getattr(__import__("src.upload_precheck", fromlist=["_sha256_file"]), "_sha256_file")
+tests/test_upload_precheck.py:378:    monkeypatch.setattr("src.upload_precheck._sha256_file", _broken_sha256)
+tests/test_upload_precheck.py:380:    res = evaluate_upload_precheck(
+tests/test_upload_precheck.py:396:    assert "upload_precheck_script_hash_unavailable" in res["guard_reason_codes"]
+tests/test_render_metrics.py:221:        "evaluate_upload_precheck",
+tests/test_render_metrics.py:224:            "quarantine_reason": "",
+tests/test_render_metrics.py:338:        "evaluate_upload_precheck",
+tests/test_render_metrics.py:341:            "quarantine_reason": "",
+tests/test_queue_quarantine_admin.py:6:from ops import queue_quarantine_admin as admin
+tests/test_queue_quarantine_admin.py:14:def test_list_returns_only_quarantined_entries(tmp_path):
+tests/test_queue_quarantine_admin.py:23:                {"queue_entry_id": "qe2", "status": "quarantined", "title": "B"},
+tests/test_queue_quarantine_admin.py:26:                {"queue_entry_id": "qe3", "status": "quarantined", "title": "C"},
+tests/test_queue_quarantine_admin.py:36:    assert payload["detail"]["quarantined_count"] == 2
+tests/test_queue_quarantine_admin.py:49:                "status": "quarantined",
+tests/test_queue_quarantine_admin.py:51:                "quarantine_reason": "channel_dna_mismatch",
+tests/test_queue_quarantine_admin.py:98:                    "status": "quarantined",
+tests/test_queue_quarantine_admin.py:100:                    "quarantine_reason": "channel_dna_mismatch",

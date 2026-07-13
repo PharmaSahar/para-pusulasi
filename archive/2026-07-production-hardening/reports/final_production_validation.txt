@@ -1,0 +1,82 @@
+# Final Production Validation Matrix
+Date: 2026-07-12
+Workspace: /Users/klara/Downloads/adsız klasör
+Python: /Users/klara/Downloads/adsız klasör/.venv-2/bin/python
+
+1) Command: git diff --check
+- Exit code: 0
+- Result: PASS
+- Notes: no whitespace/check issues
+
+2) Command: /Users/klara/Downloads/adsız klasör/.venv-2/bin/python -m py_compile scheduler.py src/scheduler_utils.py tests/test_observability_incident_safety.py tests/test_scheduler_provider_guardrails.py tests/test_scheduler_topic_domain_guard.py
+- Exit code: 0
+- Result: PASS
+
+3) Formatter/linter
+- Command: N/A (no configured formatter/linter command was provided in task artifacts)
+- Result: SKIPPED
+- Risk: style-only checks not independently executed
+
+4) Command: /Users/klara/Downloads/adsız klasör/.venv-2/bin/python -m pytest -q tests/test_scheduler_provider_guardrails.py tests/test_scheduler_topic_domain_guard.py tests/test_observability_incident_safety.py
+- Exit code: 0
+- Passed: 34
+- Failed: 0
+- Duration: 5.40s
+- Result: PASS
+
+5) Command: /Users/klara/Downloads/adsız klasör/.venv-2/bin/python -m pytest -q tests/test_scheduler_provider_guardrails.py::test_notify_error_dedupes_anthropic_cooldown_across_channels tests/test_scheduler_provider_guardrails.py::test_notify_error_keeps_non_cooldown_alerts_channel_scoped tests/test_observability_incident_safety.py::test_critical_event_is_not_hidden_by_warning_cooldown tests/test_observability_incident_safety.py::test_notify_error_redacts_filesystem_paths_in_telegram_payload tests/test_observability_incident_safety.py::test_stale_open_incident_state_is_pruned
+- Exit code: 0
+- Passed: 5
+- Failed: 0
+- Duration: 0.05s
+- Result: PASS
+
+6) Command: /Users/klara/Downloads/adsız klasör/.venv-2/bin/python -m pytest -q tests/test_editor_review.py::test_pipeline_keeps_full_flow_when_editor_review_succeeds tests/test_pipeline_telemetry_fail_open.py::test_pipeline_marks_upload_failed_when_video_id_missing tests/test_pipeline_telemetry_fail_open.py::test_pipeline_short_upload_is_skipped_when_main_upload_fails tests/test_pipeline_telemetry_fail_open.py::test_pipeline_thumbnail_experiment_binding_fail_open_continues tests/test_pipeline_telemetry_fail_open.py::test_pipeline_thumbnail_selection_fail_open_continues tests/test_pipeline_telemetry_fail_open.py::test_pipeline_audio_metadata_validation_fail_open_sets_warning tests/test_render_metrics.py::test_pipeline_keeps_fail_open_when_render_metrics_builder_raises tests/test_scheduler_topic_domain_guard.py::test_scheduler_topic_domain_block_is_not_retried
+- Exit code: 0
+- Passed: 8
+- Failed: 0
+- Duration: 62.55s
+- Result: PASS
+
+7) Command: /Users/klara/Downloads/adsız klasör/.venv-2/bin/python -m pytest -q tests/test_editor_review.py tests/test_pipeline_telemetry_fail_open.py tests/test_render_metrics.py tests/test_scheduler_topic_domain_guard.py
+- Exit code: 0
+- Passed: 39
+- Failed: 0
+- Duration: 172.26s
+- Result: PASS
+
+8) Command: /Users/klara/Downloads/adsız klasör/.venv-2/bin/python -m pytest -q
+- Exit code: 0
+- Passed: 658
+- Failed: 0
+- Duration: 364.23s
+- Result: PASS
+
+9) Command: /Users/klara/Downloads/adsız klasör/.venv-2/bin/python -W error -m pytest -q (attempt 1)
+- Exit code: 1
+- Passed: 657
+- Failed: 1
+- Failure: tests/test_render_metrics.py::test_pipeline_attaches_render_metrics_on_success
+- Duration: 357.14s
+- Result: FAIL (transient)
+
+10) Command: /Users/klara/Downloads/adsız klasör/.venv-2/bin/python -W error -m pytest -q tests/test_render_metrics.py::test_pipeline_attaches_render_metrics_on_success -vv
+- Exit code: 0
+- Passed: 1
+- Failed: 0
+- Duration: 6.50s
+- Result: PASS
+
+11) Command: /Users/klara/Downloads/adsız klasör/.venv-2/bin/python -W error -m pytest -q (attempt 2)
+- Exit code: 0
+- Passed: 658
+- Failed: 0
+- Duration: 379.81s
+- Result: PASS
+
+Observability Evidence Files
+- artifacts/latest/telegram_incident_policy.md
+- artifacts/latest/incident_lifecycle_validation.json
+- artifacts/latest/telegram_noise_validation.json (see residual risk in final report)
+- artifacts/latest/observability_fail_open_validation.json
+- artifacts/latest/concurrency_storage_validation.json

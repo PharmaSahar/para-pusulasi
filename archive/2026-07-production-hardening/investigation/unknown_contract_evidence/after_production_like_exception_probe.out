@@ -1,0 +1,14 @@
+2026-07-12 17:48:01,149 [INFO] Scheduler: [Demo Channel] Render başlıyor → 2026-07-13T10:00:00+03:00 için zamanlanacak
+2026-07-12 17:48:01,149 [ERROR] Scheduler: [demo_channel] Render hatası: topic_domain_blocked:no_valid_candidate niche=saglik
+Traceback (most recent call last):
+  File "/private/tmp/unknown_contract_worktrees/after_d51e315/scheduler.py", line 842, in render_and_schedule
+    result = run_full_pipeline(
+        channel_cfg=cfg,
+        privacy="private",
+        publish_at=publish_at,
+    )
+  File "/Users/klara/Downloads/adsız klasör/artifacts/latest/unknown_contract_evidence/domain_exception_probe.py", line 44, in raise_with_attrs
+    raise err
+RuntimeError: topic_domain_blocked:no_valid_candidate niche=saglik
+2026-07-12 17:48:01,163 [INFO] Scheduler: [Demo Channel] Telegram karar feedback: None
+{"calls": 1, "queue": {"demo_channel": [{"queue_entry_id": "qe_69092626456b4c61", "video_id": null, "title": "", "youtube_url": "", "publish_at": "2026-07-13T10:00:00+03:00", "rendered_at": "2026-07-12T17:48:01.150566+03:00", "status": "quarantined", "channel_id": "demo_channel", "quarantine_reason": "topic_domain_blocked", "guard_reason_codes": ["topic_domain_blocked"], "quarantined_at": "2026-07-12T17:48:01.150569+03:00", "recoverable": false, "review_status": "pending", "error": "topic_domain_blocked:no_valid_candidate niche=saglik", "run_id": "run_probe", "content_id": "content_probe", "topic": "Probe Topic", "expected_niche": "saglik", "detected_domain": "finance", "retry_count": 1, "source_stage": "scheduler.render_and_schedule", "prevent_upload": true, "prevent_shorts_upload": true}]}}

@@ -1,0 +1,120 @@
+diff --git a/PROGRESS.md b/PROGRESS.md
+index be48203..605f3b2 100644
+--- a/PROGRESS.md
++++ b/PROGRESS.md
+@@ -5,7 +5,7 @@
+ ---
+
+ ## Son Güncelleme
+-**Tarih:** 2026-07-09 03:00 (Istanbul)
++**Tarih:** 2026-07-12 03:00 (Istanbul)
+
+ ## Son Tamamlanan Görev
+ Günlük bakım tamamlandı
+@@ -16,12 +16,12 @@ Scheduler çalışıyor — videoları otomatik yüklüyor
+ ## Kanal Kuyruk Durumu
+ | Kanal | Durum | Yayın Zamanı |
+ |---|---|---|
+-| para_pusulasi             | ✅ Kuyrukta | 2026-07-09T08:00 |
+-| borsa_akademi             | 🔄 Render bekleniyor | — |
+-| kripto_rehber             | ✅ Kuyrukta | 2026-07-09T09:00 |
+-| kariyer_pusulasi          | ✅ Kuyrukta | 2026-07-09T09:30 |
+-| girisim_okulu             | ✅ Kuyrukta | 2026-07-09T10:00 |
+-| saglik_pusulasi           | ✅ Kuyrukta | 2026-07-09T10:30 |
+-| teknoloji_pusulasi        | ✅ Kuyrukta | 2026-07-09T11:00 |
+-| egitim_rehberi            | ✅ Kuyrukta | 2026-07-09T11:30 |
+-| gayrimenkul_tv            | ✅ Kuyrukta | 2026-07-09T12:00 |
++| para_pusulasi             | ✅ Kuyrukta | 2026-07-11T20:00 |
++| borsa_akademi             | ✅ Kuyrukta | 2026-07-11T20:30 |
++| kripto_rehber             | ✅ Kuyrukta | 2026-07-10T21:00 |
++| kariyer_pusulasi          | ✅ Kuyrukta | 2026-07-10T21:30 |
++| girisim_okulu             | ✅ Kuyrukta | 2026-07-10T22:00 |
++| saglik_pusulasi           | ✅ Kuyrukta | 2026-07-10T22:30 |
++| teknoloji_pusulasi        | ✅ Kuyrukta | 2026-07-10T23:00 |
++| egitim_rehberi            | ✅ Kuyrukta | 2026-07-10T23:30 |
++| gayrimenkul_tv            | ✅ Kuyrukta | 2026-07-11T12:00 |
+diff --git a/docs/governance_readiness_latest.md b/docs/governance_readiness_latest.md
+index bd645e3..85f988a 100644
+--- a/docs/governance_readiness_latest.md
++++ b/docs/governance_readiness_latest.md
+@@ -1,6 +1,6 @@
+ # Governance Readiness Latest
+
+-- Generated at UTC: 2026-07-10T13:33:22.954847+00:00
++- Generated at UTC: 2026-07-12T17:13:49.354634+00:00
+ - Lookback rows: 500
+ - Required steps passed: 2/2
+ - Optional steps failed: 0
+@@ -9,9 +9,19 @@
+
+ | Step | Required | Status | Artifact | Warning |
+ | --- | --- | --- | --- | --- |
+-| p0_validation_metrics | yes | PASS | /Users/klara/Downloads/adsız klasör/logs/p0_validation_metrics_latest.json | script_missing_fallback_artifact_used |
+-| p0_p1_artifact_bundle | yes | PASS | /Users/klara/Downloads/adsız klasör/logs/p0_p1_artifacts_bundle_latest.json | script_missing_fallback_artifact_used |
+-| executive_dashboard | no | PASS | /Users/klara/Downloads/adsız klasör/logs/executive_dashboard.json | script_missing_fallback_artifact_used |
++| p0_validation_metrics | yes | PASS | /Users/klara/Downloads/adsız klasör/logs/p0_validation_metrics_latest.json | - |
++| p0_p1_artifact_bundle | yes | PASS | /Users/klara/Downloads/adsız klasör/logs/p0_p1_artifacts_bundle_latest.json | - |
++| executive_dashboard | no | PASS | /Users/klara/Downloads/adsız klasör/logs/executive_dashboard.json | - |
++| content_platform_control_loop | no | PASS | /Users/klara/Downloads/adsız klasör/logs/content_platform_health_latest.json | - |
++
++## Secondary Summary Layer
++
++- Strict evidence bridge artifact: `logs/governance_dashboard_bridge_latest.json`
++- Content platform health artifact: `logs/content_platform_health_latest.json`
++- Content platform recommendations artifact: `logs/content_platform_recommendations_latest.json`
++- Content platform experiments artifact: `logs/content_platform_experiments_latest.json`
++- Content platform weekly review: `docs/content_platform_weekly_review.md`
++- Purpose: channel-level P0 thumbnail auth follow-up + P1 VALIDATION_QUEUE exit worklist.
+
+ ## Entry Point
+
+diff --git a/output/state/activation_reports/latest.json b/output/state/activation_reports/latest.json
+index feb819e..c886e6a 100644
+--- a/output/state/activation_reports/latest.json
++++ b/output/state/activation_reports/latest.json
+@@ -1,6 +1,6 @@
+ {
+   "controller": "activation_controller",
+-  "generated_at_utc": "2026-07-10T15:34:48.047379+00:00",
++  "generated_at_utc": "2026-07-12T19:34:35.069573+00:00",
+   "channel_id": "test_channel",
+   "gates": {
+     "analytics_api_probe": {
+@@ -47,7 +47,7 @@
+           "updated_at": "2026-07-09T00:00:00+00:00",
+           "last_probe": {}
+         },
+-        "cache_path": "/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-235/test_activation_controller_act1/thumbnail_permission_cache.json"
++        "cache_path": "/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-972/test_activation_controller_act1/thumbnail_permission_cache.json"
+       }
+     }
+   },
+@@ -57,14 +57,14 @@
+     "analytics_live_status": "go_enabled",
+     "thumbnail_permission_status": "go_streak_met",
+     "ready_for_learning_activation": true,
+-    "generated_at_utc": "2026-07-10T15:34:48.047278+00:00",
++    "generated_at_utc": "2026-07-12T19:34:35.069492+00:00",
+     "source": "activation_controller"
+   },
+   "activation": {
+     "requested": true,
+     "applied": true,
+     "reason": "all_gates_go",
+-    "flags_path": "/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-235/test_activation_controller_act1/flags.json"
++    "flags_path": "/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-972/test_activation_controller_act1/flags.json"
+   },
+   "system_status": "ready_for_learning_activation",
+   "safety_policy": {
+@@ -74,8 +74,8 @@
+     "auto_code_generation": false
+   },
+   "report_paths": {
+-    "report_path": "/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-235/test_activation_controller_act1/report.json",
+-    "archive_stamped": "/Users/klara/Downloads/adsız klasör/output/state/activation_reports/2026-07-10T15-34-48.json",
++    "report_path": "/private/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/pytest-of-klara/pytest-972/test_activation_controller_act1/report.json",
++    "archive_stamped": "/Users/klara/Downloads/adsız klasör/output/state/activation_reports/2026-07-12T19-34-35.json",
+     "archive_latest": "/Users/klara/Downloads/adsız klasör/output/state/activation_reports/latest.json"
+   }
+ }
+\ No newline at end of file

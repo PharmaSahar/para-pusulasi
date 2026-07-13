@@ -1,0 +1,103 @@
+{
+  "comparison_name": "unknown_contract_before_after",
+  "before_commit": "adc021b7842f1fb60ec289687128d539637745e8",
+  "after_commit": "d51e31578e3f3bd18674441f2f7545a2dce2dd05",
+  "constant_inputs": {
+    "test_fixture": "tests/test_scheduler_topic_domain_guard.py fixtures and monkeypatches unchanged",
+    "environment": {
+      "PREPROD_ISOLATION_MODE": "true",
+      "PREPROD_STATE_ROOT": "<tmp>/state_root",
+      "HOME": "<tmp>/home",
+      "XDG_CACHE_HOME": "<tmp>/cache",
+      "SCHEDULER_LOG_FILE": "<tmp>/logs/scheduler.log",
+      "TELEMETRY_SINK_DIR": "<tmp>/telemetry",
+      "SCHEDULER_QUEUE_FILE": "<tmp>/state/channel_queue.json",
+      "SCHEDULER_PID_FILE": "<tmp>/state/scheduler.pid",
+      "ACTIVATION_CONTROLLER_REPORT_ARCHIVE_DIR": "<tmp>/state/activation_reports",
+      "GOVERNANCE_READINESS_MD_PATH": "<tmp>/state/governance_readiness_latest.md",
+      "PRODUCTION_DASHBOARD_MD_PATH": "<tmp>/state/production_dashboard_latest.md",
+      "YOUTUBE_CLIENT_ID": "preprod-disabled",
+      "YOUTUBE_CLIENT_SECRET": "preprod-disabled",
+      "ANTHROPIC_API_KEY": "preprod-disabled",
+      "ELEVENLABS_API_KEY": "preprod-disabled",
+      "TELEGRAM_BOT_TOKEN": "preprod-disabled",
+      "SCHEDULE_ENABLED": "false",
+      "PYTHONPATH": "."
+    },
+    "adapter_needed": false
+  },
+  "tests": [
+    {
+      "test": "tests/test_scheduler_topic_domain_guard.py::test_scheduler_quarantines_topic_domain_block",
+      "before": {
+        "sha": "adc021b7842f1fb60ec289687128d539637745e8",
+        "worktree": "/tmp/unknown_contract_worktrees/before_adc021b",
+        "runtime_root": "/tmp/before_unknown_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block_pTCRX8",
+        "exit_code": 1,
+        "result": "FAILED",
+        "expected": "queue entry exists at data['demo_channel'][0] with status=quarantined",
+        "actual": "KeyError: 'demo_channel'",
+        "first_divergent_function": "scheduler.render_and_schedule",
+        "first_divergent_branch": "generic retry branch (attempt<3) instead of NON_RETRYABLE_QUARANTINE path",
+        "retry_count": 3,
+        "quarantine_state": "missing",
+        "render_invocation": "called",
+        "upload_invocation": "not called (pipeline exception before upload result)",
+        "video_id": null,
+        "final_result": "exception propagated to scheduler exception handler"
+      },
+      "after": {
+        "sha": "d51e31578e3f3bd18674441f2f7545a2dce2dd05",
+        "worktree": "/tmp/unknown_contract_worktrees/after_d51e315",
+        "runtime_root": "/tmp/after_unknown_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block_diRvfy",
+        "exit_code": 0,
+        "result": "PASSED",
+        "selected_branch": "NON_RETRYABLE_QUARANTINE classification and quarantine entry upsert",
+        "retry_count": 1,
+        "quarantine_state": "created",
+        "video_id": null,
+        "final_result": "quarantined queue entry present"
+      },
+      "evidence_files": {
+        "before_output": "artifacts/latest/unknown_contract_evidence/worktree_runs_v2/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.out",
+        "after_output": "artifacts/latest/unknown_contract_evidence/worktree_runs_v2/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_quarantines_topic_domain_block.out"
+      }
+    },
+    {
+      "test": "tests/test_scheduler_topic_domain_guard.py::test_scheduler_topic_domain_block_is_not_retried",
+      "before": {
+        "sha": "adc021b7842f1fb60ec289687128d539637745e8",
+        "worktree": "/tmp/unknown_contract_worktrees/before_adc021b",
+        "runtime_root": "/tmp/before_unknown_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried_Znuuhv",
+        "exit_code": 1,
+        "result": "FAILED",
+        "expected": "calls['pipeline'] == 1",
+        "actual": "assert 3 == 1",
+        "first_divergent_function": "scheduler.render_and_schedule",
+        "first_divergent_branch": "generic retry branch triggered for topic_domain_blocked runtime error",
+        "retry_count": 3,
+        "quarantine_state": "missing",
+        "render_invocation": "called",
+        "upload_invocation": "not called (pipeline exception before upload result)",
+        "video_id": null,
+        "final_result": "retries exhausted"
+      },
+      "after": {
+        "sha": "d51e31578e3f3bd18674441f2f7545a2dce2dd05",
+        "worktree": "/tmp/unknown_contract_worktrees/after_d51e315",
+        "runtime_root": "/tmp/after_unknown_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried_9GB8Mj",
+        "exit_code": 0,
+        "result": "PASSED",
+        "selected_branch": "non-retry terminal branch (no retry loop)",
+        "retry_count": 1,
+        "quarantine_state": "not asserted by this test",
+        "video_id": null,
+        "final_result": "single-attempt terminal quarantine behavior"
+      },
+      "evidence_files": {
+        "before_output": "artifacts/latest/unknown_contract_evidence/worktree_runs_v2/before_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.out",
+        "after_output": "artifacts/latest/unknown_contract_evidence/worktree_runs_v2/after_tests_test_scheduler_topic_domain_guard.py__test_scheduler_topic_domain_block_is_not_retried.out"
+      }
+    }
+  ]
+}

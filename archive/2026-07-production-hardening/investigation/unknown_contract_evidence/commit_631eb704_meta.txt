@@ -1,0 +1,7 @@
+commit 631eb704d0af9a057cca6f737855f0d446da5f91
+Author:     Sahar <klara@Sahars-MacBook-Pro.local>
+AuthorDate: Sat Jul 11 19:28:57 2026 +0300
+Commit:     Sahar <klara@Sahars-MacBook-Pro.local>
+CommitDate: Sat Jul 11 19:28:57 2026 +0300
+
+    fix: block cross-channel and invalid artifact uploads

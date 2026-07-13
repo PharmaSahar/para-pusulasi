@@ -1,0 +1,5 @@
+[step1] ts_utc=2026-07-12T17:51:35Z
+[detect_scheduler_candidates]
+[writer_status] NOT_RUNNING
+[post_check]
+[post_check]

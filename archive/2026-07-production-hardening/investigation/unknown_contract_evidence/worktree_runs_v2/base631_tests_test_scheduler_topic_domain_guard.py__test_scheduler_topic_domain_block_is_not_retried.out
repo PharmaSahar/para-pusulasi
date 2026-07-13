@@ -1,0 +1,62 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.7, pytest-9.1.1, pluggy-1.6.0 -- /Users/klara/Downloads/adsız klasör/.venv-2/bin/python
+cachedir: .pytest_cache
+rootdir: /private/tmp/unknown_contract_worktrees/base_631eb70
+configfile: pytest.ini
+plugins: anyio-4.14.1
+collecting ... collected 1 item
+
+tests/test_scheduler_topic_domain_guard.py::test_scheduler_topic_domain_block_is_not_retried FAILED
+
+=================================== FAILURES ===================================
+_______________ test_scheduler_topic_domain_block_is_not_retried _______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a994050>
+
+    def test_scheduler_topic_domain_block_is_not_retried(monkeypatch):
+        import src.channel_manager as channel_manager
+        import src.pipeline as pipeline
+        import src.scheduler_utils as scheduler_utils
+
+        channel_cfg = SimpleNamespace(name="Demo Channel", upload_times=["10:00"], niche="saglik")
+        calls = {"pipeline": 0}
+
+        monkeypatch.setattr(channel_manager, "get_channel", lambda _cid: channel_cfg)
+        monkeypatch.setattr(scheduler_utils, "check_disk_space", lambda **_kwargs: True)
+        monkeypatch.setattr(
+            scheduler_utils,
+            "get_provider_circuit_status",
+            lambda _provider: {"provider": "anthropic", "is_open": False, "retry_after_seconds": 0, "state": {}},
+        )
+        monkeypatch.setattr(scheduler_utils, "notify_error", lambda *_args, **_kwargs: {})
+        monkeypatch.setattr(scheduler_utils, "force_cleanup", lambda: None)
+
+        def _raise_domain_block(**_kwargs):
+            calls["pipeline"] += 1
+            raise RuntimeError("topic_domain_blocked:no_valid_candidate niche=saglik")
+
+        monkeypatch.setattr(pipeline, "run_full_pipeline", _raise_domain_block)
+
+        scheduler.render_and_schedule("demo_channel")
+
+>       assert calls["pipeline"] == 1
+E       assert 3 == 1
+
+tests/test_scheduler_topic_domain_guard.py:74: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  Scheduler:scheduler.py:628 [Demo Channel] Deneme 1/3 başarısız, 30s bekleniyor... (topic_domain_blocked:no_valid_candidate niche=saglik)
+WARNING  Scheduler:scheduler.py:628 [Demo Channel] Deneme 2/3 başarısız, 60s bekleniyor... (topic_domain_blocked:no_valid_candidate niche=saglik)
+ERROR    Scheduler:scheduler.py:770 [demo_channel] Render hatası: topic_domain_blocked:no_valid_candidate niche=saglik
+Traceback (most recent call last):
+  File "/private/tmp/unknown_contract_worktrees/base_631eb70/scheduler.py", line 583, in render_and_schedule
+    result = run_full_pipeline(
+        channel_cfg=cfg,
+        privacy="private",
+        publish_at=publish_at,
+    )
+  File "/private/tmp/unknown_contract_worktrees/base_631eb70/tests/test_scheduler_topic_domain_guard.py", line 68, in _raise_domain_block
+    raise RuntimeError("topic_domain_blocked:no_valid_candidate niche=saglik")
+RuntimeError: topic_domain_blocked:no_valid_candidate niche=saglik
+=========================== short test summary info ============================
+FAILED tests/test_scheduler_topic_domain_guard.py::test_scheduler_topic_domain_block_is_not_retried - assert 3 == 1
+========================= 1 failed in 90.65s (0:01:30) =========================

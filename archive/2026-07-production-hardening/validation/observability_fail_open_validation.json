@@ -1,0 +1,16 @@
+{
+  "telegram_timeout": true,
+  "telegram_http_error": true,
+  "telegram_serialization_error": true,
+  "alert_state_permission_denied": true,
+  "incident_state_permission_denied": true,
+  "corrupted_json_recovery": true,
+  "missing_directory_autocreate": true,
+  "atomic_replacement_failure": true,
+  "metrics_calculation_failure": true,
+  "blocked_content_remains_blocked": true,
+  "notes": [
+    "Probes used direct monkeypatching of send_telegram, alert-state writes, incident-state writes, os.replace, and _update_incident_metrics.",
+    "Blocked content control-flow was checked against scheduler.render_and_schedule and remained blocked when topic-domain guard raised."
+  ]
+}

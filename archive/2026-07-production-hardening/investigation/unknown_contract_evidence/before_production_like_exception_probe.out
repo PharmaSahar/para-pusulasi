@@ -1,0 +1,14 @@
+2026-07-12 17:48:00,611 [INFO] Scheduler: [Demo Channel] Render başlıyor → 2026-07-13T10:00:00+03:00 için zamanlanacak
+2026-07-12 17:48:00,612 [ERROR] Scheduler: [demo_channel] Render hatası: topic_domain_blocked:no_valid_candidate niche=saglik
+Traceback (most recent call last):
+  File "/private/tmp/unknown_contract_worktrees/before_adc021b/scheduler.py", line 583, in render_and_schedule
+    result = run_full_pipeline(
+        channel_cfg=cfg,
+        privacy="private",
+        publish_at=publish_at,
+    )
+  File "/Users/klara/Downloads/adsız klasör/artifacts/latest/unknown_contract_evidence/domain_exception_probe.py", line 44, in raise_with_attrs
+    raise err
+RuntimeError: topic_domain_blocked:no_valid_candidate niche=saglik
+2026-07-12 17:48:00,626 [INFO] Scheduler: [Demo Channel] Telegram karar feedback: None
+{"calls": 1, "queue": {}}

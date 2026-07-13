@@ -1,0 +1,21 @@
+{
+  "first_meaningful_occurrence_open_once": true,
+  "retries_recorded_in_structured_events": true,
+  "retries_do_not_spam_telegram": true,
+  "meaningful_state_change_bounded_update": true,
+  "verified_recovery_single_resolved": true,
+  "duplicate_recovery_sends_nothing": true,
+  "channel_topic_incident_decision_visible": true,
+  "non_debug_payload_has_no_raw_paths": true,
+  "same_incident_same_channel": true,
+  "same_incident_different_retry": true,
+  "different_incident_same_channel": true,
+  "two_channels_concurrently": true,
+  "restart_behavior": true,
+  "duplicate_resolved_behavior": true,
+  "critical_during_warning_cooldown": true,
+  "cooldown_keys_tracked": true,
+  "send_attempts_and_suppression_tracked": true,
+  "event_sequence_tracked": true,
+  "source_evidence": "artifacts/latest/incident_lifecycle_validation.json"
+}

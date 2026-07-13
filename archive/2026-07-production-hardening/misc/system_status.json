@@ -1,0 +1,31 @@
+{
+  "schema_version": "v1",
+  "generated_at_utc": "2026-07-11T11:52:49.431434+00:00",
+  "mode": "audit_dry_run",
+  "service": {
+    "pid_file": "logs/production_scheduler.pid",
+    "pid": 57253,
+    "active": false
+  },
+  "runtime_delta_files": 0,
+  "tests_summary": "not_run",
+  "status_lines": [
+    "STATUS: CLEAN",
+    "PRODUCTION: INACTIVE",
+    "RUNTIME_DELTA: 0 files",
+    "TESTS: not_run",
+    "ACTION: NO_DEPLOY_NEEDED",
+    "REPORT: artifacts/latest/system_status.md",
+    "CHANGES: moved=0 archived=31 deleted=7"
+  ],
+  "cleanup_counts": {
+    "archive": 31,
+    "delete": 7
+  },
+  "report_paths": {
+    "system_status_json": "artifacts/latest/system_status.json",
+    "system_status_md": "artifacts/latest/system_status.md",
+    "runtime_manifest": "config/runtime_manifest.json",
+    "dry_run_plan": "artifacts/latest/maintenance_dry_run_plan.json"
+  }
+}

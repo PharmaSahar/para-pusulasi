@@ -1,0 +1,251 @@
+[step0] ts_utc=2026-07-12T17:51:22Z
+[pwd]
+/Users/klara/Downloads/adsız klasör
+
+[branch]
+master
+
+[head]
+d51e31578e3f3bd18674441f2f7545a2dce2dd05
+
+[git_status_short]
+ M PROGRESS.md
+ M docs/governance_readiness_latest.md
+ M docs/production_dashboard_latest.md
+ M ops/refresh_governance_readiness.py
+ M output/state/activation_reports/latest.json
+ M scheduler.py
+ M src/content_generator.py
+ M src/pipeline.py
+ M src/production_quality_platform.py
+ M src/scheduler_utils.py
+ M src/trends_fetcher.py
+ M tests/test_analytics_join.py
+ M tests/test_content_generator_anthropic_guard.py
+ M tests/test_content_generator_prompting.py
+ M tests/test_editor_review.py
+ M tests/test_preprod_isolation_paths.py
+ M tests/test_production_quality_platform.py
+ M tests/test_refresh_governance_readiness.py
+ M tests/test_render_metrics.py
+ M tests/test_scheduler_provider_guardrails.py
+ M tests/test_scheduler_topic_domain_guard.py
+?? artifacts/deployment/
+?? artifacts/incidents/cross_channel_contamination/adjacent_run_comparison.md
+?? artifacts/incidents/cross_channel_contamination/cross_channel_audit.json
+?? artifacts/incidents/cross_channel_contamination/first_divergence.md
+?? artifacts/incidents/cross_channel_contamination/known_incident_report.md
+?? artifacts/incidents/cross_channel_contamination/lineage_report.md
+?? artifacts/incidents/cross_channel_contamination/permanent_fix_spec.md
+?? artifacts/incidents/cross_channel_contamination/producer_trace.md
+?? artifacts/incidents/cross_channel_contamination/regression_test_plan.md
+?? artifacts/incidents/cross_channel_contamination/remediation_approval_plan.md
+?? artifacts/incidents/cross_channel_contamination/replay/
+?? artifacts/incidents/cross_channel_contamination/reproduction_report.md
+?? artifacts/incidents/cross_channel_contamination/root_cause_analysis.md
+?? artifacts/incidents/cross_channel_contamination/root_cause_final.md
+?? artifacts/incidents/cross_channel_contamination/root_cause_proof.md
+?? artifacts/incidents/cross_channel_contamination/safety_gate_design.md
+?? artifacts/incidents/cross_channel_contamination/topics_call_graph.md
+?? artifacts/incidents/cross_channel_contamination/topics_producer_proof.md
+?? artifacts/incidents/cross_channel_contamination/topics_value_trace.md
+?? artifacts/incidents/cross_channel_contamination/topics_writer_map.md
+?? artifacts/latest/_lifecycle_noise_probe.json
+?? artifacts/latest/archive_execution_plan.md
+?? artifacts/latest/collision_analysis.md
+?? artifacts/latest/concurrency_storage_validation.json
+?? artifacts/latest/current_production_contracts.md
+?? artifacts/latest/dashboard_forensics_baseline.md
+?? artifacts/latest/dashboard_mutation_forensics.md
+?? artifacts/latest/dashboard_write_trace.jsonl
+?? artifacts/latest/final_authoritative_contracts.md
+?? artifacts/latest/final_production_recovery_report.md
+?? artifacts/latest/final_production_recovery_todos.md
+?? artifacts/latest/final_production_validation.txt
+?? artifacts/latest/final_recovery_repo_state.txt
+?? artifacts/latest/incident_lifecycle_validation.json
+?? artifacts/latest/maintenance_dry_run_plan.json
+?? artifacts/latest/observability_before_after_trace.json
+?? artifacts/latest/observability_fail_open_validation.json
+?? artifacts/latest/observability_line_level_proof.md
+?? artifacts/latest/observability_line_proof_diff.patch
+?? artifacts/latest/observability_root_cause.md
+?? artifacts/latest/observability_scope_audit.md
+?? artifacts/latest/outdated_test_migration_report.md
+?? artifacts/latest/phase2b_blocker_resolution.md
+?? artifacts/latest/phase2b_reference_scan.json
+?? artifacts/latest/production_contract_validation.md
+?? artifacts/latest/production_observability_audit.md
+?? artifacts/latest/production_observability_hardening_report.md
+?? artifacts/latest/production_recovery_todos.md
+?? artifacts/latest/pytest_warning_analysis.md
+?? artifacts/latest/repository_state_before_recovery.txt
+?? artifacts/latest/runtime_manifest_review.md
+?? artifacts/latest/runtime_storage_cleanstate_before.txt
+?? artifacts/latest/runtime_storage_contract.md
+?? artifacts/latest/runtime_storage_separation_report.md
+?? artifacts/latest/runtime_storage_validation_evidence.txt
+?? artifacts/latest/runtime_write_inventory.md
+?? artifacts/latest/system_status.json
+?? artifacts/latest/system_status.md
+?? artifacts/latest/t09_observability_fail_open_validation.txt
+?? artifacts/latest/telegram_incident_policy.md
+?? artifacts/latest/telegram_noise_validation.json
+?? artifacts/latest/topic_domain_quarantine_before_after.json
+?? artifacts/latest/topic_domain_quarantine_regression_before.txt
+?? artifacts/latest/topic_domain_quarantine_repro_output.json
+?? artifacts/latest/unknown_contract_before_after.json
+?? artifacts/latest/unknown_contract_evidence/
+?? artifacts/latest/unknown_contract_resolution.md
+?? config/runtime_manifest.json
+?? ops/export_runtime_dashboard.py
+?? ops/maintenance.py
+?? src/runtime_storage.py
+?? tests/conftest.py
+?? tests/repro_topic_domain_quarantine.py
+?? tests/test_maintenance.py
+?? tests/test_observability_incident_safety.py
+
+[git_diff_stat]
+ PROGRESS.md                                     |  20 +-
+ docs/governance_readiness_latest.md             |  18 +-
+ docs/production_dashboard_latest.md             |  32 +-
+ ops/refresh_governance_readiness.py             |   8 +-
+ output/state/activation_reports/latest.json     |  12 +-
+ scheduler.py                                    | 169 ++++++-
+ src/content_generator.py                        | 100 +++-
+ src/pipeline.py                                 |  49 +-
+ src/production_quality_platform.py              | 115 ++++-
+ src/scheduler_utils.py                          | 641 +++++++++++++++++++++++-
+ src/trends_fetcher.py                           |  62 ++-
+ tests/test_analytics_join.py                    |   1 +
+ tests/test_content_generator_anthropic_guard.py |  42 ++
+ tests/test_content_generator_prompting.py       |  36 +-
+ tests/test_editor_review.py                     |   1 +
+ tests/test_preprod_isolation_paths.py           |   4 +-
+ tests/test_production_quality_platform.py       |  46 ++
+ tests/test_refresh_governance_readiness.py      |   2 +-
+ tests/test_render_metrics.py                    |  42 +-
+ tests/test_scheduler_provider_guardrails.py     | 146 ++++++
+ tests/test_scheduler_topic_domain_guard.py      | 122 ++++-
+ 21 files changed, 1537 insertions(+), 131 deletions(-)
+
+[git_diff_name_status]
+M	PROGRESS.md
+M	docs/governance_readiness_latest.md
+M	docs/production_dashboard_latest.md
+M	ops/refresh_governance_readiness.py
+M	output/state/activation_reports/latest.json
+M	scheduler.py
+M	src/content_generator.py
+M	src/pipeline.py
+M	src/production_quality_platform.py
+M	src/scheduler_utils.py
+M	src/trends_fetcher.py
+M	tests/test_analytics_join.py
+M	tests/test_content_generator_anthropic_guard.py
+M	tests/test_content_generator_prompting.py
+M	tests/test_editor_review.py
+M	tests/test_preprod_isolation_paths.py
+M	tests/test_production_quality_platform.py
+M	tests/test_refresh_governance_readiness.py
+M	tests/test_render_metrics.py
+M	tests/test_scheduler_provider_guardrails.py
+M	tests/test_scheduler_topic_domain_guard.py
+
+[dashboard_sha256_current]
+1a5b1b7469f23a45e451db3e1563e8cc341cf457bdfeb84e93fae2e7fc9c20a6  docs/production_dashboard_latest.md
+
+[dashboard_sha256_head]
+6840cc7832d0df12f688e5ae981b53288908d205c74bece9bc61cc0d6127e6db  -
+
+[dashboard_complete_diff]
+diff --git a/docs/production_dashboard_latest.md b/docs/production_dashboard_latest.md
+index e2b19e0..9cefd2b 100644
+--- a/docs/production_dashboard_latest.md
++++ b/docs/production_dashboard_latest.md
+@@ -1,22 +1,30 @@
+ # Production Dashboard (Latest)
+
+-- Generated at: 2026-07-11T07:07:35.310746+00:00
+-- Scheduler status: pipeline_run
+-- Build SHA: b1bee96
+-- Scheduler PID: 80600
+-- Queue depth: 32
+-- Last error: -
++- Generated at: 2026-07-12T17:08:07.464006+00:00
++- Scheduler status: degraded
++- Build SHA: d51e315
++- Scheduler PID: 13358
++- Queue depth: 90
++- Last error: topic_provenance_collision:channels/saglik_pusulasi/output/topic_provenance/saglik_pusulasi/run_629677d82d254b6d949c27f82044029d/content_8f42e0869dde4e85b60a26ecbd4e7d17.json
+
+ ## Last 24h
+-- Videos: 3010
++- Videos: 27606
+ - Shorts: 0
+ - Success rate: 0.0
+ - Failure rate: 0.0
+-- Avg render duration (s): 84.364
+-- Upload success count: 351
++- Avg render duration (s): 5.996
++- Upload success count: 1632
+ - Blocked quality items: 0
+-- Retries: 28
++- Retries: 54
+
+ ## Channel Health
+-- test-channel: total=332 success=0 failed=0
+-- test_channel: total=2678 success=0 failed=0
++- borsa_akademi: total=172 success=0 failed=0
++- egitim_rehberi: total=26 success=0 failed=0
++- gayrimenkul_tv: total=426 success=0 failed=0
++- girisim_okulu: total=20 success=0 failed=0
++- kripto_rehber: total=220 success=0 failed=0
++- para_pusulasi: total=48 success=0 failed=0
++- saglik_pusulasi: total=34 success=0 failed=0
++- teknoloji_pusulasi: total=86 success=0 failed=0
++- test-channel: total=6094 success=0 failed=0
++- test_channel: total=20480 success=0 failed=0
+
+[active_scheduler_python_processes]
+klara            13358   0.0  0.8 436142416 427776   ??  S    11:52AM  64:08.97 /Library/Frameworks/Python.framework/Versions/3.13/Resources/Python.app/Contents/MacOS/Python scheduler.py
+klara             7197   0.0  1.5 1953154688 733424   ??  S    11:23PM   2:14.26 /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Plugin).app/Contents/MacOS/Code Helper (Plugin) /Users/klara/.vscode/extensions/ms-python.vscode-pylance-2026.2.1/dist/server.bundle.js --cancellationReceive=file:dda899f3ba55c178b69817643c0864ae054248b59f --node-ipc --clientProcessId=7122
+klara             7149   0.0  0.0 435341136   3568   ??  S    11:23PM   0:01.32 /Users/klara/.vscode/extensions/ms-python.vscode-python-envs-1.36.0-darwin-arm64/python-env-tools/bin/pet server
+
+[git_worktree_list]
+/Users/klara/Downloads/adsız klasör                           d51e315 [master]
+/private/tmp/domain_guard_probe_adc021b                       adc021b (detached HEAD)
+/private/tmp/governance_producer_execution                    e2df46a [review/governance-producer-recovery]
+/private/tmp/governance_producer_execution_clean              e2df46a (detached HEAD)
+/private/tmp/governance_producer_review_repo                  95ae84e (detached HEAD)
+/private/tmp/obs_baseline_worktree                            d51e315 (detached HEAD)
+/private/tmp/preprod-wt-CnaB3B                                d51e315 (detached HEAD)
+/private/tmp/preprod_cert_39b28aa_1783845980                  39b28aa (detached HEAD)
+/private/tmp/preprod_cert_afad342_1783847350                  afad342 (detached HEAD)
+/private/tmp/preprod_cert_d51e315_1783848624                  d51e315 (detached HEAD)
+/private/tmp/preprod_cert_e1771bc_1783848224                  e1771bc (detached HEAD)
+/private/tmp/preprod_runner_dev_631eb70                       631eb70 (detached HEAD)
+/private/tmp/preprod_runtime_631eb70                          631eb70 (detached HEAD)
+/private/tmp/preprod_runtime_bisect_49512bf_1783834362        49512bf (detached HEAD)
+/private/tmp/preprod_runtime_bisect_72b4bb2_1783830118        72b4bb2 (detached HEAD)
+/private/tmp/preprod_runtime_continue_adc021b_1783802427      adc021b (detached HEAD)
+/private/tmp/preprod_runtime_final_72b4bb2                    72b4bb2 (detached HEAD)
+/private/tmp/preprod_runtime_final_adc021b                    adc021b (detached HEAD)
+/private/tmp/preprod_runtime_target2_631eb70                  631eb70 (detached HEAD)
+/private/tmp/preprod_runtime_target3_631eb70                  631eb70 (detached HEAD)
+/private/tmp/preprod_runtime_target4_631eb70                  631eb70 (detached HEAD)
+/private/tmp/preprod_runtime_target5_631eb70                  631eb70 (detached HEAD)
+/private/tmp/preprod_runtime_target6_631eb70                  631eb70 (detached HEAD)
+/private/tmp/preprod_runtime_target6_c5a7d35                  c5a7d35 (detached HEAD)
+/private/tmp/preprod_runtime_target_631eb70                   631eb70 (detached HEAD)
+/private/tmp/preprod_test_mutation_trace2_d51e315_1783852067  d51e315 (detached HEAD)
+/private/tmp/preprod_test_mutation_trace_d51e315_1783849257   d51e315 (detached HEAD)
+/private/tmp/preprod_test_node_trace_d51e315_1783850906       d51e315 (detached HEAD)
+/private/tmp/preprod_verify_patch_d51e315_1783856384          d51e315 (detached HEAD)
+/private/tmp/preprod_write_probe_d51e315_1783854057           d51e315 (detached HEAD)
+/private/tmp/preprod_write_probe_raw_d51e315_1783854274       d51e315 (detached HEAD)
+/private/tmp/preprod_writer_trace_49512bf_1783843466          49512bf (detached HEAD)
+/private/tmp/unknown_contract_worktrees/after_d51e315         d51e315 (detached HEAD)
+/private/tmp/unknown_contract_worktrees/base_631eb70          631eb70 (detached HEAD)
+/private/tmp/unknown_contract_worktrees/before_adc021b        adc021b (detached HEAD)

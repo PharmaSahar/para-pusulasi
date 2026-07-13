@@ -1,0 +1,10 @@
+[validation] started 2026-07-12T17:34:02Z
+[validation] full pytest
+full_exit=0
+[validation] strict pytest (-W error)
+strict_exit=0
+[validation] strict run 1/5
+strict_run_1_exit=0
+strict_run_1_doc_mutation= M docs/production_dashboard_latest.md
+strict_x5=fail
+[validation] finished 2026-07-12T17:44:33Z

@@ -1,0 +1,41 @@
+[incident] unexpected tracked mutation during clean-state verification
+[ts_utc] 2026-07-12T18:13:30Z
+
+[scope]
+step6 focused gate was paused by user decision: stop and investigate source first
+no restore or test run was executed after mutation detection
+
+[evidence_file_state]
+target=docs/production_dashboard_latest.md
+status_short= M docs/production_dashboard_latest.md
+sha256=2483ee1327b4c1323cfd5a836b3f207cb02fc776ecc46784fb2004b5d5958011
+stat=mtime_epoch=1783879685 mtime_human=Jul 12 21:08:05 2026 size=1030
+
+[evidence_process]
+active_scheduler_process=/Library/Frameworks/Python.framework/Versions/3.13/Resources/Python.app/Contents/MacOS/Python scheduler.py
+active_scheduler_pid=13358
+lsof_dashboard_open_handles=none_at_probe_time
+
+[evidence_content_diff]
+- Generated at: 2026-07-12T18:08:05.567231+00:00
+- Scheduler PID: 13358
+- Build SHA: d51e315
+- Last error: topic_provenance_collision:channels/saglik_pusulasi/output/topic_provenance/saglik_pusulasi/run_8a7b7cdeceb8448eb5f5a500ab7b05d8/content_370ec7a8547442fdbc0a1deaff8b106e.json
+
+[evidence_log_correlation]
+logs/scheduler.log lines 14708-14735 include:
+- 2026-07-12 21:08:05,194 anthropic request completed
+- 2026-07-12 21:08:05,197 content selected
+- 2026-07-12 21:08:05,198 scheduler render error topic_provenance_collision with same run/content id as dashboard last_error
+telemetry entries in the same window include process_pid=13358 and git_sha_short=d51e315
+
+[assessment]
+probable_cause=live scheduler runtime process updated tracked docs dashboard during active run window
+confidence=high
+
+[state_of_verification]
+step6_status=blocked_pending_writer_control
+step7_status=not_started
+step8_status=not_started
+step9_status=not_started
+step10_status=not_started

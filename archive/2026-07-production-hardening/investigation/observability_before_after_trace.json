@@ -1,0 +1,63 @@
+{
+  "scheduler_preflight_fail_open_enabled": {
+    "baseline_behavior_from_head": "sys.exit(1)",
+    "current_behavior": "continue_in_degraded_mode",
+    "evidence": {
+      "head_source": "scheduler.py:1998-2017",
+      "current_source": "scheduler.py:2001-2017",
+      "current_test": "tests/test_scheduler_provider_guardrails.py::test_main_continues_when_provider_preflight_fails_but_local_fail_open_enabled"
+    }
+  },
+  "provider_circuit_open_fail_open_enabled": {
+    "baseline_behavior_from_head": "render skipped and returned early",
+    "current_behavior": "continue_render_path_in_degraded_mode",
+    "evidence": {
+      "head_source": "scheduler.py:805-818",
+      "current_source": "scheduler.py:813-831",
+      "current_test": "tests/test_scheduler_provider_guardrails.py::test_render_and_schedule_continues_when_provider_circuit_open_in_fail_open_mode"
+    }
+  },
+  "global_overload_pause_fail_open_enabled": {
+    "baseline_behavior_from_head": "render skipped and returned early",
+    "current_behavior": "continue_render_path_in_degraded_mode",
+    "evidence": {
+      "head_source": "scheduler.py:789-803",
+      "current_source": "scheduler.py:789-811",
+      "current_test": "tests/test_scheduler_provider_guardrails.py::test_render_and_schedule_continues_when_provider_circuit_open_in_fail_open_mode"
+    }
+  },
+  "topic_provenance_collision_lifecycle": {
+    "structured_events": ["INCIDENT_OPEN", "INCIDENT_UPDATED", "INCIDENT_RESOLVED"],
+    "telegram_messages_sent": 2,
+    "telegram_sequence": ["INCIDENT_OPEN", "RESOLVED_IN_UPLOAD_MESSAGE"],
+    "evidence": {
+      "current_source": "src/scheduler_utils.py:387-547, src/scheduler_utils.py:814-919",
+      "runtime_output": "lifecycle_probe output"
+    }
+  },
+  "path_sanitization": {
+    "leaks": [
+      {"input": "/var/log/demo/file.json", "contains_raw_path": true},
+      {"input": "/home/user/data/file.json", "contains_raw_path": true},
+      {"input": "relative/path/file.json", "contains_raw_path": true}
+    ],
+    "masked": [
+      {"input": "/tmp/alpha/file.json", "contains_raw_path": false},
+      {"input": "/opt/app/data/file.json", "contains_raw_path": false},
+      {"input": "/Users/tester/data/file.json", "contains_raw_path": false},
+      {"input": "C:\\Users\\tester\\data\\file.json", "contains_raw_path": false},
+      {"input": "\\\\server\\share\\data\\file.json", "contains_raw_path": false}
+    ],
+    "evidence": {
+      "current_source": "src/scheduler_utils.py:167-173, src/scheduler_utils.py:830-919",
+      "runtime_output": "path sanitizer probe output"
+    }
+  },
+  "full_suite": {
+    "pytest_q": "648 passed",
+    "pytest_q_werror": "648 passed",
+    "focused_behavior_tests": "4 passed",
+    "focused_telegram_tests": "5 passed",
+    "sanitizer_probe": "8 cases executed"
+  }
+}

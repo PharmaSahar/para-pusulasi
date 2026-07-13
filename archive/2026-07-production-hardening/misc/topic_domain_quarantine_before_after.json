@@ -1,0 +1,85 @@
+{
+  "comparison": "topic_domain_terminal_quarantine",
+  "before": {
+    "scope": "candidate_worktree",
+    "sha": "adc021b7842f1fb60ec289687128d539637745e8",
+    "test_node": "tests/test_scheduler_topic_domain_guard.py::test_scheduler_quarantines_topic_domain_block",
+    "result": "FAILED",
+    "exit_code": 1,
+    "attempt_count": 3,
+    "quarantine_queue_state": "missing",
+    "queue_after": {},
+    "first_divergent_branch": "generic retry branch in scheduler.render_and_schedule",
+    "render_upload_invocation": {
+      "notify_upload_called": false,
+      "scheduled_video_id_created": false
+    },
+    "evidence": {
+      "regression_file": "artifacts/latest/topic_domain_quarantine_regression_before.txt",
+      "probe": "artifacts/latest/unknown_contract_evidence/before_production_like_exception_probe.out"
+    }
+  },
+  "after": {
+    "scope": "current_workspace",
+    "sha": "d51e31578e3f3bd18674441f2f7545a2dce2dd05",
+    "single_node_result": "PASSED",
+    "single_node_exit_code": 0,
+    "guard_file_result": "PASSED",
+    "guard_file_tests": "11 passed",
+    "attempt_count": 1,
+    "quarantine_queue_state": "created_once",
+    "render_upload_invocation": {
+      "notify_upload_called": false,
+      "scheduled_video_id_created": false
+    },
+    "preserved_retry_behavior": {
+      "transient_retryable_exception": "PASSED"
+    },
+    "quarantine_required_fields_present": [
+      "timestamp",
+      "channel_id",
+      "channel_name",
+      "run_id",
+      "content_id",
+      "selected_topic",
+      "quarantine_reason",
+      "guard_reason_codes",
+      "expected_domain",
+      "detected_domain",
+      "source_exception_type",
+      "source_exception_message",
+      "retry_count",
+      "regeneration_count",
+      "terminal",
+      "prevent_upload",
+      "prevent_shorts_upload"
+    ],
+    "evidence": {
+      "single_node": "/tmp/t05_single.out",
+      "guard_file": "/tmp/t05_guard_file.out",
+      "repro_json": "artifacts/latest/topic_domain_quarantine_repro_output.json",
+      "probe": "artifacts/latest/unknown_contract_evidence/after_production_like_exception_probe.out"
+    }
+  },
+  "related_validation": {
+    "py_compile_scheduler": {
+      "exit_code": 0,
+      "output": "/tmp/t05_py_compile.out"
+    },
+    "scheduler_provider_guardrails": {
+      "result": "PASSED",
+      "tests": "13 passed",
+      "output": "/tmp/t05_provider_guardrails_noiso.out"
+    },
+    "queue_quarantine_admin": {
+      "result": "PASSED",
+      "tests": "3 passed",
+      "output": "/tmp/t05_quarantine_admin.out"
+    },
+    "production_safety_tests": {
+      "result": "PASSED",
+      "tests": "9 passed",
+      "output": "/tmp/t05_production_safety.out"
+    }
+  }
+}

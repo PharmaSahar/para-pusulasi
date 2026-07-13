@@ -1,0 +1,36 @@
+[started_utc] 2026-07-12T20:15:22Z
+
+[action] RESTORE TO HEAD
+command: git restore --source=HEAD -- PROGRESS.md
+path: PROGRESS.md
+reason: runtime-generated scheduler progress snapshot, not release content
+before:
+ M PROGRESS.md
+after:
+
+[action] RESTORE TO HEAD
+command: git restore --source=HEAD -- docs/governance_readiness_latest.md
+path: docs/governance_readiness_latest.md
+reason: generated readiness snapshot output refreshed by automation
+before:
+ M docs/governance_readiness_latest.md
+after:
+
+[action] RESTORE TO HEAD
+command: git restore --source=HEAD -- output/state/activation_reports/latest.json
+path: output/state/activation_reports/latest.json
+reason: generated activation latest snapshot with timestamp/tmp-path churn
+before:
+ M output/state/activation_reports/latest.json
+after:
+
+[action] ADD TO .gitignore
+command: apply_patch update .gitignore
+paths: artifacts/latest/, artifacts/deployment/, artifacts/incidents/cross_channel_contamination/, config/runtime_manifest.json
+reason: recurring generated validation/forensics outputs and machine-specific runtime manifest are out-of-scope for current release
+before_status:
+M .gitignore
+after_status:
+ M .gitignore
+
+[finished_utc] 2026-07-12T20:16:14Z

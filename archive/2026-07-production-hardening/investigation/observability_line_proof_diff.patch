@@ -1,0 +1,1199 @@
+diff --git a/scheduler.py b/scheduler.py
+index eea79b4..f1050c4 100644
+--- a/scheduler.py
++++ b/scheduler.py
+@@ -790,32 +790,47 @@ def render_and_schedule(channel_id: str):
+         if pause.get("is_open"):
+             retry_after = int(pause.get("retry_after_seconds", 0))
+             reason = str(pause.get("reason") or "overload_storm")
+-            logger.warning(
+-                "[%s] Global overload pause OPEN. Render atlandi, retry_after=%ss, reason=%s",
+-                cfg.name,
+-                retry_after,
+-                reason,
+-            )
+-            notify_error(
+-                cfg.name,
+-                f"Global overload pause open; provider cooling down ({retry_after}s)",
+-            )
+-            return
++            if _is_local_content_fail_open_enabled():
++                logger.warning(
++                    "[%s] Global overload pause OPEN but local fail-open mode active. Render degraded devam ediyor, retry_after=%ss, reason=%s",
++                    cfg.name,
++                    retry_after,
++                    reason,
++                )
++            else:
++                logger.warning(
++                    "[%s] Global overload pause OPEN. Render atlandi, retry_after=%ss, reason=%s",
++                    cfg.name,
++                    retry_after,
++                    reason,
++                )
++                notify_error(
++                    cfg.name,
++                    f"Global overload pause open; provider cooling down ({retry_after}s)",
++                )
++                return
+
+         # ── Provider circuit breaker kontrolü ────────────────────────
+         circuit = get_provider_circuit_status("anthropic")
+         if circuit.get("is_open"):
+             retry_after = int(circuit.get("retry_after_seconds", 0))
+-            logger.warning(
+-                "[%s] Anthropic circuit OPEN. Render atlandi, retry_after=%ss",
+-                cfg.name,
+-                retry_after,
+-            )
+-            notify_error(
+-                cfg.name,
+-                f"Anthropic circuit open; provider is cooling down ({retry_after}s)",
+-            )
+-            return
++            if _is_local_content_fail_open_enabled():
++                logger.warning(
++                    "[%s] Anthropic circuit OPEN but local fail-open mode active. Render degraded devam ediyor, retry_after=%ss",
++                    cfg.name,
++                    retry_after,
++                )
++            else:
++                logger.warning(
++                    "[%s] Anthropic circuit OPEN. Render atlandi, retry_after=%ss",
++                    cfg.name,
++                    retry_after,
++                )
++                notify_error(
++                    cfg.name,
++                    f"Anthropic circuit open; provider is cooling down ({retry_after}s)",
++                )
++                return
+
+         # ── Disk kontrolü ──────────────────────────────────────────────
+         if not check_disk_space(min_gb=1.5):
+@@ -888,8 +903,36 @@ def render_and_schedule(channel_id: str):
+                 if failure_class["classification"] == TERMINAL_FAILURE:
+                     logger.error(f"[{cfg.name}] Fatal hata (retry yok): {e}")
+                     if "failed_fact_check" not in error_str:
+-                        decision = notify_error(cfg.name, error_text)
+-                        logger.info(f"[{cfg.name}] Telegram karar feedback: {decision.get('decision')}")
++                        decision = notify_error(
++                            cfg.name,
++                            error_text,
++                            context={
++                                "run_id": str(getattr(e, "_run_id", "") or ""),
++                                "content_id": str(getattr(e, "_content_id", "") or ""),
++                                "pipeline_stage": str(getattr(e, "_pipeline_stage", "content_generation") or "content_generation"),
++                                "retry_count": attempt,
++                                "retry_limit": max_attempts,
++                                "regeneration_count": int(getattr(e, "_regeneration_count", 0) or 0),
++                                "regeneration_limit": int(getattr(e, "_regeneration_limit", 1) or 1),
++                                "error_type": str(getattr(e, "_error_type", "") or ""),
++                                "guard_reason_codes": list(getattr(e, "_guard_reason_codes", []) or []),
++                                "triggering_validator": str(getattr(e, "_triggering_validator", "") or ""),
++                                "selected_topic": str(getattr(e, "_topic", "") or ""),
++                                "collision_path": str(getattr(e, "_collision_path", "") or ""),
++                                "expected_channel": channel_id,
++                                "detected_channel": str(getattr(e, "_detected_channel", "") or channel_id),
++                                "original_topic_source": str(getattr(e, "_original_topic_source", "") or ""),
++                                "provenance_score": getattr(e, "_provenance_score", None),
++                                "confidence_score": getattr(e, "_confidence_score", None),
++                            },
++                        )
++                        logger.info(
++                            "[%s] Telegram karar feedback: %s incident_id=%s lifecycle=%s",
++                            cfg.name,
++                            decision.get("decision"),
++                            decision.get("incident_id", ""),
++                            decision.get("incident_lifecycle", ""),
++                        )
+                         setattr(e, "_scheduler_notify_sent", True)
+                     raise
+
+@@ -1097,8 +1140,36 @@ def render_and_schedule(channel_id: str):
+             from src.channel_manager import get_channel
+             cfg = get_channel(channel_id)
+             from src.scheduler_utils import notify_error
+-            decision = notify_error(cfg.name, routed_error_text)
+-            logger.info(f"[{cfg.name}] Telegram karar feedback: {decision.get('decision')}")
++            decision = notify_error(
++                cfg.name,
++                routed_error_text,
++                context={
++                    "run_id": str(getattr(e, "_run_id", "") or ""),
++                    "content_id": str(getattr(e, "_content_id", "") or ""),
++                    "pipeline_stage": str(getattr(e, "_pipeline_stage", "scheduler_render") or "scheduler_render"),
++                    "retry_count": int(getattr(e, "_retry_count", 0) or 0),
++                    "retry_limit": 3,
++                    "regeneration_count": int(getattr(e, "_regeneration_count", 0) or 0),
++                    "regeneration_limit": int(getattr(e, "_regeneration_limit", 1) or 1),
++                    "error_type": str(getattr(e, "_error_type", "") or ""),
++                    "guard_reason_codes": list(getattr(e, "_guard_reason_codes", []) or []),
++                    "triggering_validator": str(getattr(e, "_triggering_validator", "") or ""),
++                    "selected_topic": str(getattr(e, "_topic", "") or ""),
++                    "collision_path": str(getattr(e, "_collision_path", "") or ""),
++                    "expected_channel": channel_id,
++                    "detected_channel": str(getattr(e, "_detected_channel", "") or channel_id),
++                    "original_topic_source": str(getattr(e, "_original_topic_source", "") or ""),
++                    "provenance_score": getattr(e, "_provenance_score", None),
++                    "confidence_score": getattr(e, "_confidence_score", None),
++                },
++            )
++            logger.info(
++                "[%s] Telegram karar feedback: %s incident_id=%s lifecycle=%s",
++                cfg.name,
++                decision.get("decision"),
++                decision.get("incident_id", ""),
++                decision.get("incident_lifecycle", ""),
++            )
+         except Exception:
+             pass
+     finally:
+@@ -1787,6 +1858,10 @@ def _run_provider_preflight_check(*, skip_preflight: bool = False) -> tuple[bool
+     return ok, detail
+
+
++def _is_local_content_fail_open_enabled() -> bool:
++    return _is_enabled(os.getenv("ANTHROPIC_FAIL_OPEN_LOCAL_CONTENT", "true"))
++
++
+ def run_optimization_cycle_once() -> int:
+     """Runtime optimization cycle'i bir kez calistir ve sonucu yazdir."""
+     if not RUNTIME_CYCLE_LOCK.acquire(blocking=False):
+@@ -1924,15 +1999,31 @@ def main():
+         skip_preflight=skip_provider_preflight,
+     )
+     if not provider_ok:
+-        _record_safety_gate_result(
+-            mode="startup",
+-            startup_health=startup_health,
+-            provider_preflight_ok=False,
+-            provider_preflight_detail=provider_detail,
+-        )
+-        logger.error("Startup provider preflight failed: %s", provider_detail)
+-        print(f"ERROR: Anthropic preflight failed: {provider_detail}")
+-        sys.exit(1)
++        fail_open_enabled = _is_local_content_fail_open_enabled()
++        detail = str(provider_detail or "")
++        if fail_open_enabled:
++            degraded_detail = f"{detail}; degraded_mode=local_fail_open_content"
++            _record_safety_gate_result(
++                mode="startup",
++                startup_health=startup_health,
++                provider_preflight_ok=False,
++                provider_preflight_detail=degraded_detail,
++            )
++            logger.warning(
++                "Startup provider preflight failed but continuing in degraded mode: %s",
++                detail,
++            )
++            print(f"WARNING: Anthropic preflight failed, degraded mode aktif: {detail}")
++        else:
++            _record_safety_gate_result(
++                mode="startup",
++                startup_health=startup_health,
++                provider_preflight_ok=False,
++                provider_preflight_detail=detail,
++            )
++            logger.error("Startup provider preflight failed: %s", detail)
++            print(f"ERROR: Anthropic preflight failed: {detail}")
++            sys.exit(1)
+
+     _record_safety_gate_result(
+         mode="startup",
+diff --git a/src/pipeline.py b/src/pipeline.py
+index c911982..de3779c 100644
+--- a/src/pipeline.py
++++ b/src/pipeline.py
+@@ -12,7 +12,7 @@ from datetime import datetime, timezone
+ from pathlib import Path
+
+ from .config import config as _default_config
+-from .content_generator import ContentGenerator, VideoContent
++from .content_generator import ContentGenerator, TopicDomainBlockedError, VideoContent
+ from .editor_review import build_editor_review_metadata
+ from .fact_sources import build_default_fact_provider
+ from .factual_freshness import FactCheckFailed, validate_script_factual_freshness
+@@ -861,13 +861,48 @@ def run_full_pipeline(
+
+     def _generate_content(generator: ContentGenerator, *, generation_topic: str | None, additional_guidance: str | None = None):
+         nonlocal content
+-        if additional_guidance is None:
+-            content = generator.generate_and_save(generation_topic)
+-        else:
+-            try:
+-                content = generator.generate_and_save(generation_topic, additional_guidance=additional_guidance)
+-            except TypeError:
++        try:
++            if additional_guidance is None:
+                 content = generator.generate_and_save(generation_topic)
++            else:
++                try:
++                    content = generator.generate_and_save(generation_topic, additional_guidance=additional_guidance)
++                except TypeError:
++                    content = generator.generate_and_save(generation_topic)
++        except TopicDomainBlockedError as topic_error:
++            trace = dict(getattr(topic_error, "trace", {}) or {})
++            msg = str(topic_error or "")
++            msg_lower = msg.lower()
++            is_collision = "topic_provenance_collision" in msg_lower
++            setattr(topic_error, "_skip_scheduler_pipeline_retry", True)
++            setattr(topic_error, "_quarantine_reason", "topic_provenance_collision" if is_collision else "topic_domain_blocked")
++
++            guard_reason_codes = list(getattr(topic_error, "_guard_reason_codes", []) or [])
++            if is_collision and "topic_provenance_collision" not in guard_reason_codes:
++                guard_reason_codes.append("topic_provenance_collision")
++            if (not is_collision) and "topic_domain_blocked" not in guard_reason_codes:
++                guard_reason_codes.append("topic_domain_blocked")
++            setattr(topic_error, "_guard_reason_codes", sorted(set(str(code).strip().lower() for code in guard_reason_codes if str(code).strip())))
++
++            collision_path = ""
++            if is_collision and ":" in msg:
++                collision_path = msg.split(":", 1)[1].strip()
++
++            setattr(topic_error, "_run_id", str(result.get("run_id", "") or ""))
++            setattr(topic_error, "_content_id", str(result.get("content_id", "") or ""))
++            setattr(topic_error, "_topic", str(generation_topic or trace.get("selected_topic") or ""))
++            setattr(topic_error, "_detected_domain", str(trace.get("detected_domain") or "unknown"))
++            setattr(topic_error, "_detected_channel", str(trace.get("channel_id") or result.get("channel") or ""))
++            setattr(topic_error, "_triggering_validator", "topic_provenance_validator" if is_collision else "topic_domain_validator")
++            setattr(topic_error, "_pipeline_stage", "content_generation")
++            setattr(topic_error, "_error_type", "topic_provenance_collision" if is_collision else "topic_domain_blocked")
++            setattr(topic_error, "_collision_path", collision_path)
++            setattr(topic_error, "_original_topic_source", str(trace.get("provider") or "unknown"))
++            setattr(topic_error, "_provenance_score", trace.get("provenance_score"))
++            setattr(topic_error, "_confidence_score", trace.get("confidence_score"))
++            setattr(topic_error, "_regeneration_count", int(result.get("pipeline_retry_count", 0) or 0))
++            setattr(topic_error, "_regeneration_limit", 1)
++            raise
+         result["title"] = content.title
+         result["script_path"] = str(getattr(content, "saved_path", "") or f"{cfg.scripts_dir}/{content.created_at[:10]}_{content.title[:30]}.json")
+
+diff --git a/src/scheduler_utils.py b/src/scheduler_utils.py
+index d514b4d..929abb1 100644
+--- a/src/scheduler_utils.py
++++ b/src/scheduler_utils.py
+@@ -7,15 +7,21 @@ Scheduler Sağlık ve Bakım Araçları
+ - Topic deduplication
+ """
+ import gc
++import hashlib
+ import json
+ import logging
+ import os
+ import re
+ import shutil
+ import time
++import threading
++import uuid
++from contextlib import contextmanager
+ from datetime import datetime, timedelta, timezone
+ from pathlib import Path
+
++import fcntl
++
+ from dotenv import dotenv_values
+
+ logger = logging.getLogger("SchedulerUtils")
+@@ -29,6 +35,516 @@ QUEUE_FORBIDDEN_MARKET_RE = re.compile(
+ )
+
+ PROVIDER_HEALTH_FILE = "output/state/provider_health.json"
++INCIDENT_STATE_FILE = Path("output/state/incident_state.json")
++INCIDENT_EVENTS_FILE = Path("logs/production_incidents.jsonl")
++INCIDENT_METRICS_FILE = Path("output/state/incident_metrics_latest.json")
++INCIDENT_LOCK_FILE = Path("output/state/incident_state.lock")
++_INCIDENT_THREAD_LOCK = threading.Lock()
++
++
++def _incident_debug_mode_enabled() -> bool:
++    return str(os.getenv("PRODUCTION_ALERT_DEBUG_MODE", "false")).strip().lower() in {"1", "true", "yes", "on"}
++
++
++def _jsonl_append(path: Path, payload: dict) -> None:
++    path.parent.mkdir(parents=True, exist_ok=True)
++    with path.open("a", encoding="utf-8") as handle:
++        handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
++    _enforce_jsonl_bounds(path)
++
++
++def _atomic_write_json(path: Path, payload: dict) -> None:
++    path.parent.mkdir(parents=True, exist_ok=True)
++    tmp = path.with_suffix(path.suffix + ".tmp")
++    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
++    os.replace(tmp, path)
++
++
++@contextmanager
++def _incident_io_lock():
++    INCIDENT_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
++    with _INCIDENT_THREAD_LOCK:
++        with INCIDENT_LOCK_FILE.open("a+", encoding="utf-8") as lock_handle:
++            try:
++                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
++                yield
++            finally:
++                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
++
++
++def _get_incident_max_records() -> int:
++    return max(100, _get_int_env("INCIDENT_STATE_MAX_RECORDS", 5000))
++
++
++def _get_incident_retention_days() -> int:
++    return max(1, _get_int_env("INCIDENT_STATE_RETENTION_DAYS", 14))
++
++
++def _get_incident_events_max_lines() -> int:
++    return max(1, _get_int_env("INCIDENT_EVENTS_MAX_LINES", 50000))
++
++
++def _prune_incident_state(state: dict) -> dict:
++    incidents = dict(state.get("incidents") or {})
++    if not incidents:
++        return state
++
++    now = _now_utc()
++    cutoff = now - timedelta(days=_get_incident_retention_days())
++    max_records = _get_incident_max_records()
++
++    def _incident_ts(inc: dict) -> datetime:
++        for key in ("updated_at", "resolved_at", "opened_at"):
++            parsed = _parse_iso_utc(str((inc or {}).get(key) or ""))
++            if parsed is not None:
++                return parsed
++        return datetime.fromtimestamp(0, tz=timezone.utc)
++
++    kept: dict[str, dict] = {}
++    for incident_id, inc in incidents.items():
++        status = str((inc or {}).get("status") or "open").strip().lower()
++        ts = _incident_ts(inc)
++        if status == "resolved" and ts < cutoff:
++            continue
++        kept[str(incident_id)] = dict(inc or {})
++
++    if len(kept) > max_records:
++        sorted_items = sorted(
++            kept.items(),
++            key=lambda item: _incident_ts(item[1]),
++            reverse=True,
++        )
++        kept = dict(sorted_items[:max_records])
++
++    open_map = dict(state.get("open_by_fingerprint") or {})
++    live_ids = set(kept.keys())
++    cleaned_open = {
++        key: value
++        for key, value in open_map.items()
++        if str((value or {}).get("incident_id") or "") in live_ids
++    }
++
++    state["incidents"] = kept
++    state["open_by_fingerprint"] = cleaned_open
++    return state
++
++
++def _enforce_jsonl_bounds(path: Path) -> None:
++    max_lines = _get_incident_events_max_lines()
++    try:
++        lines = path.read_text(encoding="utf-8").splitlines()
++    except Exception:
++        return
++    if len(lines) <= max_lines:
++        return
++    trimmed = "\n".join(lines[-max_lines:]) + "\n"
++    tmp = path.with_suffix(path.suffix + ".tmp")
++    try:
++        tmp.write_text(trimmed, encoding="utf-8")
++        os.replace(tmp, path)
++    except Exception:
++        logger.warning("Incident JSONL rotation failed: %s", path)
++
++
++def _load_incident_state() -> dict:
++    if not INCIDENT_STATE_FILE.exists():
++        return {"open_by_fingerprint": {}, "incidents": {}}
++    try:
++        payload = json.loads(INCIDENT_STATE_FILE.read_text(encoding="utf-8"))
++    except Exception:
++        return {"open_by_fingerprint": {}, "incidents": {}}
++    if not isinstance(payload, dict):
++        return {"open_by_fingerprint": {}, "incidents": {}}
++    payload.setdefault("open_by_fingerprint", {})
++    payload.setdefault("incidents", {})
++    return payload
++
++
++def _save_incident_state(payload: dict) -> None:
++    _atomic_write_json(INCIDENT_STATE_FILE, payload)
++
++
++def _sanitize_operator_text(value: str) -> str:
++    text = " ".join(str(value or "").split())
++    if not text:
++        return text
++    if _incident_debug_mode_enabled():
++        return text
++    # Keep alerts operator-friendly: hide raw absolute/relative paths unless debug is on.
++    text = re.sub(r"([A-Za-z]:\\[^\s]+|/(?:Users|opt|tmp)/[^\s]+)", "[path_hidden]", text)
++    text = re.sub(r"(?:^|\s)(?:channels|output|logs)/[^\s]+", " [path_hidden]", text)
++    return " ".join(text.split())
++
++
++def _classify_collision_reason(*, error_text: str, trace: dict | None = None, expected_channel: str = "", detected_channel: str = "") -> str:
++    txt = str(error_text or "").lower()
++    tr = dict(trace or {})
++    rejected = [str((item or {}).get("reason") or "").lower() for item in (tr.get("rejected_candidates") or [])]
++
++    if expected_channel and detected_channel and expected_channel != detected_channel:
++        return "metadata mismatch"
++    if "cross_channel_topic_contamination" in txt or "topic_provenance_collision" in txt:
++        return "cross-channel cache reuse"
++    if "inherit" in txt or "fallback_source" in tr:
++        return "wrong topic inheritance"
++    if any("market_term_not_allowed_for_non_market_niche" in r for r in rejected):
++        return "llm hallucinated category"
++    if any("missing_expected_domain_anchor" in r or "missing_market_domain_anchor" in r for r in rejected):
++        return "planner selected invalid topic"
++    if "overlap" in txt or "similar" in txt:
++        return "keyword overlap"
++    return "unknown"
++
++
++def _incident_error_type(summary_text: str) -> str:
++    txt = str(summary_text or "").lower()
++    if "topic_provenance_collision" in txt:
++        return "topic_provenance_collision"
++    if "topic_domain_blocked" in txt:
++        return "topic_domain_blocked"
++    if "credit balance" in txt:
++        return "credit"
++    if "quota" in txt:
++        return "quota"
++    if "anthropic circuit open" in txt:
++        return "provider_circuit_open"
++    if "failed_fact_check" in txt:
++        return "failed_fact_check"
++    if "timeout" in txt or "dns" in txt or "connection" in txt:
++        return "network"
++    return "unknown"
++
++
++def _compute_incident_fingerprint(*, channel_name: str, error_type: str, decision: str, run_id: str, content_id: str, pipeline_stage: str) -> str:
++    key = "|".join(
++        [
++            str(channel_name or "").strip().lower(),
++            str(error_type or "unknown").strip().lower(),
++            str(decision or "").strip().lower(),
++            str(run_id or "").strip(),
++            str(content_id or "").strip(),
++            str(pipeline_stage or "").strip().lower(),
++        ]
++    )
++    return hashlib.sha256(key.encode("utf-8")).hexdigest()
++
++
++def _safe_int(value: object, default: int = 0) -> int:
++    try:
++        return int(value)
++    except Exception:
++        return default
++
++
++def _extract_collision_path(error_text: str, context: dict) -> str:
++    explicit = str(context.get("collision_path") or "").strip()
++    if explicit:
++        return explicit
++    raw = str(error_text or "")
++    if "topic_provenance_collision:" not in raw:
++        return ""
++    return raw.split("topic_provenance_collision:", 1)[-1].strip()
++
++
++def _load_collision_trace(collision_path: str) -> dict:
++    path = Path(str(collision_path or "").strip())
++    if not collision_path or not path.exists() or not path.is_file():
++        return {}
++    try:
++        payload = json.loads(path.read_text(encoding="utf-8"))
++        return payload if isinstance(payload, dict) else {}
++    except Exception:
++        return {}
++
++
++def _build_incident_event(*, lifecycle_event: str, incident_id: str, channel_name: str, severity: str, event_type: str, decision: str, duration_ms: int, retry_count: int, regeneration_count: int, run_id: str, pipeline_stage: str, context: dict) -> dict:
++    now_iso = _format_iso_utc(_now_utc())
++    payload = {
++        "timestamp": now_iso,
++        "incident_id": incident_id,
++        "run_id": run_id,
++        "channel": channel_name,
++        "pipeline_stage": pipeline_stage or str(context.get("pipeline_stage") or "unknown"),
++        "severity": severity,
++        "event_type": event_type,
++        "decision": decision,
++        "duration_ms": max(0, _safe_int(duration_ms, 0)),
++        "retry_count": max(0, retry_count),
++        "regeneration_count": max(0, regeneration_count),
++        "incident_lifecycle": lifecycle_event,
++        "next_action": str(context.get("next_action") or ""),
++        "error_type": str(context.get("error_type") or "unknown"),
++        "error_summary": str(context.get("error_summary") or ""),
++    }
++
++    if str(context.get("error_type") or "") == "topic_provenance_collision":
++        collision_path = _extract_collision_path(str(context.get("raw_error") or ""), context)
++        trace_payload = _load_collision_trace(collision_path)
++        expected_channel = str(context.get("expected_channel") or channel_name)
++        detected_channel = str(context.get("detected_channel") or trace_payload.get("channel_id") or expected_channel)
++        selected_topic = str(context.get("selected_topic") or trace_payload.get("selected_topic") or "")
++        original_topic_source = str(
++            context.get("original_topic_source")
++            or trace_payload.get("provider_name")
++            or (trace_payload.get("runtime_build_identity") or {}).get("git_sha_short")
++            or "unknown"
++        )
++        collision_reason = _classify_collision_reason(
++            error_text=str(context.get("raw_error") or ""),
++            trace=trace_payload,
++            expected_channel=expected_channel,
++            detected_channel=detected_channel,
++        )
++
++        payload.update(
++            {
++                "expected_channel": expected_channel,
++                "detected_channel": detected_channel,
++                "selected_topic": selected_topic,
++                "original_topic_source": original_topic_source,
++                "provenance_score": context.get("provenance_score") if context.get("provenance_score") is not None else trace_payload.get("provenance_score"),
++                "confidence_score": context.get("confidence_score") if context.get("confidence_score") is not None else trace_payload.get("confidence_score"),
++                "triggering_validator": str(
++                    context.get("triggering_validator")
++                    or ((context.get("guard_reason_codes") or [""])[0] if isinstance(context.get("guard_reason_codes"), list) else "")
++                    or "topic_provenance_validator"
++                ),
++                "retry_number": max(0, retry_count),
++                "regeneration_number": max(0, regeneration_count),
++                "decision_taken": decision,
++                "next_action": str(context.get("next_action") or "quarantine_for_review"),
++                "collision_diagnostics": collision_reason,
++                "collision_path": collision_path if _incident_debug_mode_enabled() else "",
++            }
++        )
++    return payload
++
++
++def _update_incident_metrics(state: dict) -> dict:
++    incidents = dict(state.get("incidents") or {})
++    now = _now_utc()
++    one_hour_ago = now - timedelta(hours=1)
++
++    collisions_hour = 0
++    collisions_channel: dict[str, int] = {}
++    collision_reasons: dict[str, int] = {}
++    regen_total = 0
++    regen_success = 0
++    retry_total = 0
++    retry_success = 0
++    recovery_durations_ms: list[int] = []
++
++    for _, inc in incidents.items():
++        channel = str(inc.get("channel") or "unknown")
++        error_type = str(inc.get("error_type") or "unknown")
++        opened_at = _parse_iso_utc(str(inc.get("opened_at") or ""))
++        status = str(inc.get("status") or "open")
++        retry_max = max(0, _safe_int(inc.get("max_retry_count"), 0))
++        regen_max = max(0, _safe_int(inc.get("max_regeneration_count"), 0))
++        collision_reason = str(inc.get("top_collision_reason") or "unknown")
++
++        if error_type == "topic_provenance_collision":
++            collisions_channel[channel] = collisions_channel.get(channel, 0) + 1
++            collision_reasons[collision_reason] = collision_reasons.get(collision_reason, 0) + 1
++            if opened_at and opened_at >= one_hour_ago.replace(tzinfo=opened_at.tzinfo):
++                collisions_hour += 1
++
++        if retry_max > 0:
++            retry_total += 1
++            if status == "resolved":
++                retry_success += 1
++
++        if regen_max > 0:
++            regen_total += 1
++            if status == "resolved":
++                regen_success += 1
++
++        if status == "resolved":
++            resolved_at = _parse_iso_utc(str(inc.get("resolved_at") or ""))
++            if opened_at and resolved_at:
++                recovery_durations_ms.append(max(0, int((resolved_at - opened_at).total_seconds() * 1000)))
++
++    mean_recovery = int(sum(recovery_durations_ms) / len(recovery_durations_ms)) if recovery_durations_ms else 0
++    top_collision_reasons = [
++        {"reason": reason, "count": count}
++        for reason, count in sorted(collision_reasons.items(), key=lambda x: x[1], reverse=True)[:5]
++    ]
++
++    snapshot = {
++        "generated_at": _format_iso_utc(now),
++        "collisions_per_hour": collisions_hour,
++        "collisions_per_channel": collisions_channel,
++        "regeneration_success_rate": (regen_success / regen_total) if regen_total else 0.0,
++        "retry_success_rate": (retry_success / retry_total) if retry_total else 0.0,
++        "mean_recovery_time_ms": mean_recovery,
++        "top_collision_reasons": top_collision_reasons,
++        "incident_count": len(incidents),
++    }
++    _atomic_write_json(INCIDENT_METRICS_FILE, snapshot)
++    return snapshot
++
++
++def _register_incident_event(*, lifecycle_event: str, channel_name: str, severity: str, decision: str, next_action: str, error_summary: str, raw_error: str, context: dict | None = None) -> dict:
++    ctx = dict(context or {})
++    run_id = str(ctx.get("run_id") or "")
++    content_id = str(ctx.get("content_id") or "")
++    pipeline_stage = str(ctx.get("pipeline_stage") or "scheduler")
++    retry_count = max(0, _safe_int(ctx.get("retry_count"), 0))
++    regeneration_count = max(0, _safe_int(ctx.get("regeneration_count"), 0))
++    retry_limit = max(0, _safe_int(ctx.get("retry_limit"), 0))
++    regeneration_limit = max(0, _safe_int(ctx.get("regeneration_limit"), 0))
++    error_type = str(ctx.get("error_type") or _incident_error_type(error_summary)).strip().lower() or "unknown"
++    ctx["error_type"] = error_type
++    ctx["next_action"] = next_action
++    ctx["error_summary"] = error_summary
++    ctx["raw_error"] = raw_error
++
++    fingerprint = str(ctx.get("incident_fingerprint") or _compute_incident_fingerprint(
++        channel_name=channel_name,
++        error_type=error_type,
++        decision=decision,
++        run_id=run_id,
++        content_id=content_id,
++        pipeline_stage=pipeline_stage,
++    ))
++
++    with _incident_io_lock():
++        state = _load_incident_state()
++        open_map = state.setdefault("open_by_fingerprint", {})
++        incidents = state.setdefault("incidents", {})
++        now = _now_utc()
++        now_iso = _format_iso_utc(now)
++        opened = open_map.get(fingerprint)
++
++        if lifecycle_event == "INCIDENT_RESOLVED":
++            if not opened:
++                return {"lifecycle_event": "INCIDENT_RESOLVED_SKIPPED"}
++            incident_id = str(opened.get("incident_id") or "")
++            summary = dict(incidents.get(incident_id) or {})
++            summary["status"] = "resolved"
++            summary["resolved_at"] = now_iso
++            summary["last_error_summary"] = error_summary
++            summary["last_decision"] = decision
++            summary["max_retry_count"] = max(_safe_int(summary.get("max_retry_count"), 0), retry_count)
++            summary["max_regeneration_count"] = max(_safe_int(summary.get("max_regeneration_count"), 0), regeneration_count)
++            incidents[incident_id] = summary
++            open_map.pop(fingerprint, None)
++
++            event_payload = _build_incident_event(
++                lifecycle_event="INCIDENT_RESOLVED",
++                incident_id=incident_id,
++                channel_name=channel_name,
++                severity=severity,
++                event_type="incident_resolved",
++                decision=decision,
++                duration_ms=int((now - _parse_iso_utc(str(summary.get("opened_at") or now_iso)) ).total_seconds() * 1000) if _parse_iso_utc(str(summary.get("opened_at") or "")) else 0,
++                retry_count=retry_count,
++                regeneration_count=regeneration_count,
++                run_id=run_id,
++                pipeline_stage=pipeline_stage,
++                context=ctx,
++            )
++            _jsonl_append(INCIDENT_EVENTS_FILE, event_payload)
++            _prune_incident_state(state)
++            _save_incident_state(state)
++            _update_incident_metrics(state)
++            return {
++                "incident_id": incident_id,
++                "lifecycle_event": "INCIDENT_RESOLVED",
++                "retry_count": retry_count,
++                "retry_limit": retry_limit,
++                "regeneration_count": regeneration_count,
++                "regeneration_limit": regeneration_limit,
++                "event": event_payload,
++            }
++
++        if opened:
++            incident_id = str(opened.get("incident_id") or "")
++            lifecycle = "INCIDENT_UPDATED"
++        else:
++            incident_id = str(uuid.uuid4())
++            lifecycle = "INCIDENT_OPEN"
++            open_map[fingerprint] = {
++                "incident_id": incident_id,
++                "channel": channel_name,
++                "opened_at": now_iso,
++                "error_type": error_type,
++            }
++
++        summary = dict(incidents.get(incident_id) or {})
++        summary.update(
++            {
++                "incident_id": incident_id,
++                "fingerprint": fingerprint,
++                "channel": channel_name,
++                "error_type": error_type,
++                "status": "open",
++                "opened_at": summary.get("opened_at") or now_iso,
++                "updated_at": now_iso,
++                "run_id": run_id,
++                "pipeline_stage": pipeline_stage,
++                "last_error_summary": error_summary,
++                "last_decision": decision,
++                "max_retry_count": max(_safe_int(summary.get("max_retry_count"), 0), retry_count),
++                "max_regeneration_count": max(_safe_int(summary.get("max_regeneration_count"), 0), regeneration_count),
++                "top_collision_reason": str(ctx.get("collision_diagnostics") or summary.get("top_collision_reason") or "unknown"),
++            }
++        )
++        incidents[incident_id] = summary
++
++        event_payload = _build_incident_event(
++            lifecycle_event=lifecycle,
++            incident_id=incident_id,
++            channel_name=channel_name,
++            severity=severity,
++            event_type="incident_opened" if lifecycle == "INCIDENT_OPEN" else "incident_updated",
++            decision=decision,
++            duration_ms=0,
++            retry_count=retry_count,
++            regeneration_count=regeneration_count,
++            run_id=run_id,
++            pipeline_stage=pipeline_stage,
++            context=ctx,
++        )
++        _jsonl_append(INCIDENT_EVENTS_FILE, event_payload)
++        _prune_incident_state(state)
++        _save_incident_state(state)
++        _update_incident_metrics(state)
++        return {
++            "incident_id": incident_id,
++            "lifecycle_event": lifecycle,
++            "retry_count": retry_count,
++            "retry_limit": retry_limit,
++            "regeneration_count": regeneration_count,
++            "regeneration_limit": regeneration_limit,
++            "event": event_payload,
++        }
++
++
++def _resolve_open_incidents_for_channel(channel_name: str, *, run_id: str = "", pipeline_stage: str = "upload", severity: str = "INFO") -> list[dict]:
++    state = _load_incident_state()
++    open_map = dict(state.get("open_by_fingerprint") or {})
++    resolved: list[dict] = []
++    for fingerprint, meta in open_map.items():
++        if str(meta.get("channel") or "") != str(channel_name or ""):
++            continue
++        result = _register_incident_event(
++            lifecycle_event="INCIDENT_RESOLVED",
++            channel_name=channel_name,
++            severity=severity,
++            decision="resolved_after_successful_upload",
++            next_action="monitor_next_cycle",
++            error_summary="Upload successful; incident resolved.",
++            raw_error="",
++            context={
++                "incident_fingerprint": fingerprint,
++                "run_id": run_id,
++                "pipeline_stage": pipeline_stage,
++            },
++        )
++        if result.get("lifecycle_event") == "INCIDENT_RESOLVED":
++            resolved.append(result)
++    return resolved
+
+
+ def _get_int_env(name: str, default: int) -> int:
+@@ -296,33 +812,124 @@ def send_telegram(message: str):
+
+
+ def notify_upload(channel_name: str, title: str, url: str, short_url: str = ""):
++    try:
++        resolved = _resolve_open_incidents_for_channel(channel_name, pipeline_stage="upload")
++    except Exception as e:
++        logger.warning("Incident resolve telemetry failed (non-blocking): %s", e)
++        resolved = []
+     send_telegram(
+         f"✅ <b>Yeni Video Yüklendi!</b>\n"
+         f"📺 Kanal: {channel_name}\n"
+         f"🎬 {title[:60]}\n"
+         f"🔗 {url}"
+         + (f"\n📱 Short: {short_url}" if short_url else "")
++        + (f"\n🟢 Incident Resolved: {', '.join(str(item.get('incident_id') or '') for item in resolved if item.get('incident_id'))}" if resolved else "")
+     )
+
+
+-def notify_error(channel_name: str, error: str) -> dict:
+-    error_text = _summarize_error_for_telegram(error)
++def notify_error(channel_name: str, error: str, context: dict | None = None) -> dict:
++    raw_error = str(error or "")
++    context_payload = dict(context or {})
++    error_text = _sanitize_operator_text(_summarize_error_for_telegram(raw_error))
+     decision = _classify_error_decision(error_text)
+-    alert_key = f"render_error::{channel_name.strip().lower()}::{decision['decision']}::{error_text.strip().lower()}"
++    retry_count = max(0, _safe_int(context_payload.get("retry_count"), 0))
++    retry_limit = max(0, _safe_int(context_payload.get("retry_limit"), 3))
++    regeneration_count = max(0, _safe_int(context_payload.get("regeneration_count"), 0))
++    regeneration_limit = max(0, _safe_int(context_payload.get("regeneration_limit"), 1))
++    severity = str(context_payload.get("severity") or ("ERROR" if "fatal" in raw_error.lower() else "WARNING")).upper()
++
++    context_payload.setdefault("error_type", _incident_error_type(raw_error or error_text))
++    context_payload.setdefault("run_id", str(context_payload.get("run_id") or ""))
++    context_payload.setdefault("pipeline_stage", str(context_payload.get("pipeline_stage") or "scheduler_render"))
++    context_payload.setdefault("retry_count", retry_count)
++    context_payload.setdefault("retry_limit", retry_limit)
++    context_payload.setdefault("regeneration_count", regeneration_count)
++    context_payload.setdefault("regeneration_limit", regeneration_limit)
++    context_payload.setdefault("next_action", decision["action_label"])
++
++    try:
++        incident_state = _register_incident_event(
++            lifecycle_event="INCIDENT_UPDATED",
++            channel_name=channel_name,
++            severity=severity,
++            decision=decision["decision"],
++            next_action=decision["action_label"],
++            error_summary=error_text,
++            raw_error=raw_error,
++            context=context_payload,
++        )
++    except Exception as e:
++        logger.warning("Incident telemetry write failed (non-blocking): %s", e)
++        incident_state = {
++            "incident_id": "",
++            "lifecycle_event": "INCIDENT_OBSERVABILITY_UNAVAILABLE",
++        }
++
++    alert_key = _build_render_error_alert_key(channel_name, error_text, decision["decision"])
+     cooldown_hours = 6 if decision["decision"] == "skip_current_item" else 2
+     if not _should_alert(alert_key, cooldown_hours=cooldown_hours):
+-        logger.info("Telegram render error alert suppressed by cooldown: %s", alert_key)
+-        return decision
++        logger.info(
++            "Telegram render error alert suppressed by cooldown: %s incident_id=%s",
++            alert_key,
++            incident_state.get("incident_id", ""),
++        )
++        merged = dict(decision)
++        merged.update(
++            {
++                "incident_id": incident_state.get("incident_id", ""),
++                "incident_lifecycle": incident_state.get("lifecycle_event", "INCIDENT_UPDATED"),
++                "retry_count": retry_count,
++                "retry_limit": retry_limit,
++                "regeneration_count": regeneration_count,
++                "regeneration_limit": regeneration_limit,
++            }
++        )
++        return merged
++
++    incident_id = str(incident_state.get("incident_id") or "")
++    lifecycle = str(incident_state.get("lifecycle_event") or "INCIDENT_UPDATED")
+
+     send_telegram(
+-        f"⚠️ <b>Render Hatası</b>\n"
++        f"🚨 <b>{lifecycle}</b>\n"
++        f"📌 Severity: {severity}\n"
++        f"🆔 Incident ID: {incident_id or 'N/A'}\n"
+         f"📺 Kanal: {channel_name}\n"
++        f"🧩 Error Type: {context_payload.get('error_type', 'unknown')}\n"
+         f"❌ {error_text}\n"
+-        f"🧭 Karar: {decision['decision_label']}\n"
+-        f"🔧 Aksiyon: {decision['action_label']}"
++        f"🧭 Decision: {decision['decision_label']}\n"
++        f"🔧 Next Action: {decision['action_label']}\n"
++        f"🔁 Retry: {retry_count}/{retry_limit}\n"
++        f"♻️ Regeneration: {regeneration_count}/{regeneration_limit}"
+     )
+     _mark_alert_sent(alert_key)
+-    return decision
++    merged = dict(decision)
++    merged.update(
++        {
++            "incident_id": incident_id,
++            "incident_lifecycle": lifecycle,
++            "retry_count": retry_count,
++            "retry_limit": retry_limit,
++            "regeneration_count": regeneration_count,
++            "regeneration_limit": regeneration_limit,
++        }
++    )
++    return merged
++
++
++def _build_render_error_alert_key(channel_name: str, error_text: str, decision_name: str) -> str:
++    """Create a stable alert key so provider cooldown storms do not spam per channel."""
++    normalized_channel = channel_name.strip().lower()
++    normalized_error = " ".join(str(error_text or "").strip().lower().split())
++    # Retry-after seconds change every run; collapse them for stable dedupe keys.
++    normalized_error = re.sub(r"\(\s*\d+\s*s\s*\)", "(cooldown)", normalized_error)
++
++    scope = f"channel::{normalized_channel}"
++    if "anthropic circuit open" in normalized_error or "provider is cooling down" in normalized_error:
++        scope = "provider::anthropic::cooldown"
++    elif "global overload pause open" in normalized_error:
++        scope = "global::overload_pause"
++
++    return f"render_error::{scope}::{decision_name}::{normalized_error}"
+
+
+ def _summarize_error_for_telegram(error: str, max_len: int = 220) -> str:
+diff --git a/tests/test_content_generator_anthropic_guard.py b/tests/test_content_generator_anthropic_guard.py
+index e944929..a43ede0 100644
+--- a/tests/test_content_generator_anthropic_guard.py
++++ b/tests/test_content_generator_anthropic_guard.py
+@@ -204,6 +204,48 @@ def test_non_retryable_anthropic_exceptions_do_not_retry(monkeypatch, tmp_path,
+     assert provider_state["consecutive_failures"] == 1
+
+
++def test_generate_video_content_uses_local_fail_open_on_credit_exhaustion(monkeypatch, tmp_path):
++    _prepare_provider_state(monkeypatch, tmp_path)
++    monkeypatch.setenv("ANTHROPIC_FAIL_OPEN_LOCAL_CONTENT", "1")
++    monkeypatch.setattr(content_generator, "build_prompt_metadata", lambda _prompt: {})
++    monkeypatch.setattr(content_generator, "build_channel_dna_metadata", lambda **_kwargs: {})
++    monkeypatch.setattr(content_generator, "build_quality_scores", lambda **_kwargs: {})
++
++    messages = SequencedMessages([
++        _status_error(
++            BadRequestError,
++            400,
++            "Your credit balance is too low to access the Anthropic API.",
++            "invalid_request_error",
++        )
++    ])
++    generator = _make_generator(messages)
++
++    content = generator.generate_video_content("Yatirim disiplini nasil kurulur")
++
++    assert messages.calls == 1
++    assert "Pratik Rehber" in content.title
++    assert "uygulanabilir" in content.description.lower()
++    assert len(content.script) > 200
++
++
++def test_generate_video_content_uses_local_fail_open_on_circuit_open_runtime_error(monkeypatch, tmp_path):
++    _prepare_provider_state(monkeypatch, tmp_path)
++    monkeypatch.setenv("ANTHROPIC_FAIL_OPEN_LOCAL_CONTENT", "1")
++    monkeypatch.setattr(content_generator, "build_prompt_metadata", lambda _prompt: {})
++    monkeypatch.setattr(content_generator, "build_channel_dna_metadata", lambda **_kwargs: {})
++    monkeypatch.setattr(content_generator, "build_quality_scores", lambda **_kwargs: {})
++
++    messages = SequencedMessages([RuntimeError("Anthropic circuit open; retry after 300s")])
++    generator = _make_generator(messages)
++
++    content = generator.generate_video_content("BIST icin temel risk yonetimi")
++
++    assert messages.calls == 1
++    assert "Pratik Rehber" in content.title
++    assert len(content.script) > 200
++
++
+ def test_retry_exhaustion_counts_as_single_logical_failure(monkeypatch, tmp_path):
+     _prepare_provider_state(monkeypatch, tmp_path)
+     overloaded = _status_error(OverloadedError, 529, "Overloaded", "overloaded_error")
+diff --git a/tests/test_scheduler_provider_guardrails.py b/tests/test_scheduler_provider_guardrails.py
+index 084eaff..03faa30 100644
+--- a/tests/test_scheduler_provider_guardrails.py
++++ b/tests/test_scheduler_provider_guardrails.py
+@@ -2,6 +2,7 @@ from __future__ import annotations
+
+ import json
+ import sys
++from pathlib import Path
+ from types import SimpleNamespace
+
+ import pytest
+@@ -11,6 +12,7 @@ from src.scheduler_utils import (
+     _classify_error_decision,
+     get_global_overload_pause_status,
+     get_provider_circuit_status,
++    notify_error,
+     record_provider_failure,
+ )
+
+@@ -21,7 +23,23 @@ def _stub_scheduler_singleton_lock(monkeypatch):
+     monkeypatch.setattr(scheduler, "_release_scheduler_singleton_lock", lambda: None)
+
+
++@pytest.fixture(autouse=True)
++def _isolate_production_dashboard_paths(monkeypatch, tmp_path: Path):
++    dashboard_md_path = tmp_path / "production_dashboard_latest.md"
++    dashboard_json_path = tmp_path / "production_dashboard_latest.json"
++
++    monkeypatch.setenv("PRODUCTION_DASHBOARD_MD_PATH", str(dashboard_md_path))
++    monkeypatch.setenv("PRODUCTION_DASHBOARD_JSON_PATH", str(dashboard_json_path))
++
++    # scheduler imports update_production_dashboard at module import time, so patch
++    # function globals directly to avoid writes to tracked repo docs during tests.
++    prod_globals = scheduler.update_production_dashboard.__globals__
++    monkeypatch.setitem(prod_globals, "PRODUCTION_DASHBOARD_MD_PATH", dashboard_md_path)
++    monkeypatch.setitem(prod_globals, "PRODUCTION_DASHBOARD_JSON_PATH", dashboard_json_path)
++
++
+ def test_main_exits_when_provider_preflight_fails(monkeypatch):
++    monkeypatch.setenv("ANTHROPIC_FAIL_OPEN_LOCAL_CONTENT", "0")
+     monkeypatch.setattr(scheduler.sys, "argv", ["scheduler.py"])
+
+     class _StartupResult:
+@@ -41,6 +59,69 @@ def test_main_exits_when_provider_preflight_fails(monkeypatch):
+     assert calls["ready"] == 0
+
+
++def test_main_continues_when_provider_preflight_fails_but_local_fail_open_enabled(monkeypatch):
++    monkeypatch.setenv("ANTHROPIC_FAIL_OPEN_LOCAL_CONTENT", "1")
++    monkeypatch.setattr(scheduler.sys, "argv", ["scheduler.py"])
++
++    class _StartupResult:
++        ok = True
++        errors = ()
++
++    class _StopLoop(Exception):
++        pass
++
++    class _FakeEvery:
++        @property
++        def day(self):
++            return self
++
++        def at(self, *_args, **_kwargs):
++            return self
++
++        @property
++        def hours(self):
++            return self
++
++        @property
++        def hour(self):
++            return self
++
++        def do(self, *_args, **_kwargs):
++            return self
++
++    fake_schedule = SimpleNamespace(
++        every=lambda *args, **kwargs: _FakeEvery(),
++        run_pending=lambda: (_ for _ in ()).throw(_StopLoop()),
++    )
++
++    class _FakeThread:
++        def __init__(self, *args, **kwargs):
++            pass
++
++        def start(self):
++            pass
++
++    fake_utils = SimpleNamespace(
++        cleanup_old_renders=lambda **kwargs: None,
++        notify_startup=lambda _n: None,
++    )
++
++    calls = {"ready": 0}
++    monkeypatch.setattr(scheduler, "_run_startup_health_check", lambda **_kwargs: _StartupResult())
++    monkeypatch.setattr(scheduler, "_run_provider_preflight_check", lambda **_kwargs: (False, "credit balance low"))
++    monkeypatch.setattr(scheduler, "get_ready_channels", lambda: calls.__setitem__("ready", calls["ready"] + 1) or ["demo"])
++    monkeypatch.setattr(scheduler, "setup_schedule", lambda: ["demo"])
++    monkeypatch.setattr(scheduler, "catch_up_overdue_queue_entries", lambda: {})
++    monkeypatch.setattr(scheduler, "schedule", fake_schedule)
++    monkeypatch.setattr(scheduler.threading, "Thread", _FakeThread)
++    monkeypatch.setitem(sys.modules, "src.scheduler_utils", fake_utils)
++
++    with pytest.raises(_StopLoop):
++        scheduler.main()
++
++    assert calls["ready"] == 1
++
++
+ def test_main_skip_provider_preflight_flag(monkeypatch):
+     monkeypatch.setattr(scheduler.sys, "argv", ["scheduler.py", "--skip-provider-preflight"])
+
+@@ -108,6 +189,7 @@ def test_main_skip_provider_preflight_flag(monkeypatch):
+
+
+ def test_render_and_schedule_skips_when_provider_circuit_open(monkeypatch):
++    monkeypatch.setenv("ANTHROPIC_FAIL_OPEN_LOCAL_CONTENT", "0")
+     import src.channel_manager as channel_manager
+     import src.scheduler_utils as scheduler_utils
+     import src.pipeline as pipeline
+@@ -139,6 +221,7 @@ def test_render_and_schedule_skips_when_provider_circuit_open(monkeypatch):
+
+
+ def test_render_and_schedule_skips_when_global_overload_pause_open(monkeypatch):
++    monkeypatch.setenv("ANTHROPIC_FAIL_OPEN_LOCAL_CONTENT", "0")
+     import src.channel_manager as channel_manager
+     import src.scheduler_utils as scheduler_utils
+     import src.pipeline as pipeline
+@@ -303,3 +386,67 @@ def test_render_and_schedule_does_not_outer_retry_provider_handled_exception(mon
+
+     assert calls["pipeline"] == 1
+     assert calls["notify"] == 1
++
++
++def test_render_and_schedule_continues_when_provider_circuit_open_in_fail_open_mode(monkeypatch):
++    monkeypatch.setenv("ANTHROPIC_FAIL_OPEN_LOCAL_CONTENT", "1")
++    import src.channel_manager as channel_manager
++    import src.scheduler_utils as scheduler_utils
++    import src.pipeline as pipeline
++
++    channel_cfg = SimpleNamespace(name="Demo Channel", upload_times=["10:00"])
++
++    monkeypatch.setattr(channel_manager, "get_channel", lambda _cid: channel_cfg)
++    monkeypatch.setattr(scheduler_utils, "check_disk_space", lambda **_kwargs: True)
++    monkeypatch.setattr(
++        scheduler_utils,
++        "get_provider_circuit_status",
++        lambda _provider: {"provider": "anthropic", "is_open": True, "retry_after_seconds": 120, "state": {}},
++    )
++
++    called = {"pipeline": 0, "notify": 0}
++
++    monkeypatch.setattr(
++        pipeline,
++        "run_full_pipeline",
++        lambda **_kwargs: called.__setitem__("pipeline", called["pipeline"] + 1) or {"video_id": "vid1", "title": "ok", "youtube_url": "https://youtube.com/watch?v=vid1"},
++    )
++    monkeypatch.setattr(scheduler_utils, "notify_error", lambda *_args, **_kwargs: called.__setitem__("notify", called["notify"] + 1) or {})
++    monkeypatch.setattr(scheduler_utils, "notify_upload", lambda *_args, **_kwargs: None)
++    monkeypatch.setattr(scheduler_utils, "force_cleanup", lambda: None)
++    monkeypatch.setattr(scheduler_utils, "save_used_topic", lambda *_args, **_kwargs: None)
++
++    scheduler.render_and_schedule("demo_channel")
++
++    assert called["pipeline"] == 1
++    assert called["notify"] == 0
++
++
++def test_notify_error_dedupes_anthropic_cooldown_across_channels(monkeypatch, tmp_path):
++    import src.scheduler_utils as scheduler_utils
++
++    alerts_file = tmp_path / "alerts_sent.json"
++    sent = []
++
++    monkeypatch.setattr(scheduler_utils, "ALERTS_FILE", str(alerts_file))
++    monkeypatch.setattr(scheduler_utils, "send_telegram", lambda message: sent.append(message))
++
++    notify_error("Teknoloji Pusulasi", "Anthropic circuit open; provider is cooling down (580s)")
++    notify_error("Borsa Akademi", "Anthropic circuit open; provider is cooling down (595s)")
++
++    assert len(sent) == 1
++
++
++def test_notify_error_keeps_non_cooldown_alerts_channel_scoped(monkeypatch, tmp_path):
++    import src.scheduler_utils as scheduler_utils
++
++    alerts_file = tmp_path / "alerts_sent.json"
++    sent = []
++
++    monkeypatch.setattr(scheduler_utils, "ALERTS_FILE", str(alerts_file))
++    monkeypatch.setattr(scheduler_utils, "send_telegram", lambda message: sent.append(message))
++
++    notify_error("Teknoloji Pusulasi", "Disk alanı kritik seviyede!")
++    notify_error("Borsa Akademi", "Disk alanı kritik seviyede!")
++
++    assert len(sent) == 2

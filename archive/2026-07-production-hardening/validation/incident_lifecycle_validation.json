@@ -1,0 +1,33 @@
+{
+  "topic_collision": {
+    "first_open_once": true,
+    "retry_same_incident_id": true,
+    "meaningful_change_updated": true,
+    "resolved_once": true,
+    "redacted": true,
+    "payload_sequence": [
+      "🚨 <b>INCIDENT_OPEN</b>\n📌 Severity: WARNING\n🆔 Incident ID: 7ea884f5-ab25-47af-9640-cec72da2be39\n📺 Kanal: Demo Channel\n🧩 Error Type: topic_provenance_collision\n❌ topic_provenance_collision: [path_hidden]\n🧭 Decision: Uretim devam, izleme artirildi\n🔧 Next Action: Ayni hata tekrarlarsa manuel inceleme\n🔁 Retry: 0/3\n♻️ Regeneration: 0/1",
+      "🚨 <b>INCIDENT_UPDATED</b>\n📌 Severity: WARNING\n🆔 Incident ID: 7ea884f5-ab25-47af-9640-cec72da2be39\n📺 Kanal: Demo Channel\n🧩 Error Type: topic_provenance_collision\n❌ topic_provenance_collision: [path_hidden] changed\n🧭 Decision: Uretim devam, izleme artirildi\n🔧 Next Action: Ayni hata tekrarlarsa manuel inceleme\n🔁 Retry: 2/3\n♻️ Regeneration: 0/1",
+      "✅ <b>Yeni Video Yüklendi!</b>\n📺 Kanal: Demo Channel\n🎬 Recovered video\n🔗 https://example.com/v/1\n🟢 Incident Resolved: 7ea884f5-ab25-47af-9640-cec72da2be39",
+      "✅ <b>Yeni Video Yüklendi!</b>\n📺 Kanal: Demo Channel\n🎬 Recovered video\n🔗 https://example.com/v/1"
+    ],
+    "event_sequence": [
+      "INCIDENT_OPEN",
+      "INCIDENT_UPDATED",
+      "INCIDENT_UPDATED",
+      "INCIDENT_RESOLVED"
+    ]
+  },
+  "restart": {
+    "same_incident_id_after_reload": true,
+    "incident_lifecycle_after_reload": "INCIDENT_UPDATED"
+  },
+  "stale_state": {
+    "fresh_open": true,
+    "new_incident_id": true
+  },
+  "severity": {
+    "critical_not_hidden": true,
+    "critical_lifecycle": "INCIDENT_UPDATED"
+  }
+}

@@ -1,0 +1,26 @@
+[step8] ts_utc=2026-07-12T18:36:10Z
+purpose=validate export boundary in isolated temp path without touching tracked docs target
+
+[pre_post_docs_hash]
+pre_dashboard_sha256=6840cc7832d0df12f688e5ae981b53288908d205c74bece9bc61cc0d6127e6db
+post_dashboard_sha256=6840cc7832d0df12f688e5ae981b53288908d205c74bece9bc61cc0d6127e6db
+post_dashboard_status=<empty>
+
+[call_site_boundary]
+src/production_quality_platform.py:503:def export_runtime_dashboard_to_docs(
+ops/export_runtime_dashboard.py:8:from src.production_quality_platform import export_runtime_dashboard_to_docs
+ops/export_runtime_dashboard.py:20:    result = export_runtime_dashboard_to_docs(source_path=source_path, docs_path=target_path)
+tests/test_production_quality_platform.py:142:def test_export_runtime_dashboard_to_docs(tmp_path, monkeypatch):
+tests/test_production_quality_platform.py:157:    out = pqp.export_runtime_dashboard_to_docs(docs_path=target)
+
+[isolated_python_probe_json]
+{"missing_source_error": "FileNotFoundError:runtime_dashboard_missing: /var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/runtime_export_boundary_eycmg6si/missing_runtime.md", "export_result": {"source": "/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/runtime_export_boundary_eycmg6si/runtime_dashboard.md", "target": "/var/folders/qj/c0kn8hm11dvg1361j68pdvlw0000gn/T/runtime_export_boundary_eycmg6si/docs_target.md", "bytes": 36, "ok": true}, "target_exists": true, "target_content_match": true, "tmp_shadow_exists_after_replace": false, "repo_docs_unchanged_during_snippet": true}
+
+[assertions]
+missing_source_safe_fail=true
+explicit_export_success=true
+temp_atomic_replace_observed=true
+repo_docs_unchanged=true
+import_or_runtime_side_effect_write_observed=false
+scheduler_or_pipeline_auto_export_callsite_observed=false
+step8_decision=PASS

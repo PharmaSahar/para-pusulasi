@@ -1,0 +1,27 @@
+[step5] ts_utc=2026-07-12T18:00:30Z
+[resolved_paths]
+production_dashboard_markdown=/Users/klara/Downloads/adsız klasör/output/runtime/state/production_dashboard_latest.md
+production_dashboard_json=/Users/klara/Downloads/adsız klasör/output/runtime/state/production_dashboard_latest.json
+production_observability_json=/Users/klara/Downloads/adsız klasör/output/runtime/telemetry/production_observability_latest.json
+governance_readiness_markdown=/Users/klara/Downloads/adsız klasör/output/runtime/state/governance_readiness_latest.md
+incident_state=output/state/incident_state.json
+incident_jsonl=logs/production_incidents.jsonl
+metrics_snapshot=output/state/incident_metrics_latest.json
+
+[path_safety_assertions]
+production_dashboard_markdown_under_docs=false
+production_dashboard_json_under_docs=false
+production_observability_json_under_docs=false
+governance_readiness_markdown_under_docs=false
+runtime_defaults_outside_tracked_docs=true
+
+[export_call_sites]
+src/production_quality_platform.py:503:def export_runtime_dashboard_to_docs(
+ops/export_runtime_dashboard.py:8:from src.production_quality_platform import export_runtime_dashboard_to_docs
+ops/export_runtime_dashboard.py:20:    result = export_runtime_dashboard_to_docs(source_path=source_path, docs_path=target_path)
+tests/test_production_quality_platform.py:142:def test_export_runtime_dashboard_to_docs(tmp_path, monkeypatch):
+tests/test_production_quality_platform.py:157:    out = pqp.export_runtime_dashboard_to_docs(docs_path=target)
+
+[boundary_conclusion]
+normal scheduler/pipeline runtime path resolution does not target tracked docs/
+explicit export function is the only runtime code path capable of targeting docs/production_dashboard_latest.md

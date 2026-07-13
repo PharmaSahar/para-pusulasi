@@ -1,0 +1,12 @@
+[step3] ts_utc=2026-07-12T17:51:56Z
+[command] git restore --source=HEAD -- docs/production_dashboard_latest.md
+[verify_hash_current]
+6840cc7832d0df12f688e5ae981b53288908d205c74bece9bc61cc0d6127e6db  docs/production_dashboard_latest.md
+[verify_hash_head]
+6840cc7832d0df12f688e5ae981b53288908d205c74bece9bc61cc0d6127e6db  -
+[verify_target_status]
+[verify_other_files_changed]
+before_count=      97 after_count=      97
+[status_delta]
+ M docs/production_dashboard_latest.md
+	?? artifacts/latest/runtime_storage_restore_step.txt

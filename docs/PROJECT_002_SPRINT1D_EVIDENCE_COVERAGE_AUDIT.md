@@ -90,6 +90,10 @@ Edge status summary:
 - Partial: Runtime Evidence->Review Queue.
 - Missing: Research->Fact Bundle, Fact Bundle->Script, Review Queue->Analytics, Analytics->CQGA.
 
+Interpretation note:
+- Lineage edge status is stage-level and optimistic (max stage coverage), not a per-artifact completeness guarantee.
+- For closure decisions, use `coverage_matrix.json` and `coverage_scores.json` as the canonical completeness source (for example script evidence remains 1% despite abstract Script->Title edge availability).
+
 ## Completeness Audit
 For each historical sample, the audit classified:
 - missing_script

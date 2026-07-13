@@ -309,6 +309,15 @@ def _content_quality_shadow_mode_enabled() -> bool:
         return False
 
 
+def _script_lineage_evidence_runtime_enabled() -> bool:
+    try:
+        from .script_lineage_evidence import script_lineage_evidence_enabled
+
+        return bool(script_lineage_evidence_enabled())
+    except Exception:
+        return False
+
+
 def _attach_audio_mix_metadata(result: dict, creator: object) -> None:
     mix = getattr(creator, "last_audio_mix_metadata", None)
     if isinstance(mix, dict) and mix:
@@ -447,6 +456,10 @@ def run_full_pipeline(
     result["final_status"] = "in_progress"
     _invoke_fact_bundle_pipeline_adapter(cfg, result)
     shadow_mode_enabled = _content_quality_shadow_mode_enabled()
+    script_lineage_enabled = _script_lineage_evidence_runtime_enabled()
+    script_lineage_recorder = None
+    script_lineage_generation_attempt = 0
+    script_lineage_last_source_stage = "UNKNOWN"
 
     telemetry_metadata = {
         "experiment_id": resolved_experiment_id,
@@ -925,6 +938,9 @@ def run_full_pipeline(
 
     def _generate_content(generator: ContentGenerator, *, generation_topic: str | None, additional_guidance: str | None = None):
         nonlocal content
+        nonlocal script_lineage_recorder
+        nonlocal script_lineage_generation_attempt
+        nonlocal script_lineage_last_source_stage
         try:
             if additional_guidance is None:
                 content = generator.generate_and_save(generation_topic)
@@ -969,6 +985,54 @@ def run_full_pipeline(
             raise
         result["title"] = content.title
         result["script_path"] = str(getattr(content, "saved_path", "") or f"{cfg.scripts_dir}/{content.created_at[:10]}_{content.title[:30]}.json")
+
+        if script_lineage_enabled:
+            try:
+                from .script_lineage_evidence import (
+                    ScriptLineageRecorder,
+                    ScriptSourceStage,
+                )
+
+                if script_lineage_recorder is None:
+                    script_lineage_recorder = ScriptLineageRecorder(
+                        content_id=str(result.get("content_id", "")),
+                        run_id=str(result.get("run_id", "")),
+                        canonical_channel_id=str(result.get("channel", "")),
+                        content_type="mixed",
+                        topic=str(topic or getattr(content, "title", "") or ""),
+                        experiment_id=str(result.get("experiment_id", "") or "") or None,
+                    )
+
+                script_lineage_generation_attempt += 1
+                source_stage = ScriptSourceStage.UNKNOWN
+                reason = str(additional_guidance or "").lower()
+                if script_lineage_generation_attempt == 1 and not additional_guidance:
+                    source_stage = ScriptSourceStage.INITIAL_GENERATION
+                elif "fact-check" in reason or "fact check" in reason:
+                    source_stage = ScriptSourceStage.FACT_CHECK_REGENERATION
+                elif any(token in reason for token in ("quality", "blocked", "regenerate", "regeneration")):
+                    source_stage = ScriptSourceStage.QUALITY_REGENERATION
+
+                script_lineage_last_source_stage = source_stage.value
+
+                planning = dict(result.get("shadow_generation_planning") or {})
+                planning_context = dict(planning.get("context") or {})
+                script_lineage_recorder.record_script_created(
+                    script_text=str(getattr(content, "script", "") or ""),
+                    source_stage=source_stage,
+                    generation_attempt=script_lineage_generation_attempt,
+                    regeneration_reason=(str(additional_guidance or "")[:160] if additional_guidance else None),
+                    prompt_metadata=dict(getattr(content, "prompt_metadata", {}) or {}),
+                    planning_context_id=str(planning_context.get("run_id") or "") or str(result.get("run_id", "")),
+                    blueprint_id=str(planning.get("blueprint_id") or "") or None,
+                    blueprint_hash=str(planning.get("blueprint_hash") or "") or None,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Script lineage fail-open at generation: run_id=%s error_type=%s",
+                    result.get("run_id"),
+                    exc.__class__.__name__,
+                )
 
     @contextmanager
     def _stage(stage: str, start_payload: dict | None = None, complete_payload_fn=None):
@@ -1768,6 +1832,29 @@ def run_full_pipeline(
             raise
 
     # ─── ADIM 2: Sesli Anlatiom ────────────────────────────────────────────────
+    if script_lineage_enabled and script_lineage_recorder is not None:
+        try:
+            from .script_lineage_evidence import ScriptSourceStage
+
+            finalize_stage = ScriptSourceStage(script_lineage_last_source_stage)
+            planning = dict(result.get("shadow_generation_planning") or {})
+            planning_context = dict(planning.get("context") or {})
+            script_lineage_recorder.record_script_finalized(
+                script_text=str(getattr(content, "script", "") or ""),
+                source_stage=finalize_stage,
+                generation_attempt=script_lineage_generation_attempt,
+                prompt_metadata=dict(getattr(content, "prompt_metadata", {}) or {}),
+                planning_context_id=str(planning_context.get("run_id") or "") or str(result.get("run_id", "")),
+                blueprint_id=str(planning.get("blueprint_id") or "") or None,
+                blueprint_hash=str(planning.get("blueprint_hash") or "") or None,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Script lineage fail-open at finalize: run_id=%s error_type=%s",
+                result.get("run_id"),
+                exc.__class__.__name__,
+            )
+
     logger.info("=" * 60)
     logger.info(f"ADIM 2/4 - Edge TTS [{result['channel']}]")
     logger.info("=" * 60)
@@ -1871,6 +1958,15 @@ def run_full_pipeline(
     render_started_at = None
     with _stage("render", complete_payload_fn=lambda: {"video_path": str(result.get("video_path", ""))[:180]}):
         render_started_at = datetime.now(timezone.utc)
+        if script_lineage_enabled and script_lineage_recorder is not None:
+            try:
+                script_lineage_recorder.record_consumed_by_render(script_text=str(getattr(content, "script", "") or ""))
+            except Exception as exc:
+                logger.warning(
+                    "Script lineage fail-open at render consumption: run_id=%s error_type=%s",
+                    result.get("run_id"),
+                    exc.__class__.__name__,
+                )
         creator = VideoCreator(channel_cfg=cfg)
         video_path = creator.create_video(
             audio_path, content.title,
@@ -2010,6 +2106,15 @@ def run_full_pipeline(
                 short_render_error = e
                 logger.error(f"Short kalıcı olarak başarısız: {e}")
     if result.get("short_path"):
+        if script_lineage_enabled and script_lineage_recorder is not None:
+            try:
+                script_lineage_recorder.record_consumed_by_shorts(script_text=str(getattr(content, "script", "") or ""))
+            except Exception as exc:
+                logger.warning(
+                    "Script lineage fail-open at shorts consumption: run_id=%s error_type=%s",
+                    result.get("run_id"),
+                    exc.__class__.__name__,
+                )
         _emit("shorts_render", "stage_completed", {"short_created": True})
     else:
         if short_render_error is not None:
@@ -2147,6 +2252,15 @@ def run_full_pipeline(
                     )
                 result["video_id"] = video_id
                 result["youtube_url"] = f"https://youtube.com/watch?v={video_id}"
+                if script_lineage_enabled and script_lineage_recorder is not None:
+                    try:
+                        script_lineage_recorder.record_linked_to_upload(script_text=str(getattr(content, "script", "") or ""))
+                    except Exception as exc:
+                        logger.warning(
+                            "Script lineage fail-open at upload linkage: run_id=%s error_type=%s",
+                            result.get("run_id"),
+                            exc.__class__.__name__,
+                        )
                 result["upload_metadata"] = {
                     "experiment_id": resolved_experiment_id,
                     "video_id": video_id,

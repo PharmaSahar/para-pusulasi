@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -256,6 +257,7 @@ def test_scheduler_default_startup_path_unchanged(monkeypatch):
 
 
 def test_scheduler_import_exits_without_resource_warning():
+    repository_root = Path(__file__).resolve().parents[1]
     proc = subprocess.run(
         [
             sys.executable,
@@ -266,7 +268,7 @@ def test_scheduler_import_exits_without_resource_warning():
         ],
         capture_output=True,
         text=True,
-        cwd="/Users/klara/Downloads/adsız klasör",
+        cwd=repository_root,
         check=False,
     )
 

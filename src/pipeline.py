@@ -1075,6 +1075,7 @@ def run_full_pipeline(
             )
             from .shadow_prompt_experiment_framework import run_prompt_experiment_and_store
             from .offline_prompt_candidate_generator import run_offline_prompt_candidate_lab_and_store
+            from .content_quality_gap_analyzer import QualityAnalysisInput, run_analysis_and_store
             from .content_intelligence_foundation import GenerationBlueprint
 
             requested_objective = "shorts_optimization" if str(slot or "").strip().lower() == "short" else "engagement_growth"
@@ -1211,6 +1212,69 @@ def run_full_pipeline(
                         True,
                         candidate_exc.__class__.__name__,
                     )
+
+                try:
+                    blueprint_channel_profile = dict((blueprint_payload or {}).get("channel_profile") or {})
+                    blueprint_audience_profile = dict((blueprint_payload or {}).get("audience_profile") or {})
+                    quality_input = QualityAnalysisInput(
+                        content_id=str(result.get("content_id", "") or "unknown_content"),
+                        channel_id=str(result.get("channel", "") or "unknown_channel"),
+                        content_type="mixed",
+                        niche=str(getattr(content, "niche", "") or blueprint_channel_profile.get("primary_niche") or "general"),
+                        topic=str(topic or getattr(content, "title", "") or ""),
+                        title=str(getattr(content, "title", "") or ""),
+                        thumbnail_prompt=str(getattr(content, "thumbnail_prompt", "") or ""),
+                        script=str(getattr(content, "script", "") or ""),
+                        description=str(getattr(content, "description", "") or ""),
+                        tags=tuple(str(x) for x in list(getattr(content, "tags", []) or [])),
+                        hashtags=tuple(f"#{str(tag).replace(' ', '').replace('-', '')}" for tag in list(getattr(content, "tags", []) or [])[:15]),
+                        playlist="unknown",
+                        cards=tuple(),
+                        end_screens=tuple(),
+                        short_title=f"{str(getattr(content, 'title', '') or '')} #Shorts".strip(),
+                        short_script=str(getattr(content, "hook", "") or ""),
+                        review_queue={},
+                        analytics={},
+                        channel_profile=blueprint_channel_profile,
+                        audience_profile=blueprint_audience_profile,
+                    )
+                    quality_gap_result = run_analysis_and_store(
+                        input_data=quality_input,
+                        run_id=str(result.get("run_id", "")),
+                    )
+                    result["shadow_content_quality_gap"] = quality_gap_result
+                    logger.info(
+                        "shadow_content_quality_gap run_id=%s analysis_id=%s channel_id=%s gaps=%s advisory=%s",
+                        result.get("run_id"),
+                        quality_gap_result.get("analysis_id"),
+                        result.get("channel"),
+                        len(list(quality_gap_result.get("gaps") or [])),
+                        bool(quality_gap_result.get("advisory_only", True)),
+                    )
+                except Exception as quality_gap_exc:
+                    result["shadow_content_quality_gap"] = {
+                        "schema_version": "v1",
+                        "analysis_id": None,
+                        "run_id": str(result.get("run_id", "")),
+                        "content_id": str(result.get("content_id", "")),
+                        "channel_id": str(result.get("channel", "")),
+                        "content_type": "mixed",
+                        "scorecard": {},
+                        "gaps": [],
+                        "root_causes": [],
+                        "calibration_ready": False,
+                        "advisory_only": True,
+                        "pipeline_output_changed": False,
+                        "results_path": "logs/content_quality_gap_analysis.jsonl",
+                        "error_type": quality_gap_exc.__class__.__name__,
+                    }
+                    logger.warning(
+                        "shadow_content_quality_gap run_id=%s channel_id=%s storage=failure advisory=%s error_type=%s",
+                        result.get("run_id"),
+                        result.get("channel"),
+                        True,
+                        quality_gap_exc.__class__.__name__,
+                    )
             except Exception as alignment_exc:
                 result["shadow_blueprint_prompt_alignment"] = {
                     "schema_version": "v1",
@@ -1269,6 +1333,22 @@ def run_full_pipeline(
                     "advisory_only": True,
                     "pipeline_output_changed": False,
                     "results_path": "logs/offline_prompt_candidates.jsonl",
+                    "error_type": "alignment_unavailable",
+                }
+                result["shadow_content_quality_gap"] = {
+                    "schema_version": "v1",
+                    "analysis_id": None,
+                    "run_id": str(result.get("run_id", "")),
+                    "content_id": str(result.get("content_id", "")),
+                    "channel_id": str(result.get("channel", "")),
+                    "content_type": "mixed",
+                    "scorecard": {},
+                    "gaps": [],
+                    "root_causes": [],
+                    "calibration_ready": False,
+                    "advisory_only": True,
+                    "pipeline_output_changed": False,
+                    "results_path": "logs/content_quality_gap_analysis.jsonl",
                     "error_type": "alignment_unavailable",
                 }
                 logger.warning(
@@ -1370,6 +1450,22 @@ def run_full_pipeline(
                 "advisory_only": True,
                 "pipeline_output_changed": False,
                 "results_path": "logs/offline_prompt_candidates.jsonl",
+                "error_type": "shadow_generation_planning_unavailable",
+            }
+            result["shadow_content_quality_gap"] = {
+                "schema_version": "v1",
+                "analysis_id": None,
+                "run_id": str(result.get("run_id", "")),
+                "content_id": str(result.get("content_id", "")),
+                "channel_id": str(result.get("channel", "")),
+                "content_type": "mixed",
+                "scorecard": {},
+                "gaps": [],
+                "root_causes": [],
+                "calibration_ready": False,
+                "advisory_only": True,
+                "pipeline_output_changed": False,
+                "results_path": "logs/content_quality_gap_analysis.jsonl",
                 "error_type": "shadow_generation_planning_unavailable",
             }
             logger.warning(

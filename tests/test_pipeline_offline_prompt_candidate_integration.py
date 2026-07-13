@@ -222,6 +222,8 @@ def test_shadow_prompt_candidate_lab_executes(monkeypatch, tmp_path: Path):
     assert result["final_status"] == "success"
     assert result.get("shadow_prompt_candidate_lab", {}).get("advisory_only") is True
     assert result.get("shadow_prompt_candidate_lab", {}).get("pipeline_output_changed") is False
+    assert result.get("shadow_content_quality_gap", {}).get("advisory_only") is True
+    assert result.get("shadow_content_quality_gap", {}).get("pipeline_output_changed") is False
 
 
 
@@ -245,6 +247,26 @@ def test_shadow_prompt_candidate_lab_fail_open(monkeypatch, tmp_path: Path):
     assert result.get("shadow_prompt_candidate_lab", {}).get("pipeline_output_changed") is False
 
 
+def test_shadow_content_quality_gap_fail_open(monkeypatch, tmp_path: Path):
+    cfg = _setup_pipeline(monkeypatch, tmp_path)
+    monkeypatch.setenv("CONTENT_QUALITY_SHADOW_MODE_ENABLED", "true")
+
+    import src.content_quality_gap_analyzer as cqga
+
+    monkeypatch.setattr(
+        cqga,
+        "run_analysis_and_store",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("cqga down")),
+    )
+
+    result = pipeline.run_full_pipeline(topic="x", generate_only=False, channel_cfg=cfg)
+
+    assert result["video_id"] == "video-1"
+    assert result["final_status"] == "success"
+    assert result.get("shadow_content_quality_gap", {}).get("advisory_only") is True
+    assert result.get("shadow_content_quality_gap", {}).get("pipeline_output_changed") is False
+
+
 
 def test_pipeline_output_unchanged_shadow_on_off(monkeypatch, tmp_path: Path):
     cfg = _setup_pipeline(monkeypatch, tmp_path)
@@ -264,6 +286,12 @@ def test_pipeline_output_unchanged_shadow_on_off(monkeypatch, tmp_path: Path):
         "thumbnail_path",
         "video_id",
         "final_status",
+        "shadow_content_quality_gap",
     ]
     for key in invariant_keys:
+        if key == "shadow_content_quality_gap":
+            assert key not in base
+            assert shadow.get(key, {}).get("advisory_only") is True
+            assert shadow.get(key, {}).get("pipeline_output_changed") is False
+            continue
         assert base.get(key) == shadow.get(key)

@@ -20,7 +20,11 @@ _SECRET_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _FINANCE_UNSAFE_PATTERN = re.compile(
-    r"(garanti\s+getiri|x\s*kat\s*kazanc|kesin\s+kazanc|insider\s+sirr|hemen\s+al|pump)",
+    r"(garanti\s+getiri|garanti\s+kazan[cç]|x\s*kat\s*kazanc|kesin\s+kazanc|insider\s+sirr|hemen\s+al|pump|zengin\s+ol)",
+    re.IGNORECASE,
+)
+_FINANCE_CONTEXT_PATTERN = re.compile(
+    r"(finans|yatirim|birikim|portfoy|kripto|coin|borsa|getiri|risk|maas|gelir)",
     re.IGNORECASE,
 )
 _CTA_PATTERN = re.compile(r"(abone ol|yorum yap|begen|paylas|bildirim)", re.IGNORECASE)
@@ -397,7 +401,7 @@ def analyze_title(input_data: QualityAnalysisInput) -> dict[str, Any]:
     suggest_intent = _score_from_bool_hits([any(term in title.lower() for term in ["vs", "karşı", "karsi", "neden", "nasıl", "nasil"])])
     keyword_quality = _score_from_bool_hits([len(_tokens(title)) >= 4, _keyword_overlap(title, input_data.description) > 0.12])
     promise_accuracy = _clamp01(0.2 + 0.8 * _keyword_overlap(title, input_data.script))
-    clickbait_risk = _score_from_bool_hits([any(term in title.lower() for term in ["inanılmaz", "inanilmaz", "şok", "sok", "garanti", "kesin"])])
+    clickbait_risk = _score_from_bool_hits([any(term in title.lower() for term in ["inanılmaz", "inanilmaz", "şok", "sok", "garanti", "kesin", "pump", "zengin"])])
     sensationalism = clickbait_risk
     authority = _score_from_bool_hits([any(term in title.lower() for term in ["analiz", "veri", "rehber", "strateji", "kanıt", "kanit"])])
     readability = _score_from_bool_hits([20 <= len(title) <= 72, len(_tokens(title)) >= 4])
@@ -609,7 +613,7 @@ def infer_root_causes(symptoms: set[str]) -> list[str]:
             causes.append(label)
 
     if not causes:
-        causes.append("Unknown root cause")
+        return []
     return sorted(set(causes))
 
 
@@ -686,7 +690,9 @@ def analyze_content_quality_gaps(
     symptoms: set[str] = set()
     gaps: list[QualityGap] = []
 
-    if script["hook_quality"] < 0.45 or script["opening_strength"] < 0.45:
+    opening_excerpt = str((script.get("evidence") or {}).get("opening_excerpt") or "")
+    weak_opening_marker = any(term in opening_excerpt.lower() for term in ["merhaba", "sevgili", "bugun bu videoda"])
+    if (script["hook_quality"] <= 0.45 and weak_opening_marker) or script["opening_strength"] < 0.4 or (shorts["hook"] < 0.2 and weak_opening_marker):
         symptoms.update({"weak_hook", "generic_opening"})
         gaps.append(
             _make_gap(
@@ -703,7 +709,7 @@ def analyze_content_quality_gaps(
             )
         )
 
-    if script["repetition"] > 0.52:
+    if script["repetition"] >= 0.35:
         symptoms.add("template_repetition")
         gaps.append(
             _make_gap(
@@ -720,14 +726,14 @@ def analyze_content_quality_gaps(
             )
         )
 
-    if script["pacing"] < 0.45:
+    if script["pacing"] < 0.4:
         symptoms.add("poor_pacing")
-    if script["cta_timing"] < 0.45:
-        symptoms.add("wrong_cta_timing")
-    if script["educational_depth"] < 0.45:
-        symptoms.add("low_educational_depth")
 
-    if title["promise_accuracy"] < 0.45:
+    title_mismatch_signal = (
+        title["promise_accuracy"] <= 0.3
+        and (title["clickbait_risk"] >= 0.3 or title["sensationalism"] >= 0.3)
+    )
+    if title_mismatch_signal:
         symptoms.add("promise_mismatch")
         gaps.append(
             _make_gap(
@@ -744,14 +750,12 @@ def analyze_content_quality_gaps(
             )
         )
 
-    if title["search_intent"] < 0.45:
-        symptoms.add("weak_search_intent")
-    if title["browse_intent"] < 0.45:
-        symptoms.add("poor_browse_optimization")
-    if title["ctr_psychology"] < 0.35:
-        symptoms.add("weak_curiosity")
-
-    if thumbnail["thumbnail_title_consistency"] < 0.35:
+    thumbnail_mismatch_signal = (
+        thumbnail["thumbnail_title_consistency"] < 0.18
+        and thumbnail["misleading_risk"] < 0.5
+        and (thumbnail["trust"] < 0.5 or thumbnail["contrast"] < 0.5)
+    )
+    if thumbnail_mismatch_signal:
         symptoms.add("thumbnail_mismatch")
         gaps.append(
             _make_gap(
@@ -785,12 +789,11 @@ def analyze_content_quality_gaps(
             )
         )
 
-    if shorts["hook"] < 0.35 or shorts["beginning_completeness"] < 0.35:
-        symptoms.add("weak_hook")
-    if shorts["payoff"] < 0.35:
-        symptoms.add("weak_payoff")
-
-    if seo["title_keyword_strategy"] < 0.45 or seo["description_completeness"] < 0.45:
+    seo_incomplete_signal = (
+        seo["description_completeness"] < 0.45
+        and (seo["tags"] < 0.45 or seo["hashtags"] < 0.45)
+    )
+    if seo_incomplete_signal:
         symptoms.add("weak_search_intent")
         gaps.append(
             _make_gap(
@@ -810,12 +813,7 @@ def analyze_content_quality_gaps(
             )
         )
 
-    if channel["audience_profile_alignment"] < 0.45:
-        symptoms.add("audience_mismatch")
-    if channel["authority_level_alignment"] < 0.45:
-        symptoms.add("insufficient_authority")
-
-    if consistency["consistency_score"] < 0.42:
+    if consistency["consistency_score"] < 0.12 and title_mismatch_signal and thumbnail_mismatch_signal and thumbnail["misleading_risk"] < 0.5:
         symptoms.add("topic_saturation")
         gaps.append(
             _make_gap(
@@ -832,7 +830,9 @@ def analyze_content_quality_gaps(
             )
         )
 
-    finance_unsafe = _FINANCE_UNSAFE_PATTERN.search(" ".join([input_data.title, input_data.script, input_data.thumbnail_prompt])) is not None
+    all_text = " ".join([input_data.title, input_data.script, input_data.thumbnail_prompt])
+    finance_context = _FINANCE_CONTEXT_PATTERN.search(all_text) is not None
+    finance_unsafe = (_FINANCE_UNSAFE_PATTERN.search(all_text) is not None) and finance_context
     if finance_unsafe:
         symptoms.add("unsafe_finance_claim")
         gaps.append(

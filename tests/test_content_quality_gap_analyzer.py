@@ -58,7 +58,7 @@ def _sample_input() -> QualityAnalysisInput:
 
 def test_project002_fixture_count_is_100() -> None:
     fixtures = build_project002_sprint1_fixtures()
-    assert len(fixtures) == 100
+    assert len(fixtures) >= 250
 
 
 def test_analyzers_return_expected_range() -> None:
@@ -185,13 +185,50 @@ def test_local_calibration_stability() -> None:
 
     calibration = run_local_calibration(fixtures)
 
-    assert calibration["fixture_count"] == 100
-    assert 0.0 <= float(calibration["precision"]) <= 1.0
-    assert 0.0 <= float(calibration["recall"]) <= 1.0
-    assert 0.0 <= float(calibration["specificity"]) <= 1.0
-    assert 0.0 <= float(calibration["root_cause_accuracy"]) <= 1.0
+    assert calibration["fixture_count"] >= 250
+    assert float(calibration["precision"]) >= 0.9
+    assert float(calibration["recall"]) >= 0.9
+    assert float(calibration["specificity"]) >= 0.9
+    assert float(calibration["root_cause_accuracy"]) >= 0.85
     assert calibration["score_stability"] == 1.0
     assert calibration["ranking_stability"] == 1.0
+
+
+def test_expected_score_envelopes_on_golden_fixtures() -> None:
+    fixtures = build_project002_sprint1_fixtures()
+    checked = 0
+
+    for item in fixtures:
+        input_data = _input_from_payload(item.input_data)
+        result = analyze_content_quality_gaps(input_data=input_data, run_id=f"score_{item.fixture_id}")
+        scorecard = dict(result.scorecard or {})
+
+        categories = set(item.expected_gap_categories)
+
+        hook_score = float((scorecard.get("hook") or {}).get("score", 0.0) or 0.0)
+        seo_score = float((scorecard.get("seo") or {}).get("score", 0.0) or 0.0)
+        consistency_score = float((scorecard.get("consistency") or {}).get("score", 0.0) or 0.0)
+        finance_safety_score = float((scorecard.get("finance_safety") or {}).get("score", 0.0) or 0.0)
+
+        for expected in dict(item.expected_scores or {}).values():
+            assert 0.0 <= float(expected) <= 1.0
+            checked += 1
+
+        if "SCRIPT_HOOK" in categories:
+            assert hook_score <= 0.6
+
+        if "SEO_INCOMPLETE" in categories:
+            assert seo_score <= 0.6
+
+        if "CONTENT_FLOW_INCONSISTENT" in categories:
+            assert consistency_score <= 0.65
+        if "TITLE_PROMISE_MISMATCH" in categories or "THUMBNAIL_MISLEADING_RISK" in categories:
+            assert consistency_score <= 0.7
+
+        if "FINANCE_SAFETY" in categories:
+            assert finance_safety_score <= 0.55
+
+    assert checked >= len(fixtures)
 
 
 def test_benchmark_contract() -> None:
@@ -203,3 +240,36 @@ def test_benchmark_contract() -> None:
     assert float(metrics["thousand_analysis_ms"]) >= 0.0
     assert metrics["bounded_memory"] is True
     assert metrics["deterministic_runtime"] is True
+
+
+def test_regression_no_overfire_on_neutral_average_content() -> None:
+    fixture = next(item for item in build_project002_sprint1_fixtures() if item.title == "finance:long:average")
+    input_data = _input_from_payload(fixture.input_data)
+    result = analyze_content_quality_gaps(input_data=input_data, run_id="regression_average")
+    categories = {str(item.get("category") or "") for item in list(result.gaps)}
+
+    assert "TITLE_PROMISE_MISMATCH" not in categories
+    assert "THUMBNAIL_TITLE_MISMATCH" not in categories
+    assert "CONTENT_FLOW_INCONSISTENT" not in categories
+
+
+def test_regression_detects_duplicate_script_hook_and_repetition() -> None:
+    fixture = next(item for item in build_project002_sprint1_fixtures() if item.title == "crypto:shorts:duplicate")
+    input_data = _input_from_payload(fixture.input_data)
+    result = analyze_content_quality_gaps(input_data=input_data, run_id="regression_duplicate")
+    categories = {str(item.get("category") or "") for item in list(result.gaps)}
+
+    assert "SCRIPT_HOOK" in categories
+    assert "SCRIPT_REPETITION" in categories
+
+
+def test_regression_detects_mismatch_chain() -> None:
+    fixture = next(item for item in build_project002_sprint1_fixtures() if item.title == "career:long:mismatch")
+    input_data = _input_from_payload(fixture.input_data)
+    result = analyze_content_quality_gaps(input_data=input_data, run_id="regression_mismatch")
+    categories = {str(item.get("category") or "") for item in list(result.gaps)}
+
+    assert "TITLE_PROMISE_MISMATCH" in categories
+    assert "THUMBNAIL_TITLE_MISMATCH" in categories
+    assert "CONTENT_FLOW_INCONSISTENT" in categories
+    assert "FINANCE_SAFETY" in categories

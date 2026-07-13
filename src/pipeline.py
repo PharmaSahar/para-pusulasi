@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import json
+import hashlib
 import subprocess
 from contextlib import contextmanager
 from dataclasses import asdict
@@ -327,6 +328,15 @@ def _planning_blueprint_lineage_evidence_runtime_enabled() -> bool:
         return False
 
 
+def _forward_evidence_capture_runtime_enabled() -> bool:
+    try:
+        from .forward_evidence_capture import forward_evidence_capture_enabled
+
+        return bool(forward_evidence_capture_enabled())
+    except Exception:
+        return False
+
+
 def _attach_audio_mix_metadata(result: dict, creator: object) -> None:
     mix = getattr(creator, "last_audio_mix_metadata", None)
     if isinstance(mix, dict) and mix:
@@ -467,12 +477,14 @@ def run_full_pipeline(
     shadow_mode_enabled = _content_quality_shadow_mode_enabled()
     script_lineage_enabled = _script_lineage_evidence_runtime_enabled()
     planning_lineage_enabled = _planning_blueprint_lineage_evidence_runtime_enabled()
+    forward_evidence_enabled = _forward_evidence_capture_runtime_enabled()
     script_lineage_recorder = None
     script_lineage_generation_attempt = 0
     script_lineage_last_source_stage = "UNKNOWN"
     planning_lineage_recorder = None
     planning_lineage_generation_attempt = 0
     planning_lineage_last_source_stage = "UNKNOWN"
+    forward_evidence_recorder = None
 
     telemetry_metadata = {
         "experiment_id": resolved_experiment_id,
@@ -736,6 +748,70 @@ def run_full_pipeline(
             if isinstance(raw, list):
                 reasons.extend(str(x) for x in raw if str(x).strip())
         return reasons
+
+    def _capture_forward_evidence(stage_name: str, *, ownership_manifest_path: str | None = None) -> None:
+        nonlocal forward_evidence_recorder
+        if not forward_evidence_enabled:
+            return
+
+        try:
+            from .forward_evidence_capture import (
+                ForwardEvidenceRecorder,
+                ForwardEvidenceStage,
+                build_render_hash,
+                extract_prompt_metadata_hash,
+                hash_file,
+            )
+
+            if forward_evidence_recorder is None:
+                forward_evidence_recorder = ForwardEvidenceRecorder(
+                    content_id=str(result.get("content_id", "")),
+                    run_id=str(result.get("run_id", "")),
+                    channel_id=str(result.get("channel", "")),
+                )
+
+            stage = ForwardEvidenceStage(stage_name)
+            planning = dict(result.get("shadow_generation_planning") or {})
+            planning_context = dict(planning.get("context") or {})
+            try:
+                prompt_metadata = dict(getattr(content, "prompt_metadata", {}) or {})
+            except Exception:
+                prompt_metadata = {}
+            try:
+                script_value = str(getattr(content, "script", "") or "")
+            except Exception:
+                script_value = ""
+            script_hash = hashlib.sha256(script_value.encode("utf-8")).hexdigest() if script_value else None
+
+            thumbnail_hash = hash_file(str(result.get("thumbnail_path", "") or ""))
+            render_hash = build_render_hash(
+                render_metrics=dict(result.get("render_metrics") or {}),
+                video_path=str(result.get("video_path", "") or ""),
+            )
+            upload_id = str(result.get("video_id", "") or "") or None
+
+            ownership_id = None
+            if ownership_manifest_path:
+                ownership_id = Path(str(ownership_manifest_path)).stem
+
+            forward_evidence_recorder.record_stage(
+                stage=stage,
+                planning_context_id=str(planning_context.get("run_id") or "") or str(planning.get("run_id") or "") or None,
+                blueprint_id=str(planning.get("blueprint_id") or "") or None,
+                prompt_metadata_hash=extract_prompt_metadata_hash(prompt_metadata),
+                script_hash=script_hash,
+                thumbnail_hash=thumbnail_hash,
+                render_hash=render_hash,
+                upload_id=upload_id,
+                ownership_id=ownership_id,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Forward evidence fail-open at stage=%s run_id=%s error_type=%s",
+                stage_name,
+                result.get("run_id"),
+                exc.__class__.__name__,
+            )
 
     def _attach_thumbnail_validation_metadata(
         *,
@@ -1603,6 +1679,9 @@ def run_full_pipeline(
                 exc.__class__.__name__,
             )
 
+    _capture_forward_evidence("PLANNING_COMPLETE")
+    _capture_forward_evidence("BLUEPRINT_FINALIZED")
+
     if shadow_mode_enabled:
         try:
             from .shadow_content_quality import (
@@ -1942,6 +2021,9 @@ def run_full_pipeline(
                 exc.__class__.__name__,
             )
 
+    _capture_forward_evidence("PROMPT_FINALIZED")
+    _capture_forward_evidence("SCRIPT_FINALIZED")
+
     logger.info("=" * 60)
     logger.info(f"ADIM 2/4 - Edge TTS [{result['channel']}]")
     logger.info("=" * 60)
@@ -2093,6 +2175,7 @@ def run_full_pipeline(
             checkpoint="thumbnail_metadata",
             thumbnail_text=_derive_thumbnail_text(getattr(content, "title", "")),
         )
+        _capture_forward_evidence("THUMBNAIL_FINALIZED")
 
     try:
         from .thumbnail_history import load_recent_thumbnail_history
@@ -2164,6 +2247,8 @@ def run_full_pipeline(
             warning.get("error_type"),
             warning.get("count"),
         )
+
+    _capture_forward_evidence("RENDER_COMPLETE")
 
     # ─── ADIM 3.5: YouTube Short ──────────────────────────────────────────────
     _emit("shorts_render", "stage_started")
@@ -2266,6 +2351,7 @@ def run_full_pipeline(
         manifest_path=ownership_manifest_path,
     )
     result["upload_precheck"] = precheck
+    _capture_forward_evidence("OWNERSHIP_FINALIZED", ownership_manifest_path=str(ownership_manifest_path))
     if precheck.get("status") == "blocked":
         result["upload_metadata"] = {
             "experiment_id": resolved_experiment_id,
@@ -2348,6 +2434,7 @@ def run_full_pipeline(
                             result.get("run_id"),
                             exc.__class__.__name__,
                         )
+                _capture_forward_evidence("UPLOAD_COMPLETE", ownership_manifest_path=str(ownership_manifest_path))
                 result["upload_metadata"] = {
                     "experiment_id": resolved_experiment_id,
                     "video_id": video_id,

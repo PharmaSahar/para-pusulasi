@@ -97,7 +97,15 @@ def _run_step(command: list[str], *, required: bool, fail_open: bool, fallback_a
 
     if script_path is not None and not script_path.exists():
         artifact_exists = bool(fallback_artifact and fallback_artifact.exists())
-        code = 0 if artifact_exists else 127
+        if required:
+            code = 127
+            warning = "script_missing_required_hard_fail"
+        elif fail_open and artifact_exists:
+            code = 0
+            warning = "script_missing_fallback_artifact_used"
+        else:
+            code = 127
+            warning = "script_missing"
         return {
             "name": script_path.stem if script_path else "unknown_step",
             "command": command,
@@ -106,7 +114,7 @@ def _run_step(command: list[str], *, required: bool, fail_open: bool, fallback_a
             "fail_open": fail_open,
             "started_at_utc": started,
             "finished_at_utc": _utc_now().isoformat(),
-            "warning": "script_missing_fallback_artifact_used" if artifact_exists else "script_missing",
+            "warning": warning,
             "fallback_artifact": str(fallback_artifact) if fallback_artifact else None,
         }
 

@@ -1073,6 +1073,7 @@ def run_full_pipeline(
                 build_safe_prompt_representation_from_metadata,
                 run_alignment_analysis_and_store,
             )
+            from .shadow_prompt_experiment_framework import run_prompt_experiment_and_store
             from .content_intelligence_foundation import GenerationBlueprint
 
             requested_objective = "shorts_optimization" if str(slot or "").strip().lower() == "short" else "engagement_growth"
@@ -1127,6 +1128,51 @@ def run_full_pipeline(
                     int(alignment_result.get("conflicting_count", 0) or 0),
                     bool(alignment_result.get("advisory_only", True)),
                 )
+
+                try:
+                    prompt_experiment_result = run_prompt_experiment_and_store(
+                        blueprint=blueprint,
+                        prompt_representation=prompt_repr,
+                        run_id=str(result.get("run_id", "")),
+                        channel_id=str(result.get("channel", "")),
+                        content_type="mixed",
+                    )
+                    result["shadow_prompt_experiment"] = prompt_experiment_result
+                    logger.info(
+                        "shadow_prompt_experiment run_id=%s experiment_id=%s channel_id=%s recommendation=%s advisory=%s",
+                        result.get("run_id"),
+                        prompt_experiment_result.get("experiment_id"),
+                        result.get("channel"),
+                        ((prompt_experiment_result.get("recommendations") or [{}])[0]).get("recommendation", "unknown"),
+                        bool(prompt_experiment_result.get("advisory_only", True)),
+                    )
+                except Exception as experiment_exc:
+                    result["shadow_prompt_experiment"] = {
+                        "schema_version": "v1",
+                        "experiment_id": None,
+                        "run_id": str(result.get("run_id", "")),
+                        "channel_id": str(result.get("channel", "")),
+                        "content_type": "mixed",
+                        "recommendations": [],
+                        "decision": {
+                            "decision": "NO_RUNTIME_CHANGE",
+                            "selected_variant_id": "CURRENT_PRODUCTION",
+                            "rationale": "advisory_only:experiment_failure",
+                            "advisory_only": True,
+                            "pipeline_output_changed": False,
+                        },
+                        "advisory_only": True,
+                        "pipeline_output_changed": False,
+                        "results_path": "logs/shadow_prompt_experiments.jsonl",
+                        "error_type": experiment_exc.__class__.__name__,
+                    }
+                    logger.warning(
+                        "shadow_prompt_experiment run_id=%s channel_id=%s storage=failure advisory=%s error_type=%s",
+                        result.get("run_id"),
+                        result.get("channel"),
+                        True,
+                        experiment_exc.__class__.__name__,
+                    )
             except Exception as alignment_exc:
                 result["shadow_blueprint_prompt_alignment"] = {
                     "schema_version": "v1",
@@ -1155,6 +1201,25 @@ def run_full_pipeline(
                     "pipeline_output_changed": False,
                     "results_path": "logs/shadow_blueprint_prompt_alignment.jsonl",
                     "error_type": alignment_exc.__class__.__name__,
+                }
+                result["shadow_prompt_experiment"] = {
+                    "schema_version": "v1",
+                    "experiment_id": None,
+                    "run_id": str(result.get("run_id", "")),
+                    "channel_id": str(result.get("channel", "")),
+                    "content_type": "mixed",
+                    "recommendations": [],
+                    "decision": {
+                        "decision": "NO_RUNTIME_CHANGE",
+                        "selected_variant_id": "CURRENT_PRODUCTION",
+                        "rationale": "advisory_only:alignment_unavailable",
+                        "advisory_only": True,
+                        "pipeline_output_changed": False,
+                    },
+                    "advisory_only": True,
+                    "pipeline_output_changed": False,
+                    "results_path": "logs/shadow_prompt_experiments.jsonl",
+                    "error_type": "alignment_unavailable",
                 }
                 logger.warning(
                     "shadow_blueprint_prompt_alignment run_id=%s blueprint_id=%s channel_id=%s prompt_type=%s coverage_score=%.4f conflict_score=%.4f missing=%s conflicting=%s storage=failure advisory=%s error_type=%s",
@@ -1224,6 +1289,25 @@ def run_full_pipeline(
                 "advisory_only": True,
                 "pipeline_output_changed": False,
                 "results_path": "logs/shadow_blueprint_prompt_alignment.jsonl",
+                "error_type": "shadow_generation_planning_unavailable",
+            }
+            result["shadow_prompt_experiment"] = {
+                "schema_version": "v1",
+                "experiment_id": None,
+                "run_id": str(result.get("run_id", "")),
+                "channel_id": str(result.get("channel", "")),
+                "content_type": "mixed",
+                "recommendations": [],
+                "decision": {
+                    "decision": "NO_RUNTIME_CHANGE",
+                    "selected_variant_id": "CURRENT_PRODUCTION",
+                    "rationale": "advisory_only:planning_unavailable",
+                    "advisory_only": True,
+                    "pipeline_output_changed": False,
+                },
+                "advisory_only": True,
+                "pipeline_output_changed": False,
+                "results_path": "logs/shadow_prompt_experiments.jsonl",
                 "error_type": "shadow_generation_planning_unavailable",
             }
             logger.warning(

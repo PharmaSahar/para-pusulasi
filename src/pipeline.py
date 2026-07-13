@@ -1069,6 +1069,11 @@ def run_full_pipeline(
     if shadow_mode_enabled:
         try:
             from .shadow_generation_planning import build_shadow_generation_planning_artifact
+            from .shadow_blueprint_prompt_alignment import (
+                build_safe_prompt_representation_from_metadata,
+                run_alignment_analysis_and_store,
+            )
+            from .content_intelligence_foundation import GenerationBlueprint
 
             requested_objective = "shorts_optimization" if str(slot or "").strip().lower() == "short" else "engagement_growth"
             shadow_generation_planning = build_shadow_generation_planning_artifact(
@@ -1080,6 +1085,90 @@ def run_full_pipeline(
                 generation_timestamp=result.get("started_at") or datetime.now(timezone.utc).isoformat(),
             )
             result["shadow_generation_planning"] = shadow_generation_planning
+            try:
+                blueprint_payload = dict(shadow_generation_planning.get("blueprint") or {})
+                blueprint = GenerationBlueprint.from_dict(blueprint_payload)
+                prompt_metadata = dict(getattr(content, "prompt_metadata", {}) or {})
+                prompt_repr = build_safe_prompt_representation_from_metadata(prompt_metadata)
+                alignment_artifacts = {
+                    "title": str(getattr(content, "title", "") or ""),
+                    "script": str(getattr(content, "script", "") or ""),
+                    "description": str(getattr(content, "description", "") or ""),
+                    "thumbnail_prompt": str(getattr(content, "thumbnail_prompt", "") or ""),
+                    "tags": list(getattr(content, "tags", []) or []),
+                    "hashtags": [f"#{str(tag).replace(' ', '').replace('-', '')}" for tag in list(getattr(content, "tags", []) or [])[:15]],
+                    "short_title": f"{str(getattr(content, 'title', '') or '')} #Shorts".strip(),
+                    "short_script": str(getattr(content, "hook", "") or ""),
+                    "next_video_teaser": str(getattr(content, "next_video_teaser", "") or ""),
+                    "playlist_recommendation": "unknown",
+                    "card_recommendation": "unknown",
+                    "end_screen_recommendation": "unknown",
+                }
+                alignment_result = run_alignment_analysis_and_store(
+                    blueprint=blueprint,
+                    prompt_representation=prompt_repr,
+                    run_id=str(result.get("run_id", "")),
+                    channel_id=str(result.get("channel", "")),
+                    content_type="mixed",
+                    artifacts=alignment_artifacts,
+                    recent_history=[],
+                    history_window=30,
+                )
+                result["shadow_blueprint_prompt_alignment"] = alignment_result
+                logger.info(
+                    "shadow_blueprint_prompt_alignment run_id=%s blueprint_id=%s channel_id=%s prompt_type=%s coverage_score=%.4f conflict_score=%.4f missing=%s conflicting=%s storage=success advisory=%s",
+                    result.get("run_id"),
+                    shadow_generation_planning.get("blueprint_id"),
+                    result.get("channel"),
+                    alignment_result.get("prompt_type"),
+                    float(alignment_result.get("overall_coverage_score", 0.0) or 0.0),
+                    float(alignment_result.get("overall_conflict_score", 0.0) or 0.0),
+                    int(alignment_result.get("missing_count", 0) or 0),
+                    int(alignment_result.get("conflicting_count", 0) or 0),
+                    bool(alignment_result.get("advisory_only", True)),
+                )
+            except Exception as alignment_exc:
+                result["shadow_blueprint_prompt_alignment"] = {
+                    "schema_version": "v1",
+                    "analysis_id": None,
+                    "blueprint_id": str(shadow_generation_planning.get("blueprint_id") or ""),
+                    "blueprint_hash": str(shadow_generation_planning.get("blueprint_hash") or ""),
+                    "prompt_hash": "",
+                    "run_id": str(result.get("run_id", "")),
+                    "channel_id": str(result.get("channel", "")),
+                    "content_type": "mixed",
+                    "prompt_type": "unknown",
+                    "template_id": "unknown_template",
+                    "analyzer_version": "v1",
+                    "analyzed_dimensions": 0,
+                    "strong_present_count": 0,
+                    "weak_present_count": 0,
+                    "missing_count": 0,
+                    "conflicting_count": 0,
+                    "unsupported_count": 0,
+                    "unknown_count": 0,
+                    "overall_coverage_score": 0.0,
+                    "overall_conflict_score": 0.0,
+                    "conflict_codes": [],
+                    "failure_source_summary": {"ANALYZER_FAILURE": 1},
+                    "advisory_only": True,
+                    "pipeline_output_changed": False,
+                    "results_path": "logs/shadow_blueprint_prompt_alignment.jsonl",
+                    "error_type": alignment_exc.__class__.__name__,
+                }
+                logger.warning(
+                    "shadow_blueprint_prompt_alignment run_id=%s blueprint_id=%s channel_id=%s prompt_type=%s coverage_score=%.4f conflict_score=%.4f missing=%s conflicting=%s storage=failure advisory=%s error_type=%s",
+                    result.get("run_id"),
+                    shadow_generation_planning.get("blueprint_id"),
+                    result.get("channel"),
+                    "unknown",
+                    0.0,
+                    0.0,
+                    0,
+                    0,
+                    True,
+                    alignment_exc.__class__.__name__,
+                )
             logger.info(
                 "shadow_generation_planning run_id=%s blueprint_id=%s channel_id=%s topic=%s planning_version=%s validation=%s storage=success mode=advisory",
                 result.get("run_id"),
@@ -1108,6 +1197,34 @@ def run_full_pipeline(
                 "context": {},
                 "blueprint": {},
                 "results_path": "logs/shadow_generation_planning.jsonl",
+            }
+            result["shadow_blueprint_prompt_alignment"] = {
+                "schema_version": "v1",
+                "analysis_id": None,
+                "blueprint_id": None,
+                "blueprint_hash": None,
+                "prompt_hash": "",
+                "run_id": str(result.get("run_id", "")),
+                "channel_id": str(result.get("channel", "")),
+                "content_type": "mixed",
+                "prompt_type": "unknown",
+                "template_id": "unknown_template",
+                "analyzer_version": "v1",
+                "analyzed_dimensions": 0,
+                "strong_present_count": 0,
+                "weak_present_count": 0,
+                "missing_count": 0,
+                "conflicting_count": 0,
+                "unsupported_count": 0,
+                "unknown_count": 0,
+                "overall_coverage_score": 0.0,
+                "overall_conflict_score": 0.0,
+                "conflict_codes": [],
+                "failure_source_summary": {"DATA_UNAVAILABLE": 1},
+                "advisory_only": True,
+                "pipeline_output_changed": False,
+                "results_path": "logs/shadow_blueprint_prompt_alignment.jsonl",
+                "error_type": "shadow_generation_planning_unavailable",
             }
             logger.warning(
                 "shadow_generation_planning run_id=%s blueprint_id=%s channel_id=%s topic=%s planning_version=%s validation=%s storage=failure mode=advisory error_type=%s",

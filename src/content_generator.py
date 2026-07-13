@@ -1303,7 +1303,34 @@ class ContentGenerator:
             raise ValueError(f"niche_alignment_failed:{self.niche}") from last_error
 
         try:
-            prompt_metadata = build_prompt_metadata(prompt)
+            prompt_metadata = build_prompt_metadata(
+                prompt,
+                prompt_type="content_generation",
+                template_id="content_generator_v2_json",
+                provider_model_family="anthropic_claude",
+                input_field_presence={
+                    "topic": bool(str(topic or "").strip()),
+                    "prev_title": bool(str(prev_title or "").strip()),
+                    "next_topic_hint": bool(str(next_hint or "").strip()),
+                    "additional_guidance": bool(str(guidance or "").strip()),
+                    "niche": bool(str(self.niche or "").strip()),
+                },
+                blueprint_goal_references=[
+                    "narrative_structure",
+                    "hook_type",
+                    "retention_first_30s",
+                    "thumbnail_topic_relevance",
+                    "seo_keyword_strategy",
+                    "shorts_hook",
+                    "safety_unsupported_claim_controls",
+                ],
+            )
+        except TypeError:
+            # Compatibility fallback for legacy one-arg callables in tests and custom hooks.
+            try:
+                prompt_metadata = build_prompt_metadata(prompt)
+            except Exception:
+                prompt_metadata = {}
         except Exception:
             prompt_metadata = {}
 

@@ -23,6 +23,8 @@ class CapabilityState(str, Enum):
 
     @classmethod
     def from_raw(cls, value: object) -> "CapabilityState":
+        if isinstance(value, cls):
+            return value
         text = str(value or "").strip().upper()
         if text in cls._value2member_map_:
             return cls(text)
@@ -137,6 +139,17 @@ def _build_profile(channel_id: str, payload: dict, *, source: str) -> ChannelCap
     )
 
 
+def _normalize_profile(profile: ChannelCapabilityProfile, *, fallback_channel_id: str = "") -> ChannelCapabilityProfile:
+    channel_id = str(getattr(profile, "channel_id", "") or "").strip() or str(fallback_channel_id or "").strip()
+    payload = {
+        "standard_features": getattr(profile, "standard_features", CapabilityState.UNKNOWN),
+        "intermediate_features": getattr(profile, "intermediate_features", CapabilityState.UNKNOWN),
+        "advanced_features": getattr(profile, "advanced_features", CapabilityState.UNKNOWN),
+    }
+    source = str(getattr(profile, "source", "") or "normalized")
+    return _build_profile(channel_id, payload, source=source)
+
+
 def _known_channel_ids(path: Path = CHANNEL_REGISTRY_PATH) -> set[str]:
     payload = _load_json(path)
     channels = payload.get("channels") if isinstance(payload, dict) else None
@@ -225,7 +238,8 @@ class ChannelCapabilityResolver:
                 logger.warning("Capability provider failed: provider=%s error=%s", getattr(provider, "provider_name", "unknown"), exc)
                 continue
             if isinstance(profile, ChannelCapabilityProfile):
-                return CapabilityResolution(profile=profile, source=profile.source)
+                normalized = _normalize_profile(profile, fallback_channel_id=cid)
+                return CapabilityResolution(profile=normalized, source=normalized.source)
 
         fallback = self._safe_default_profile(cid)
         return CapabilityResolution(profile=fallback, source=fallback.source)

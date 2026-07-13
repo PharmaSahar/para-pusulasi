@@ -92,7 +92,7 @@ Description build:
 
 External links:
 - `src/monetization.py` contains affiliate/link helpers (`get_description_with_affiliate`)
-- Current pipeline/uploader path does not centrally enforce channel-level external-link capability gates
+- `src/youtube_uploader.py` now has opt-in capability gating that strips `http/https` links when advanced capability is unavailable and capability gating is enabled
 
 ## 8) Video Duration Controls
 
@@ -100,8 +100,11 @@ Shorts duration:
 - `src/shorts_creator.py` enforces short duration cap with `SHORT_DURATION = 58`
 
 Long-form threshold logic:
-- No centralized channel capability gate currently enforces `>15 minutes` eligibility.
+- `src/youtube_uploader.py` now has opt-in capability gating that blocks `>15 minutes` uploads when intermediate capability is unavailable and capability gating is enabled.
 - `src/youtube_uploader.py` reads duration for chapter generation quality logic, not eligibility gating.
+
+Thumbnail capability gate:
+- `src/youtube_uploader.py` now has opt-in capability gating that skips custom thumbnail upload when intermediate capability is unavailable.
 
 ## 9) Live Streaming Related Code
 

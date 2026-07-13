@@ -18,7 +18,12 @@ from httplib2 import ServerNotFoundError
 from .config import config
 from .chapter_validator import remove_chapter_lines, render_chapter_block, validate_and_fix_chapters
 from .content_generator import VideoContent
-from .channel_capabilities import capability_gating_enabled, get_default_channel_capability_resolver
+from .channel_capabilities import (
+    CapabilityState,
+    ChannelCapabilityProfile,
+    capability_gating_enabled,
+    get_default_channel_capability_resolver,
+)
 from .youtube_auth import get_authenticated_service
 from .quality_scoring import build_quality_scores
 from .chapter_validation_trail import (
@@ -40,8 +45,19 @@ class YouTubeUploader:
         self.service = None
         self.channel_cfg = channel_cfg
         self._capability_gating_enabled = capability_gating_enabled()
-        self._capability_resolution = get_default_channel_capability_resolver().resolve(self._channel_id())
-        self._capability_profile = self._capability_resolution.profile
+        self._capability_resolution = None
+        try:
+            self._capability_resolution = get_default_channel_capability_resolver().resolve(self._channel_id())
+            self._capability_profile = self._capability_resolution.profile
+        except Exception as exc:
+            logger.warning("Capability resolver unavailable; falling back to safe profile: %s", exc)
+            self._capability_profile = ChannelCapabilityProfile(
+                channel_id=self._channel_id(),
+                standard_features=CapabilityState.UNKNOWN,
+                intermediate_features=CapabilityState.DISABLED,
+                advanced_features=CapabilityState.DISABLED,
+                source="uploader_safe_fallback",
+            )
         self._can_upload_thumbnail = True
         self._can_add_comment = True
         self._thumbnail_permission_state = self._load_thumbnail_permission_state()

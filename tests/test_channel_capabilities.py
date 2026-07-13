@@ -12,6 +12,7 @@ from src.channel_capabilities import (
     CapabilityState,
     ChannelCapabilityProfile,
     ChannelCapabilityResolver,
+    ChannelFeature,
     StaticRegistryCapabilityProvider,
     capability_gating_enabled,
 )
@@ -153,6 +154,32 @@ def test_feature_helpers_map_to_expected_tiers() -> None:
     assert intermediate_only.supports_feature("not_a_real_feature") is False
 
 
+def test_all_configured_channels_resolve_to_expected_classes() -> None:
+    payload = json.loads(Path("channels/channel_registry.json").read_text(encoding="utf-8"))
+    channels = dict(payload.get("channels") or {})
+    resolver = ChannelCapabilityResolver()
+
+    full = {"para_pusulasi", "kariyer_pusulasi", "girisim_okulu"}
+    partial = {"borsa_akademi", "kripto_rehber"}
+
+    for cid in channels.keys():
+        resolution = resolver.resolve(cid)
+        profile = resolution.profile
+
+        if cid in full:
+            assert profile.standard_features is CapabilityState.ENABLED
+            assert profile.intermediate_features is CapabilityState.ENABLED
+            assert profile.advanced_features is CapabilityState.ENABLED
+        elif cid in partial:
+            assert profile.standard_features is CapabilityState.ENABLED
+            assert profile.intermediate_features is CapabilityState.ENABLED
+            assert profile.advanced_features is CapabilityState.PENDING
+        else:
+            assert profile.standard_features is CapabilityState.ENABLED
+            assert profile.intermediate_features is CapabilityState.DISABLED
+            assert profile.advanced_features is CapabilityState.DISABLED
+
+
 class _BrokenProvider:
     provider_name = "broken"
 
@@ -224,6 +251,118 @@ def test_provider_failure_falls_back_to_next_provider(tmp_path: Path) -> None:
     assert resolution.profile.advanced_features is CapabilityState.PENDING
 
 
+class _NamedProvider:
+    def __init__(self, name: str, profile: ChannelCapabilityProfile | object | None):
+        self.provider_name = name
+        self._profile = profile
+
+    def get_channel_capabilities(self, channel_id: str):
+        _ = channel_id
+        return self._profile
+
+
+def test_provider_priority_live_cache_static_is_deterministic() -> None:
+    live_profile = ChannelCapabilityProfile(
+        channel_id="para_pusulasi",
+        standard_features=CapabilityState.ENABLED,
+        intermediate_features=CapabilityState.ENABLED,
+        advanced_features=CapabilityState.ENABLED,
+        source="live_provider",
+    )
+    cache_profile = ChannelCapabilityProfile(
+        channel_id="para_pusulasi",
+        standard_features=CapabilityState.ENABLED,
+        intermediate_features=CapabilityState.DISABLED,
+        advanced_features=CapabilityState.DISABLED,
+        source="cache_provider",
+    )
+    static_profile = ChannelCapabilityProfile(
+        channel_id="para_pusulasi",
+        standard_features=CapabilityState.ENABLED,
+        intermediate_features=CapabilityState.DISABLED,
+        advanced_features=CapabilityState.PENDING,
+        source="static_provider",
+    )
+
+    resolver = ChannelCapabilityResolver(
+        live_provider=_NamedProvider("live", live_profile),
+        cache_provider=_NamedProvider("cache", cache_profile),
+        static_provider=_NamedProvider("static", static_profile),
+    )
+    resolution = resolver.resolve("para_pusulasi")
+    assert resolution.source == "live_provider"
+    assert resolution.profile.advanced_features is CapabilityState.ENABLED
+
+
+def test_malformed_live_result_is_rejected_and_cache_used() -> None:
+    cache_profile = ChannelCapabilityProfile(
+        channel_id="para_pusulasi",
+        standard_features=CapabilityState.ENABLED,
+        intermediate_features=CapabilityState.DISABLED,
+        advanced_features=CapabilityState.DISABLED,
+        source="cache_provider",
+    )
+    resolver = ChannelCapabilityResolver(
+        live_provider=_NamedProvider("live", {"not": "a_profile"}),
+        cache_provider=_NamedProvider("cache", cache_profile),
+        static_provider=_NamedProvider("static", None),
+    )
+
+    resolution = resolver.resolve("para_pusulasi")
+    assert resolution.source == "cache_provider"
+
+
+def test_malformed_cache_result_is_rejected_and_static_used() -> None:
+    static_profile = ChannelCapabilityProfile(
+        channel_id="para_pusulasi",
+        standard_features=CapabilityState.ENABLED,
+        intermediate_features=CapabilityState.DISABLED,
+        advanced_features=CapabilityState.DISABLED,
+        source="static_provider",
+    )
+    resolver = ChannelCapabilityResolver(
+        live_provider=_NamedProvider("live", None),
+        cache_provider=_NamedProvider("cache", "bad-cache-value"),
+        static_provider=_NamedProvider("static", static_profile),
+    )
+
+    resolution = resolver.resolve("para_pusulasi")
+    assert resolution.source == "static_provider"
+
+
+def test_static_provider_exception_falls_back_safe_default_for_known_channel() -> None:
+    resolver = ChannelCapabilityResolver(
+        live_provider=_NamedProvider("live", None),
+        cache_provider=_NamedProvider("cache", None),
+        static_provider=_BrokenProvider(),
+    )
+    resolution = resolver.resolve("saglik_pusulasi")
+
+    assert resolution.source == "safe_default:known_channel"
+    assert resolution.profile.standard_features is CapabilityState.ENABLED
+    assert resolution.profile.intermediate_features is CapabilityState.DISABLED
+    assert resolution.profile.advanced_features is CapabilityState.DISABLED
+
+
+def test_inconsistent_live_profile_is_normalized_fail_closed() -> None:
+    live_profile = ChannelCapabilityProfile(
+        channel_id="borsa_akademi",
+        standard_features=CapabilityState.ENABLED,
+        intermediate_features=CapabilityState.DISABLED,
+        advanced_features=CapabilityState.ENABLED,
+        source="live_provider",
+    )
+    resolver = ChannelCapabilityResolver(
+        live_provider=_NamedProvider("live", live_profile),
+        cache_provider=_NamedProvider("cache", None),
+        static_provider=_NamedProvider("static", None),
+    )
+
+    resolution = resolver.resolve("borsa_akademi")
+    assert resolution.profile.intermediate_features is CapabilityState.DISABLED
+    assert resolution.profile.advanced_features is CapabilityState.DISABLED
+
+
 def test_invalid_registry_values_fail_closed(tmp_path: Path) -> None:
     registry_path = tmp_path / "invalid_states.json"
     registry_path.write_text(
@@ -279,6 +418,18 @@ def test_capability_gating_disabled_by_default(monkeypatch: pytest.MonkeyPatch) 
     assert capability_gating_enabled() is False
 
 
+@pytest.mark.parametrize("value", ["", "0", "false", "False", "FALSE", "no", "No", "off", "random"])
+def test_capability_gating_falsey_values(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    monkeypatch.setenv("CHANNEL_CAPABILITY_GATING_ENABLED", value)
+    assert capability_gating_enabled() is False
+
+
+@pytest.mark.parametrize("value", ["1", "true", "TRUE", "yes", "on"])
+def test_capability_gating_truthy_values(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    monkeypatch.setenv("CHANNEL_CAPABILITY_GATING_ENABLED", value)
+    assert capability_gating_enabled() is True
+
+
 def test_uploader_behavior_unchanged_when_gating_flag_absent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("CHANNEL_CAPABILITY_GATING_ENABLED", raising=False)
     uploader = youtube_uploader.YouTubeUploader(channel_cfg=SimpleNamespace(channel_id="para_pusulasi"))
@@ -311,6 +462,20 @@ def test_uploader_behavior_unchanged_when_gating_flag_absent(tmp_path: Path, mon
     assert result == "video123"
     assert uploaded_thumbs == [True]
     assert "https://example.com" in capture_service._videos.last_insert_kwargs["body"]["snippet"]["description"]
+
+
+def test_uploader_init_is_resilient_when_capability_resolver_throws(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("CHANNEL_CAPABILITY_GATING_ENABLED", raising=False)
+    monkeypatch.setattr(
+        youtube_uploader,
+        "get_default_channel_capability_resolver",
+        lambda: (_ for _ in ()).throw(RuntimeError("resolver boom")),
+    )
+    uploader = youtube_uploader.YouTubeUploader(channel_cfg=SimpleNamespace(channel_id="para_pusulasi"))
+    assert uploader._capability_gating_enabled is False
+    assert uploader._capability_profile.standard_features is CapabilityState.UNKNOWN
+    assert uploader._capability_profile.intermediate_features is CapabilityState.DISABLED
+    assert uploader._capability_profile.advanced_features is CapabilityState.DISABLED
 
 
 def test_long_video_is_blocked_only_when_gating_enabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -400,3 +565,11 @@ def test_external_link_stripping_applies_only_when_gating_enabled_and_advanced_u
     uploader.upload_video(str(_make_video_file(tmp_path, "b.mp4")), _make_content())
     allowed_description = capture_service._videos.last_insert_kwargs["body"]["snippet"]["description"]
     assert "https://example.com" in allowed_description
+
+
+def test_partial_channel_pending_advanced_never_grants_advanced_features() -> None:
+    profile = ChannelCapabilityResolver().resolve("borsa_akademi").profile
+    assert profile.advanced_features is CapabilityState.PENDING
+    assert profile.supports_feature(ChannelFeature.EXTERNAL_LINKS) is False
+    assert profile.supports_external_links() is False
+    assert profile.supports_increased_upload_limits() is False

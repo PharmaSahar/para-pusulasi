@@ -1074,6 +1074,7 @@ def run_full_pipeline(
                 run_alignment_analysis_and_store,
             )
             from .shadow_prompt_experiment_framework import run_prompt_experiment_and_store
+            from .offline_prompt_candidate_generator import run_offline_prompt_candidate_lab_and_store
             from .content_intelligence_foundation import GenerationBlueprint
 
             requested_objective = "shorts_optimization" if str(slot or "").strip().lower() == "short" else "engagement_growth"
@@ -1173,6 +1174,43 @@ def run_full_pipeline(
                         True,
                         experiment_exc.__class__.__name__,
                     )
+
+                try:
+                    prompt_candidate_result = run_offline_prompt_candidate_lab_and_store(
+                        blueprint=blueprint,
+                        run_id=str(result.get("run_id", "")),
+                        channel_id=str(result.get("channel", "")),
+                        content_type="mixed",
+                    )
+                    result["shadow_prompt_candidate_lab"] = prompt_candidate_result
+                    logger.info(
+                        "shadow_prompt_candidate_lab run_id=%s experiment_id=%s channel_id=%s best_overall=%s advisory=%s",
+                        result.get("run_id"),
+                        prompt_candidate_result.get("experiment_id"),
+                        result.get("channel"),
+                        (prompt_candidate_result.get("ranking") or {}).get("best_overall"),
+                        bool(prompt_candidate_result.get("advisory_only", True)),
+                    )
+                except Exception as candidate_exc:
+                    result["shadow_prompt_candidate_lab"] = {
+                        "schema_version": "v1",
+                        "experiment_id": None,
+                        "run_id": str(result.get("run_id", "")),
+                        "channel_id": str(result.get("channel", "")),
+                        "content_type": "mixed",
+                        "ranking": {},
+                        "advisory_only": True,
+                        "pipeline_output_changed": False,
+                        "results_path": "logs/offline_prompt_candidates.jsonl",
+                        "error_type": candidate_exc.__class__.__name__,
+                    }
+                    logger.warning(
+                        "shadow_prompt_candidate_lab run_id=%s channel_id=%s storage=failure advisory=%s error_type=%s",
+                        result.get("run_id"),
+                        result.get("channel"),
+                        True,
+                        candidate_exc.__class__.__name__,
+                    )
             except Exception as alignment_exc:
                 result["shadow_blueprint_prompt_alignment"] = {
                     "schema_version": "v1",
@@ -1219,6 +1257,18 @@ def run_full_pipeline(
                     "advisory_only": True,
                     "pipeline_output_changed": False,
                     "results_path": "logs/shadow_prompt_experiments.jsonl",
+                    "error_type": "alignment_unavailable",
+                }
+                result["shadow_prompt_candidate_lab"] = {
+                    "schema_version": "v1",
+                    "experiment_id": None,
+                    "run_id": str(result.get("run_id", "")),
+                    "channel_id": str(result.get("channel", "")),
+                    "content_type": "mixed",
+                    "ranking": {},
+                    "advisory_only": True,
+                    "pipeline_output_changed": False,
+                    "results_path": "logs/offline_prompt_candidates.jsonl",
                     "error_type": "alignment_unavailable",
                 }
                 logger.warning(
@@ -1308,6 +1358,18 @@ def run_full_pipeline(
                 "advisory_only": True,
                 "pipeline_output_changed": False,
                 "results_path": "logs/shadow_prompt_experiments.jsonl",
+                "error_type": "shadow_generation_planning_unavailable",
+            }
+            result["shadow_prompt_candidate_lab"] = {
+                "schema_version": "v1",
+                "experiment_id": None,
+                "run_id": str(result.get("run_id", "")),
+                "channel_id": str(result.get("channel", "")),
+                "content_type": "mixed",
+                "ranking": {},
+                "advisory_only": True,
+                "pipeline_output_changed": False,
+                "results_path": "logs/offline_prompt_candidates.jsonl",
                 "error_type": "shadow_generation_planning_unavailable",
             }
             logger.warning(

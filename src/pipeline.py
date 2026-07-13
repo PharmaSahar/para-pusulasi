@@ -1069,6 +1069,7 @@ def run_full_pipeline(
     if shadow_mode_enabled:
         try:
             from .shadow_content_quality import (
+                SHADOW_CONTENT_QUALITY_SCHEMA_VERSION,
                 SHADOW_RESULTS_PATH,
                 ShadowContentQualityEngine,
                 build_shadow_evaluation_context,
@@ -1090,9 +1091,10 @@ def run_full_pipeline(
             shadow_engine = ShadowContentQualityEngine(context=shadow_context, results_path=SHADOW_RESULTS_PATH)
             result["shadow_quality"] = {
                 "enabled": True,
-                "schema_version": "v1",
+                "schema_version": SHADOW_CONTENT_QUALITY_SCHEMA_VERSION,
                 "evaluation_id": shadow_context.evaluation_id,
                 "results_path": str(SHADOW_RESULTS_PATH),
+                "mode": "advisory",
                 "checkpoints": [],
             }
             _run_shadow_checkpoint(checkpoint="generation")
@@ -1114,9 +1116,10 @@ def run_full_pipeline(
             )
             result["shadow_quality"] = {
                 "enabled": True,
-                "schema_version": "v1",
+                "schema_version": "v2",
                 "evaluation_id": None,
                 "results_path": "logs/shadow_content_quality_results.jsonl",
+                "mode": "advisory",
                 "checkpoints": [
                     {
                         "checkpoint": "context_init",

@@ -73,6 +73,52 @@ Minimum smoke test sequence:
 4. Optional fail-open behavior still reports explicit warning rather than silent success.
 5. No unexpected regressions in scheduler startup or governance dashboard generation.
 
+### Authoritative Smoke Gate (Target-Validated)
+
+Use only existing tests from the target release and block immediately if any path is missing.
+
+Expected selected tests:
+
+- tests/test_scheduler_cli.py
+- tests/test_refresh_governance_readiness.py
+- tests/test_preprod_isolation_paths.py
+- tests/test_upload_precheck.py
+
+Expected test count:
+
+- 37 passed
+
+Mandatory pre-smoke path validation (must run before any service switch):
+
+```bash
+TARGET=/opt/parapusulasi/releases/003aa4209f76a005e75dd367f72dcecdb1bb6062
+PYTHON_BIN=/opt/parapusulasi/releases/003aa4209f76a005e75dd367f72dcecdb1bb6062/venv/bin/python
+SMOKE_TESTS="tests/test_scheduler_cli.py tests/test_refresh_governance_readiness.py tests/test_preprod_isolation_paths.py tests/test_upload_precheck.py"
+
+cd "$TARGET"
+for t in $SMOKE_TESTS; do
+  if [ ! -f "$t" ]; then
+    echo "BLOCKED: missing smoke test path $t"
+    exit 86
+  fi
+done
+```
+
+Corrected smoke command:
+
+```bash
+cd /opt/parapusulasi/releases/003aa4209f76a005e75dd367f72dcecdb1bb6062
+PYTHONPATH=. /opt/parapusulasi/releases/003aa4209f76a005e75dd367f72dcecdb1bb6062/venv/bin/python -m pytest -q \
+  tests/test_scheduler_cli.py \
+  tests/test_refresh_governance_readiness.py \
+  tests/test_preprod_isolation_paths.py \
+  tests/test_upload_precheck.py
+```
+
+Policy guard:
+
+- Do not stop/restart service and do not switch symlink until path validation and corrected smoke command both pass.
+
 ## Rollback SHA
 
 - Rollback SHA: b9cafcecff7d5593aba0d91ca33870e9df1f4332

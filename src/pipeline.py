@@ -300,6 +300,15 @@ def _content_quality_gate_enabled() -> bool:
     return explicit_enable
 
 
+def _content_quality_shadow_mode_enabled() -> bool:
+    try:
+        from .shadow_content_quality import content_quality_shadow_mode_enabled
+
+        return bool(content_quality_shadow_mode_enabled())
+    except Exception:
+        return False
+
+
 def _attach_audio_mix_metadata(result: dict, creator: object) -> None:
     mix = getattr(creator, "last_audio_mix_metadata", None)
     if isinstance(mix, dict) and mix:
@@ -437,6 +446,7 @@ def run_full_pipeline(
     result["upload_retry_count"] = 0
     result["final_status"] = "in_progress"
     _invoke_fact_bundle_pipeline_adapter(cfg, result)
+    shadow_mode_enabled = _content_quality_shadow_mode_enabled()
 
     telemetry_metadata = {
         "experiment_id": resolved_experiment_id,
@@ -494,6 +504,60 @@ def run_full_pipeline(
             result["audio_warning"] = None
         if "analytics_warning" not in result:
             result["analytics_warning"] = None
+
+    shadow_engine = None
+
+    def _run_shadow_checkpoint(checkpoint: str, **kwargs) -> None:
+        if not shadow_engine:
+            return
+        try:
+            row = shadow_engine.evaluate_and_store(checkpoint=checkpoint, **kwargs)
+            result.setdefault("shadow_quality", {}).setdefault("checkpoints", []).append(
+                {
+                    "checkpoint": checkpoint,
+                    "overall_score": row.get("overall_score"),
+                    "finding_count": row.get("finding_count"),
+                    "severity": row.get("severity"),
+                    "created_at": row.get("created_at"),
+                    "storage_status": "success",
+                }
+            )
+            logger.info(
+                "shadow_quality run_id=%s channel_id=%s checkpoint=%s overall_score=%s finding_count=%s severity=%s shadow_mode=%s storage=success",
+                result.get("run_id"),
+                result.get("channel"),
+                checkpoint,
+                row.get("overall_score"),
+                row.get("finding_count"),
+                row.get("severity"),
+                True,
+            )
+        except Exception as exc:
+            result.setdefault("shadow_quality", {}).setdefault("checkpoints", []).append(
+                {
+                    "checkpoint": checkpoint,
+                    "overall_score": None,
+                    "finding_count": 0,
+                    "severity": "none",
+                    "storage_status": "failed",
+                    "error_type": exc.__class__.__name__,
+                }
+            )
+            logger.warning(
+                "shadow_quality run_id=%s channel_id=%s checkpoint=%s overall_score=%s finding_count=%s severity=%s shadow_mode=%s storage=failure error_type=%s",
+                result.get("run_id"),
+                result.get("channel"),
+                checkpoint,
+                "none",
+                0,
+                "none",
+                True,
+                exc.__class__.__name__,
+            )
+
+    def _derive_thumbnail_text(title_value: str) -> str:
+        words = [w for w in str(title_value or "").split() if w.strip()]
+        return " ".join(words[:7]).strip()
 
     def _emit(stage: str, event_type: str, payload: dict | None = None):
         try:
@@ -1002,6 +1066,66 @@ def run_full_pipeline(
             )
             result["script_quality"] = script_quality
 
+    if shadow_mode_enabled:
+        try:
+            from .shadow_content_quality import (
+                SHADOW_RESULTS_PATH,
+                ShadowContentQualityEngine,
+                build_shadow_evaluation_context,
+            )
+
+            shadow_context = build_shadow_evaluation_context(
+                run_id=str(result.get("run_id", "")),
+                content_id=str(result.get("content_id", "")),
+                channel_id=str(result.get("channel", "")),
+                content_type="mixed",
+                topic=str(topic or getattr(content, "title", "") or ""),
+                title=str(getattr(content, "title", "") or ""),
+                script=str(getattr(content, "script", "") or ""),
+                description=str(getattr(content, "description", "") or ""),
+                thumbnail_prompt=str(getattr(content, "thumbnail_prompt", "") or ""),
+                cta_text=str(getattr(content, "next_video_teaser", "") or ""),
+                created_at=datetime.now(timezone.utc).isoformat(),
+            )
+            shadow_engine = ShadowContentQualityEngine(context=shadow_context, results_path=SHADOW_RESULTS_PATH)
+            result["shadow_quality"] = {
+                "enabled": True,
+                "schema_version": "v1",
+                "evaluation_id": shadow_context.evaluation_id,
+                "results_path": str(SHADOW_RESULTS_PATH),
+                "checkpoints": [],
+            }
+            _run_shadow_checkpoint(checkpoint="generation")
+            _run_shadow_checkpoint(
+                checkpoint="description",
+                description=str(getattr(content, "description", "") or ""),
+            )
+        except Exception as exc:
+            logger.warning(
+                "shadow_quality run_id=%s channel_id=%s checkpoint=%s overall_score=%s finding_count=%s severity=%s shadow_mode=%s storage=failure error_type=%s",
+                result.get("run_id"),
+                result.get("channel"),
+                "context_init",
+                "none",
+                0,
+                "none",
+                True,
+                exc.__class__.__name__,
+            )
+            result["shadow_quality"] = {
+                "enabled": True,
+                "schema_version": "v1",
+                "evaluation_id": None,
+                "results_path": "logs/shadow_content_quality_results.jsonl",
+                "checkpoints": [
+                    {
+                        "checkpoint": "context_init",
+                        "storage_status": "failed",
+                        "error_type": exc.__class__.__name__,
+                    }
+                ],
+            }
+
     try:
         _append_pipeline_run_registry_event(
             experiment_id=resolved_experiment_id,
@@ -1366,6 +1490,10 @@ def run_full_pipeline(
             variant_id=str(thumbnail_experiments.get("selected_variant_id") or "video_default"),
             rejected_attempts=((result.get("thumbnail_diversity") or {}).get("video", {}).get("rejected_attempts") or []),
         )
+        _run_shadow_checkpoint(
+            checkpoint="thumbnail_metadata",
+            thumbnail_text=_derive_thumbnail_text(getattr(content, "title", "")),
+        )
 
     try:
         from .thumbnail_history import load_recent_thumbnail_history
@@ -1472,6 +1600,24 @@ def run_full_pipeline(
             _emit("shorts_render", "stage_failed", {"error": str(short_render_error)[:300]})
         else:
             _emit("shorts_render", "stage_failed", {"error": "short_not_created"})
+
+    if shadow_engine:
+        short_text = ""
+        short_duration_seconds = 0.0
+        try:
+            from .shorts_creator import _extract_short_script
+
+            short_text = _extract_short_script(str(getattr(content, "script", "") or ""), str(getattr(content, "hook", "") or ""))
+            short_duration_seconds = 58.0 if result.get("short_path") else 0.0
+        except Exception:
+            short_text = ""
+            short_duration_seconds = 0.0
+        _run_shadow_checkpoint(
+            checkpoint="shorts",
+            short_script=short_text,
+            short_title=f"{str(getattr(content, 'title', '') or '')} #Shorts".strip(),
+            short_duration_seconds=short_duration_seconds,
+        )
 
     # ─── ADIM 4: YouTube Yukleme ──────────────────────────────────────────────
     _run_fact_check_guard("upload", content.script)
@@ -1762,6 +1908,22 @@ def run_full_pipeline(
             )
     else:
         _emit("shorts_upload", "stage_completed", {"short_uploaded": False, "skipped": True})
+
+    if shadow_engine:
+        try:
+            from .shadow_content_quality import infer_playlist_recommendation_from_title
+
+            playlist_reco = infer_playlist_recommendation_from_title(str(getattr(content, "title", "") or ""))
+        except Exception:
+            playlist_reco = None
+        _run_shadow_checkpoint(
+            checkpoint="seo_discovery",
+            description=str(getattr(content, "description", "") or ""),
+            tags=list(getattr(content, "tags", []) or []),
+            playlist_recommendation=playlist_reco,
+            card_recommendation=None,
+            end_screen_recommendation=None,
+        )
 
     try:
         performance_snapshot = build_performance_snapshot(

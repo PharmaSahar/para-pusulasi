@@ -318,6 +318,15 @@ def _script_lineage_evidence_runtime_enabled() -> bool:
         return False
 
 
+def _planning_blueprint_lineage_evidence_runtime_enabled() -> bool:
+    try:
+        from .planning_blueprint_lineage_evidence import planning_blueprint_lineage_evidence_enabled
+
+        return bool(planning_blueprint_lineage_evidence_enabled())
+    except Exception:
+        return False
+
+
 def _attach_audio_mix_metadata(result: dict, creator: object) -> None:
     mix = getattr(creator, "last_audio_mix_metadata", None)
     if isinstance(mix, dict) and mix:
@@ -457,9 +466,13 @@ def run_full_pipeline(
     _invoke_fact_bundle_pipeline_adapter(cfg, result)
     shadow_mode_enabled = _content_quality_shadow_mode_enabled()
     script_lineage_enabled = _script_lineage_evidence_runtime_enabled()
+    planning_lineage_enabled = _planning_blueprint_lineage_evidence_runtime_enabled()
     script_lineage_recorder = None
     script_lineage_generation_attempt = 0
     script_lineage_last_source_stage = "UNKNOWN"
+    planning_lineage_recorder = None
+    planning_lineage_generation_attempt = 0
+    planning_lineage_last_source_stage = "UNKNOWN"
 
     telemetry_metadata = {
         "experiment_id": resolved_experiment_id,
@@ -941,6 +954,9 @@ def run_full_pipeline(
         nonlocal script_lineage_recorder
         nonlocal script_lineage_generation_attempt
         nonlocal script_lineage_last_source_stage
+        nonlocal planning_lineage_recorder
+        nonlocal planning_lineage_generation_attempt
+        nonlocal planning_lineage_last_source_stage
         try:
             if additional_guidance is None:
                 content = generator.generate_and_save(generation_topic)
@@ -1030,6 +1046,50 @@ def run_full_pipeline(
             except Exception as exc:
                 logger.warning(
                     "Script lineage fail-open at generation: run_id=%s error_type=%s",
+                    result.get("run_id"),
+                    exc.__class__.__name__,
+                )
+
+        if planning_lineage_enabled:
+            try:
+                from .planning_blueprint_lineage_evidence import (
+                    PlanningLineageRecorder,
+                    PlanningLineageSourceStage,
+                )
+
+                if planning_lineage_recorder is None:
+                    planning_lineage_recorder = PlanningLineageRecorder(
+                        content_id=str(result.get("content_id", "")),
+                        run_id=str(result.get("run_id", "")),
+                        experiment_id=str(result.get("experiment_id", "") or "") or None,
+                    )
+
+                planning_lineage_generation_attempt += 1
+                source_stage = PlanningLineageSourceStage.UNKNOWN
+                reason = str(additional_guidance or "").lower()
+                if planning_lineage_generation_attempt == 1 and not additional_guidance:
+                    source_stage = PlanningLineageSourceStage.INITIAL_GENERATION
+                elif "fact-check" in reason or "fact check" in reason:
+                    source_stage = PlanningLineageSourceStage.FACT_CHECK_REGENERATION
+                elif any(token in reason for token in ("quality", "blocked", "regenerate", "regeneration")):
+                    source_stage = PlanningLineageSourceStage.QUALITY_REGENERATION
+
+                planning_lineage_last_source_stage = source_stage.value
+
+                planning = dict(result.get("shadow_generation_planning") or {})
+                planning_context = dict(planning.get("context") or {})
+                planning_lineage_recorder.record_linkage(
+                    planning_context_id=str(planning_context.get("run_id") or "") or None,
+                    blueprint_id=str(planning.get("blueprint_id") or "") or None,
+                    blueprint_hash=str(planning.get("blueprint_hash") or "") or None,
+                    prompt_metadata=dict(getattr(content, "prompt_metadata", {}) or {}),
+                    script_text=str(getattr(content, "script", "") or ""),
+                    source_stage=source_stage,
+                    generation_attempt=planning_lineage_generation_attempt,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Planning lineage fail-open at generation: run_id=%s error_type=%s",
                     result.get("run_id"),
                     exc.__class__.__name__,
                 )
@@ -1851,6 +1911,33 @@ def run_full_pipeline(
         except Exception as exc:
             logger.warning(
                 "Script lineage fail-open at finalize: run_id=%s error_type=%s",
+                result.get("run_id"),
+                exc.__class__.__name__,
+            )
+
+    if planning_lineage_enabled and planning_lineage_recorder is not None:
+        try:
+            from .planning_blueprint_lineage_evidence import PlanningLineageSourceStage
+
+            try:
+                finalize_stage = PlanningLineageSourceStage(planning_lineage_last_source_stage)
+            except Exception:
+                finalize_stage = PlanningLineageSourceStage.FINALIZED
+
+            planning = dict(result.get("shadow_generation_planning") or {})
+            planning_context = dict(planning.get("context") or {})
+            planning_lineage_recorder.record_linkage(
+                planning_context_id=str(planning_context.get("run_id") or "") or None,
+                blueprint_id=str(planning.get("blueprint_id") or "") or None,
+                blueprint_hash=str(planning.get("blueprint_hash") or "") or None,
+                prompt_metadata=dict(getattr(content, "prompt_metadata", {}) or {}),
+                script_text=str(getattr(content, "script", "") or ""),
+                source_stage=finalize_stage,
+                generation_attempt=max(1, int(planning_lineage_generation_attempt or 1)),
+            )
+        except Exception as exc:
+            logger.warning(
+                "Planning lineage fail-open at finalize: run_id=%s error_type=%s",
                 result.get("run_id"),
                 exc.__class__.__name__,
             )

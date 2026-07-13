@@ -18,6 +18,7 @@ from httplib2 import ServerNotFoundError
 from .config import config
 from .chapter_validator import remove_chapter_lines, render_chapter_block, validate_and_fix_chapters
 from .content_generator import VideoContent
+from .channel_capabilities import capability_gating_enabled, get_default_channel_capability_resolver
 from .youtube_auth import get_authenticated_service
 from .quality_scoring import build_quality_scores
 from .chapter_validation_trail import (
@@ -38,6 +39,9 @@ class YouTubeUploader:
     def __init__(self, channel_cfg=None):
         self.service = None
         self.channel_cfg = channel_cfg
+        self._capability_gating_enabled = capability_gating_enabled()
+        self._capability_resolution = get_default_channel_capability_resolver().resolve(self._channel_id())
+        self._capability_profile = self._capability_resolution.profile
         self._can_upload_thumbnail = True
         self._can_add_comment = True
         self._thumbnail_permission_state = self._load_thumbnail_permission_state()
@@ -129,6 +133,13 @@ class YouTubeUploader:
         self._log_dns_resolution(YOUTUBE_API_HOST)
         self._ensure_dns_resolution(YOUTUBE_API_HOST)
 
+        if self._capability_gating_enabled:
+            duration_seconds = self._get_video_duration_seconds(video_path)
+            if duration_seconds > 15 * 60 and not self._capability_profile.supports_long_form_over_15_minutes():
+                raise RuntimeError(
+                    f"capability_guard_long_form_over_15m_not_allowed: channel={self._channel_id()} source={self._capability_profile.source}"
+                )
+
         status = {"selfDeclaredMadeForKids": False}
         if publish_at:
             # Scheduled: private olarak yükle, YouTube zamanında public yapar
@@ -159,10 +170,14 @@ class YouTubeUploader:
         except Exception:
             pass
 
+        safe_description = upload_description
+        if self._capability_gating_enabled and not self._capability_profile.supports_external_links():
+            safe_description = self._strip_external_links(upload_description)
+
         body = {
             "snippet": {
                 "title": content.title[:100],
-                "description": upload_description[:5000],
+                "description": safe_description[:5000],
                 "tags": clean_tags,
                 "categoryId": content.category_id,
                 "defaultLanguage": self._resolve_default_language(),
@@ -211,8 +226,18 @@ class YouTubeUploader:
         )
         logger.info(f"Video yuklendi: https://youtube.com/watch?v={video_id}")
 
-        if self._can_upload_thumbnail and thumbnail_path and Path(thumbnail_path).exists():
+        thumbnail_allowed_by_capability = True
+        if self._capability_gating_enabled:
+            thumbnail_allowed_by_capability = self._capability_profile.supports_custom_thumbnails()
+
+        if self._can_upload_thumbnail and thumbnail_allowed_by_capability and thumbnail_path and Path(thumbnail_path).exists():
             self._upload_thumbnail(video_id, thumbnail_path)
+        elif thumbnail_path and Path(thumbnail_path).exists() and self._capability_gating_enabled and not thumbnail_allowed_by_capability:
+            logger.info(
+                "Thumbnail upload skipped by capability gate (channel=%s source=%s)",
+                self._channel_id(),
+                self._capability_profile.source,
+            )
         elif thumbnail_path and Path(thumbnail_path).exists() and not self._can_upload_thumbnail:
             logger.info("Thumbnail upload skipped by cached permission state (channel=%s)", self._channel_id())
 
@@ -418,6 +443,9 @@ class YouTubeUploader:
             if token:
                 hashtag_tokens.append(f"#{token}")
         return " ".join(hashtag_tokens)
+
+    def _strip_external_links(self, text: str) -> str:
+        return re.sub(r"https?://\S+", "", str(text or "")).strip()
 
     def _get_video_duration_seconds(self, video_path: str) -> int:
         try:

@@ -1,0 +1,36 @@
+{
+  "schema_version": "v1",
+  "description": "Project 001 Slice 2 Phase 1 initial channel capability registry",
+  "defaults_for_known_channels": {
+    "standard_features": "ENABLED",
+    "intermediate_features": "DISABLED",
+    "advanced_features": "DISABLED"
+  },
+  "channels": {
+    "para_pusulasi": {
+      "standard_features": "ENABLED",
+      "intermediate_features": "ENABLED",
+      "advanced_features": "ENABLED"
+    },
+    "kariyer_pusulasi": {
+      "standard_features": "ENABLED",
+      "intermediate_features": "ENABLED",
+      "advanced_features": "ENABLED"
+    },
+    "girisim_okulu": {
+      "standard_features": "ENABLED",
+      "intermediate_features": "ENABLED",
+      "advanced_features": "ENABLED"
+    },
+    "borsa_akademi": {
+      "standard_features": "ENABLED",
+      "intermediate_features": "ENABLED",
+      "advanced_features": "PENDING"
+    },
+    "kripto_rehber": {
+      "standard_features": "ENABLED",
+      "intermediate_features": "ENABLED",
+      "advanced_features": "PENDING"
+    }
+  }
+}

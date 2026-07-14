@@ -13,6 +13,12 @@ Günlük bakım tamamlandı
 ## Bir Sonraki Adım
 Scheduler çalışıyor — videoları otomatik yüklüyor
 
+## Operasyon Notu (2026-07-14)
+- OAuth incident detected on active channel credentials.
+- OAuth recovery completed for all nine active affected channels.
+- Production verified healthy after recovery gates.
+- Analytics OAuth remains a separate future operational task.
+
 ## Kanal Kuyruk Durumu
 | Kanal | Durum | Yayın Zamanı |
 |---|---|---|

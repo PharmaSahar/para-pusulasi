@@ -4,6 +4,11 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Operations
+- OAuth incident closure documented for July 2026.
+- Active-channel OAuth recovery verified with release/SHA/symlink unchanged.
+- Analytics OAuth readiness explicitly tracked as separate follow-up.
+
 ## [0.1.0] - 2026-07-08
 
 ### Added

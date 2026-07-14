@@ -346,6 +346,15 @@ def _analytics_evidence_join_runtime_enabled() -> bool:
         return False
 
 
+def _thumbnail_metadata_lineage_runtime_enabled() -> bool:
+    try:
+        from .thumbnail_metadata_lineage import thumbnail_metadata_lineage_enabled
+
+        return bool(thumbnail_metadata_lineage_enabled())
+    except Exception:
+        return False
+
+
 def _attach_audio_mix_metadata(result: dict, creator: object) -> None:
     mix = getattr(creator, "last_audio_mix_metadata", None)
     if isinstance(mix, dict) and mix:
@@ -488,6 +497,7 @@ def run_full_pipeline(
     planning_lineage_enabled = _planning_blueprint_lineage_evidence_runtime_enabled()
     forward_evidence_enabled = _forward_evidence_capture_runtime_enabled()
     analytics_evidence_join_enabled = _analytics_evidence_join_runtime_enabled()
+    thumbnail_metadata_lineage_enabled = _thumbnail_metadata_lineage_runtime_enabled()
     script_lineage_recorder = None
     script_lineage_generation_attempt = 0
     script_lineage_last_source_stage = "UNKNOWN"
@@ -496,6 +506,7 @@ def run_full_pipeline(
     planning_lineage_last_source_stage = "UNKNOWN"
     forward_evidence_recorder = None
     analytics_evidence_join_recorder = None
+    thumbnail_metadata_lineage_recorder = None
 
     telemetry_metadata = {
         "experiment_id": resolved_experiment_id,
@@ -854,6 +865,50 @@ def run_full_pipeline(
             logger.warning(
                 "Analytics evidence join fail-open: run_id=%s error_type=%s",
                 result.get("run_id"),
+                exc.__class__.__name__,
+            )
+
+    def _capture_thumbnail_metadata_lineage(
+        *,
+        content_type: str,
+        thumbnail_path: str,
+        variant_id: str | None,
+        thumbnail_prompt: str | None,
+    ) -> None:
+        nonlocal thumbnail_metadata_lineage_recorder
+        if not thumbnail_metadata_lineage_enabled:
+            return
+
+        try:
+            from .thumbnail_metadata_lineage import (
+                ThumbnailMetadataLineageRecorder,
+                build_thumbnail_metadata_lineage_row,
+            )
+
+            if thumbnail_metadata_lineage_recorder is None:
+                thumbnail_metadata_lineage_recorder = ThumbnailMetadataLineageRecorder()
+
+            planning = dict(result.get("shadow_generation_planning") or {})
+            planning_context = dict(planning.get("context") or {})
+            metadata = dict((result.get("thumbnail_metadata") or {}).get(content_type) or {})
+            row = build_thumbnail_metadata_lineage_row(
+                content_id=str(result.get("content_id", "")),
+                run_id=str(result.get("run_id", "")),
+                blueprint_id=str(planning.get("blueprint_id", "") or "") or None,
+                planning_id=str(planning_context.get("run_id", "") or planning.get("run_id", "") or "") or None,
+                thumbnail_prompt=thumbnail_prompt,
+                thumbnail_path=thumbnail_path,
+                metadata_version=str(metadata.get("schema_version") or THUMBNAIL_METADATA_SCHEMA_VERSION),
+                creation_timestamp=str(metadata.get("evaluated_at_utc") or "") or None,
+                content_type=content_type,
+                variant_id=variant_id,
+            )
+            thumbnail_metadata_lineage_recorder.append_thumbnail_metadata(row)
+        except Exception as exc:
+            logger.warning(
+                "Thumbnail metadata lineage fail-open: run_id=%s content_type=%s error_type=%s",
+                result.get("run_id"),
+                content_type,
                 exc.__class__.__name__,
             )
 
@@ -2215,6 +2270,12 @@ def run_full_pipeline(
             variant_id=str(thumbnail_experiments.get("selected_variant_id") or "video_default"),
             rejected_attempts=((result.get("thumbnail_diversity") or {}).get("video", {}).get("rejected_attempts") or []),
         )
+        _capture_thumbnail_metadata_lineage(
+            content_type="video",
+            thumbnail_path=str(thumbnail_path),
+            variant_id=str(thumbnail_experiments.get("selected_variant_id") or "video_default"),
+            thumbnail_prompt=str(getattr(content, "thumbnail_prompt", "") or content.title or ""),
+        )
         _run_shadow_checkpoint(
             checkpoint="thumbnail_metadata",
             thumbnail_text=_derive_thumbnail_text(getattr(content, "title", "")),
@@ -2592,6 +2653,20 @@ def run_full_pipeline(
                 thumbnail_path=short_thumbnail_path,
                 variant_id="short_default",
                 rejected_attempts=((result.get("thumbnail_diversity") or {}).get("short", {}).get("rejected_attempts") or []),
+            )
+            _capture_thumbnail_metadata_lineage(
+                content_type="short",
+                thumbnail_path=str(short_thumbnail_path),
+                variant_id="short_default",
+                thumbnail_prompt=str(
+                    (
+                        diversity_short_record.get("thumbnail_prompt")
+                        if isinstance(diversity_short_record, dict)
+                        else getattr(content, "thumbnail_prompt", "")
+                    )
+                    or short_title
+                    or ""
+                ),
             )
 
             short_content = VC(

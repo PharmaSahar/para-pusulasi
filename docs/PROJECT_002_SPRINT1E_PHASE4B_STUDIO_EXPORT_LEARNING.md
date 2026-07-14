@@ -199,6 +199,21 @@ No API calls and no OAuth implementation are included in this phase.
 - production validation is out of scope
 - automatic regulation remains disabled
 
+## Phase4C Precondition Gate
+Phase4C depends on frozen historical Phase4B state and does not bootstrap that state automatically.
+
+Required precondition command:
+- `python tools/project002_sprint1e_phase4b_precondition_check.py`
+
+Expected outcomes:
+- `PHASE4B ENVIRONMENT READY` means frozen baseline inputs are present and internally consistent for Phase4C validation.
+- `PHASE4B ENVIRONMENT PRECONDITION FAILED` means historical inputs are missing or inconsistent.
+
+Policy:
+- this checker is read-only
+- it does not generate, backfill, copy, or rewrite historical analytics inputs
+- test environments must satisfy the precondition explicitly before running Phase4C baseline-dependent assertions
+
 ## Promotion Criteria
 Before any learning signal may influence generation:
 - sufficient per-channel sample size

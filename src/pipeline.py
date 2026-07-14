@@ -337,6 +337,15 @@ def _forward_evidence_capture_runtime_enabled() -> bool:
         return False
 
 
+def _analytics_evidence_join_runtime_enabled() -> bool:
+    try:
+        from .analytics_evidence_join import analytics_evidence_join_enabled
+
+        return bool(analytics_evidence_join_enabled())
+    except Exception:
+        return False
+
+
 def _attach_audio_mix_metadata(result: dict, creator: object) -> None:
     mix = getattr(creator, "last_audio_mix_metadata", None)
     if isinstance(mix, dict) and mix:
@@ -478,6 +487,7 @@ def run_full_pipeline(
     script_lineage_enabled = _script_lineage_evidence_runtime_enabled()
     planning_lineage_enabled = _planning_blueprint_lineage_evidence_runtime_enabled()
     forward_evidence_enabled = _forward_evidence_capture_runtime_enabled()
+    analytics_evidence_join_enabled = _analytics_evidence_join_runtime_enabled()
     script_lineage_recorder = None
     script_lineage_generation_attempt = 0
     script_lineage_last_source_stage = "UNKNOWN"
@@ -485,6 +495,7 @@ def run_full_pipeline(
     planning_lineage_generation_attempt = 0
     planning_lineage_last_source_stage = "UNKNOWN"
     forward_evidence_recorder = None
+    analytics_evidence_join_recorder = None
 
     telemetry_metadata = {
         "experiment_id": resolved_experiment_id,
@@ -809,6 +820,39 @@ def run_full_pipeline(
             logger.warning(
                 "Forward evidence fail-open at stage=%s run_id=%s error_type=%s",
                 stage_name,
+                result.get("run_id"),
+                exc.__class__.__name__,
+            )
+
+    def _capture_analytics_evidence_join_snapshot() -> None:
+        nonlocal analytics_evidence_join_recorder
+        if not analytics_evidence_join_enabled:
+            return
+
+        try:
+            from .analytics_evidence_join import (
+                AnalyticsEvidenceJoinRecorder,
+                build_pipeline_analytics_evidence_row,
+            )
+
+            if analytics_evidence_join_recorder is None:
+                analytics_evidence_join_recorder = AnalyticsEvidenceJoinRecorder()
+
+            row = build_pipeline_analytics_evidence_row(
+                source_cursor=str(result.get("run_id", "")) or "pipeline",
+                content_id=str(result.get("content_id", "")),
+                run_id=str(result.get("run_id", "")),
+                upload_id=str(result.get("video_id", "") or "") or None,
+                channel_id=str(result.get("channel", "") or "") or None,
+                snapshot_time=datetime.now(timezone.utc).isoformat(),
+                metrics_version=str((result.get("performance_snapshot") or {}).get("performance_schema_version") or "v1"),
+                performance_snapshot=dict(result.get("performance_snapshot") or {}),
+                youtube_analytics=dict(result.get("youtube_analytics") or {}),
+            )
+            analytics_evidence_join_recorder.append_joined_record(row=row)
+        except Exception as exc:
+            logger.warning(
+                "Analytics evidence join fail-open: run_id=%s error_type=%s",
                 result.get("run_id"),
                 exc.__class__.__name__,
             )
@@ -2697,6 +2741,8 @@ def run_full_pipeline(
                     warning.get("error_type"),
                     warning.get("count"),
                 )
+
+    _capture_analytics_evidence_join_snapshot()
 
     logger.info("=" * 60)
     if result.get("video_id"):

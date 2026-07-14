@@ -2,8 +2,51 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Callable, Sequence, TypeVar
 
 import pytest
+
+from tools.project002_sprint1e_phase4b_precondition_check import CheckResult, GateState, check_phase4b_environment
+
+
+_T = TypeVar("_T")
+_PHASE4C_BASELINE_TEST_FILES = {
+    "test_unresolved_analytics_recovery_integration.py",
+    "test_unresolved_analytics_recovery_manifest.py",
+}
+
+
+def _format_phase4b_precondition_failure(result: CheckResult) -> str:
+    lines = ["PHASE4B ENVIRONMENT PRECONDITION FAILED", f"STATE: {result.state.value}"]
+    for idx, problem in enumerate(result.problems, start=1):
+        lines.append(f"{idx}. [{problem.code}] {problem.message}")
+    return "\n".join(lines)
+
+
+def run_phase4c_with_precondition(repository_root: Path, phase4c_callable: Callable[[], _T]) -> _T:
+    result = check_phase4b_environment(repository_root)
+    if result.state is not GateState.READY:
+        raise RuntimeError(_format_phase4b_precondition_failure(result))
+    return phase4c_callable()
+
+
+def _requires_phase4c_gate(item_paths: Sequence[str]) -> bool:
+    return any(Path(path).name in _PHASE4C_BASELINE_TEST_FILES for path in item_paths)
+
+
+def pytest_runtestloop(session: pytest.Session) -> None:
+    if bool(getattr(session.config.option, "collectonly", False)):
+        return
+
+    if not _requires_phase4c_gate([str(item.fspath) for item in session.items]):
+        return
+
+    repository_root = Path(__file__).resolve().parents[1]
+    result = check_phase4b_environment(repository_root)
+    if result.state is GateState.READY:
+        return
+
+    pytest.exit(_format_phase4b_precondition_failure(result), returncode=2)
 
 
 @pytest.fixture(autouse=True)

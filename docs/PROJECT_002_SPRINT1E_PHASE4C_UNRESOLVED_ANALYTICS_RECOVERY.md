@@ -37,6 +37,19 @@ Result:
 - unresolved rows frozen for audit: 102
 - source hash: `15beaf8f468a287d25e6f95f15aa4ce193aca88f5a338f7c6f7e963941966a03`
 
+Precondition lifecycle:
+- missing required baseline files => `ENVIRONMENT_NOT_PREPARED`
+- files present but invariant checks fail => `ENVIRONMENT_INCONSISTENT`
+- all frozen-file and count/hash invariants pass => `ENVIRONMENT_READY`
+
+Run before Phase4C validation:
+- `python tools/project002_sprint1e_phase4b_precondition_check.py`
+
+Important:
+- the gate is read-only and validation-only
+- it does not bootstrap historical Phase4B files
+- it does not mutate logs, canonical rows, or source analytics inputs
+
 The manifest stores deterministic row IDs, source row numbers, source hash, row hash, identity fields, snapshot range, metric field presence, and original unresolved join state.
 
 ## Deterministic Recovery Rules

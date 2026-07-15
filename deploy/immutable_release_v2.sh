@@ -32,6 +32,7 @@ PREPARE_TARGET_RELEASE=""
 PREPARE_STAGING_CREATED="false"
 PREPARE_FINALIZED="false"
 PRECHECK_PATH_EVIDENCE_JSON="[]"
+PREPARE_BOOTSTRAP_CREATED_RELATIVE_PATHS=""
 
 usage() {
   cat <<'EOF'
@@ -393,6 +394,17 @@ ensure_parent_dir() {
   run_cmd mkdir -p "$(dirname "$path")"
 }
 
+record_prepare_bootstrap_created_path() {
+  local rel="$1"
+  PREPARE_BOOTSTRAP_CREATED_RELATIVE_PATHS+="$rel"
+  PREPARE_BOOTSTRAP_CREATED_RELATIVE_PATHS+=$'\n'
+}
+
+prepare_bootstrap_path_was_created() {
+  local rel="$1"
+  grep -Fxq -- "$rel" <<< "$PREPARE_BOOTSTRAP_CREATED_RELATIVE_PATHS"
+}
+
 assert_relative_path_safe() {
   local rel="$1"
   [[ -n "$rel" ]] || die "Relative path must not be empty"
@@ -592,6 +604,61 @@ link_persistent_assets() {
   fi
 }
 
+bootstrap_prepare_release_directories() {
+  local release_dir="$1"
+  local active_root="$2"
+  local shared_output_root output_link output_resolved rel dest
+
+  is_within_root "$release_dir" "$RELEASES_ROOT" || die "Release bootstrap root escapes approved releases root: $release_dir"
+  [[ "$PREPARE_STAGING_CREATED" == "true" ]] || die "Directory bootstrap requires invocation-owned staging"
+  [[ "$release_dir" != "$active_root" ]] || die "Active release cannot be bootstrapped as staging payload: $release_dir"
+  [[ ! -e "$PREPARE_TARGET_RELEASE" ]] || die "Finalized release cannot be bootstrapped as staging payload: $PREPARE_TARGET_RELEASE"
+
+  shared_output_root="$(canon_path "$SHARED_ROOT/runtime/output")"
+  output_link="$release_dir/output"
+  [[ -L "$output_link" ]] || die "Runtime output link missing before directory bootstrap: $output_link"
+  output_resolved="$(canon_path "$output_link")"
+  [[ "$output_resolved" == "$shared_output_root" ]] || die "Runtime output symlink target mismatch before directory bootstrap: $output_resolved (expected $shared_output_root)"
+  [[ -d "$shared_output_root" ]] || die "Shared runtime output missing before directory bootstrap: $shared_output_root"
+
+  for rel in output/scripts output/audio output/videos; do
+    assert_relative_path_safe "$rel"
+    dest="$shared_output_root/${rel#output/}"
+    is_within_root "$dest" "$shared_output_root" || die "Runtime directory bootstrap escapes shared output root: $dest"
+
+    if [[ -e "$dest" ]]; then
+      [[ -d "$dest" ]] || die "Runtime output child path is not a directory: $dest"
+      continue
+    fi
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+      log "DRY-RUN: mkdir -p $dest"
+    else
+      mkdir -p "$dest"
+    fi
+    record_prepare_bootstrap_created_path "$rel"
+  done
+
+  [[ -d "$release_dir/assets" ]] || die "Required packaged asset directory missing: $release_dir/assets"
+  for rel in assets/backgrounds assets/music assets/fonts; do
+    assert_relative_path_safe "$rel"
+    dest="$release_dir/$rel"
+    is_within_root "$(dirname "$dest")" "$release_dir" || die "Asset directory bootstrap escapes staging release root: $dest"
+
+    if [[ -e "$dest" ]]; then
+      [[ -d "$dest" ]] || die "Asset directory bootstrap target is not a directory: $dest"
+      continue
+    fi
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+      log "DRY-RUN: mkdir -p $dest"
+    else
+      mkdir -p "$dest"
+    fi
+    record_prepare_bootstrap_created_path "$rel"
+  done
+}
+
 run_preflight() {
   local release_dir="$1"
   local pybin="$release_dir/venv/bin/python"
@@ -612,7 +679,7 @@ run_preflight() {
 
   local evidence_tmp
   evidence_tmp="$(mktemp)"
-  local rel dest resolved class status
+  local rel dest resolved class status action
   local -a required_paths=(
     "output"
     "logs"
@@ -629,13 +696,20 @@ run_preflight() {
     dest="$release_dir/$rel"
     status="pass"
     class="release_required"
+    action="blocked"
     resolved="missing"
 
     if [[ -e "$dest" || -L "$dest" ]]; then
       resolved="$(canon_path "$dest")"
+      if prepare_bootstrap_path_was_created "$rel"; then
+        action="created"
+      else
+        action="existed"
+      fi
     else
       status="fail"
       class="missing"
+      action="blocked"
     fi
 
     case "$rel" in
@@ -651,40 +725,25 @@ run_preflight() {
         class="runtime_output_child"
         [[ "$status" == "pass" ]] && is_within_root "$resolved" "$shared_output_root" || status="fail"
         ;;
-      assets|assets/backgrounds|assets/music|assets/fonts)
+      assets)
         class="release_assets"
         [[ "$status" == "pass" ]] && is_within_root "$resolved" "$release_dir" || status="fail"
         ;;
+      assets/backgrounds|assets/music|assets/fonts)
+        class="release_asset_optional_dir"
+        if [[ "$status" == "fail" ]]; then
+          status="pass"
+          action="optional"
+        else
+          is_within_root "$resolved" "$release_dir" || status="fail"
+        fi
+        ;;
     esac
 
-    printf '%s|%s|%s|%s\n' "$rel" "$resolved" "$class" "$status" >> "$evidence_tmp"
+    printf '%s|%s|%s|%s|%s\n' "$rel" "$resolved" "$class" "$action" "$status" >> "$evidence_tmp"
   done
 
-  PRECHECK_PATH_EVIDENCE_JSON="$(python3 - "$TARGET_SHA" "$evidence_tmp" <<'PY'
-import json
-import sys
-from datetime import datetime, timezone
-
-target_sha = sys.argv[1]
-evidence_path = sys.argv[2]
-now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-items = []
-with open(evidence_path, encoding='utf-8') as fh:
-    for line in fh:
-        rel, resolved, cls, status = line.rstrip('\n').split('|', 3)
-        items.append(
-            {
-                'relative_path': rel,
-                'resolved_absolute_path': resolved,
-                'classification': cls,
-                'status': status,
-                'target_sha': target_sha,
-                'timestamp_utc': now,
-            }
-        )
-print(json.dumps(items, ensure_ascii=False))
-PY
-)"
+    PRECHECK_PATH_EVIDENCE_JSON="$(python3 -c 'import json,sys; from datetime import datetime, timezone; target_sha=sys.argv[1]; evidence_path=sys.argv[2]; now=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"); rows=(line.rstrip("\n").split("|", 4) for line in open(evidence_path, encoding="utf-8")); items=[{"relative_path": rel, "resolved_absolute_path": resolved, "classification": cls, "action": action, "status": status, "target_sha": target_sha, "timestamp_utc": now} for rel, resolved, cls, action, status in rows]; print(json.dumps(items, ensure_ascii=False))' "$TARGET_SHA" "$evidence_tmp")"
   rm -f "$evidence_tmp"
 
   if PRECHECK_PATH_EVIDENCE_JSON="$PRECHECK_PATH_EVIDENCE_JSON" python3 - <<'PY'
@@ -997,6 +1056,7 @@ mode_prepare() {
   PREPARE_TARGET_RELEASE="$release_dir"
   PREPARE_STAGING_CREATED="false"
   PREPARE_FINALIZED="false"
+  PREPARE_BOOTSTRAP_CREATED_RELATIVE_PATHS=""
   trap 'on_prepare_failure $?' ERR
 
   verify_existing_release_identity_or_fail "$release_dir"
@@ -1012,6 +1072,8 @@ mode_prepare() {
   if [[ "$DRY_RUN" == "true" ]]; then
     log "DRY-RUN: would export $TARGET_SHA to $staging_dir"
     log "DRY-RUN: would link persistent assets from $active_target"
+    log "DRY-RUN: would ensure shared runtime output directories: output/scripts output/audio output/videos"
+    log "DRY-RUN: would ensure release asset directories when needed: assets/backgrounds assets/music assets/fonts"
     log "DRY-RUN: would run preflight and finalize release at $release_dir"
     return 0
   fi
@@ -1035,6 +1097,7 @@ mode_prepare() {
 
   assert_python_and_deps "$staging_dir"
   link_persistent_assets "$staging_dir" "$active_target"
+  bootstrap_prepare_release_directories "$staging_dir" "$active_target"
   run_preflight "$staging_dir"
 
   if [[ -n "${IMMUTABLE_V2_TEST_HOOK_BEFORE_FINALIZE:-}" ]]; then

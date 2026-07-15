@@ -187,7 +187,7 @@ Contains:
 - UTC timestamp
 - validation names and pass/fail statuses
 - resolved path evidence for required runtime and asset paths
-- per-path classification and pass/fail status
+- per-path classification, action (`existed|created|optional|blocked`), and pass/fail status
 
 No secrets are stored.
 
@@ -203,8 +203,27 @@ Preflight validates before scheduler health-check:
 
 - `output` resolves to `${SHARED_ROOT}/runtime/output`
 - `logs` resolves to `${SHARED_ROOT}/logs`
-- `output/scripts`, `output/audio`, `output/videos` exist under shared runtime output
-- `assets`, `assets/backgrounds`, `assets/music`, `assets/fonts` exist in staged release
+- prepare bootstraps `${SHARED_ROOT}/runtime/output/scripts`, `${SHARED_ROOT}/runtime/output/audio`, `${SHARED_ROOT}/runtime/output/videos` when missing (directory-only, no content write)
+- `assets` must exist from immutable release payload; missing `assets` remains fail-closed
+- `assets/backgrounds`, `assets/music`, `assets/fonts` are prepare-bootstrapped inside invocation-owned staging when absent
+
+Git empty-directory note:
+
+- Git does not preserve empty directories in commit trees.
+- V2 therefore treats the runtime/asset subdirectories above as prepare-time bootstrap targets, not packaged-file requirements.
+- No `.gitkeep` or placeholder file injection is required for immutable prepare.
+
+Allowed directory bootstrap list (prepare mode only):
+
+- shared runtime output children: `scripts`, `audio`, `videos`
+- staged release asset children: `assets/backgrounds`, `assets/music`, `assets/fonts`
+
+Bootstrap guardrails:
+
+- plan mode and dry-run never mutate filesystem state
+- bootstrap validates approved roots and exact relative paths
+- bootstrap never deletes existing content and never rewrites ownership/permissions on existing directories
+- active release and finalized release are never bootstrap targets
 
 ## 7) Locking Behavior
 

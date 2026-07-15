@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -27,6 +28,7 @@ def _init_repo(
     health_ok: bool = True,
     include_uploader: bool = True,
     include_runtime_payload: bool = False,
+    include_asset_subdirs: bool = True,
 ) -> tuple[Path, str]:
     repo = tmp_path / "repo"
     repo.mkdir(parents=True, exist_ok=True)
@@ -63,16 +65,18 @@ def _init_repo(
             repo / "output" / "state" / "activation_reports" / "2026-07-10T09-31-49.json": '{"status": "pass"}\n',
         }.items():
             _write(path, content)
-    for path in [
-        repo / "assets",
-        repo / "assets" / "backgrounds",
-        repo / "assets" / "music",
-        repo / "assets" / "fonts",
-    ]:
-        path.mkdir(parents=True, exist_ok=True)
-    _write(repo / "assets" / "backgrounds" / ".keep", "\n")
-    _write(repo / "assets" / "music" / ".keep", "\n")
-    _write(repo / "assets" / "fonts" / ".keep", "\n")
+    (repo / "assets" / "branding").mkdir(parents=True, exist_ok=True)
+    _write(repo / "assets" / "branding" / ".keep", "\n")
+    if include_asset_subdirs:
+        for path in [
+            repo / "assets" / "backgrounds",
+            repo / "assets" / "music",
+            repo / "assets" / "fonts",
+        ]:
+            path.mkdir(parents=True, exist_ok=True)
+        _write(repo / "assets" / "backgrounds" / ".keep", "\n")
+        _write(repo / "assets" / "music" / ".keep", "\n")
+        _write(repo / "assets" / "fonts" / ".keep", "\n")
     _write(repo / "requirements.txt", "")
 
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
@@ -418,6 +422,124 @@ def test_prepare_creates_shared_logs_symlink_when_absent(tmp_path: Path) -> None
     assert logs_link.resolve() == (layout["shared"] / "logs").resolve()
 
 
+@pytest.mark.parametrize("child", ["scripts", "audio", "videos"])
+def test_missing_shared_runtime_child_is_created_during_prepare(tmp_path: Path, child: str) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+
+    target_dir = layout["shared"] / "runtime" / "output" / child
+    shutil.rmtree(target_dir)
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode == 0
+    assert target_dir.exists() and target_dir.is_dir()
+
+
+def test_existing_shared_runtime_children_and_contents_are_preserved(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+
+    scripts_dir = layout["shared"] / "runtime" / "output" / "scripts"
+    audio_dir = layout["shared"] / "runtime" / "output" / "audio"
+    videos_dir = layout["shared"] / "runtime" / "output" / "videos"
+    _write(scripts_dir / "sentinel.txt", "scripts\n")
+    _write(audio_dir / "sentinel.txt", "audio\n")
+    _write(videos_dir / "sentinel.txt", "videos\n")
+
+    scripts_ino = scripts_dir.stat().st_ino
+    audio_ino = audio_dir.stat().st_ino
+    videos_ino = videos_dir.stat().st_ino
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode == 0
+    assert (scripts_dir / "sentinel.txt").read_text(encoding="utf-8") == "scripts\n"
+    assert (audio_dir / "sentinel.txt").read_text(encoding="utf-8") == "audio\n"
+    assert (videos_dir / "sentinel.txt").read_text(encoding="utf-8") == "videos\n"
+    assert scripts_dir.stat().st_ino == scripts_ino
+    assert audio_dir.stat().st_ino == audio_ino
+    assert videos_dir.stat().st_ino == videos_ino
+
+
+@pytest.mark.parametrize("mode", ["prepare", "plan"])
+def test_dry_modes_do_not_create_missing_runtime_children(tmp_path: Path, mode: str) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+
+    target_dir = layout["shared"] / "runtime" / "output" / "scripts"
+    shutil.rmtree(target_dir)
+
+    extra = ["--dry-run"] if mode == "prepare" else None
+    res = _invoke(repo, sha, mode, env, extra)
+
+    assert res.returncode == 0
+    assert not target_dir.exists()
+
+
+def test_runtime_directory_bootstrap_rejects_output_outside_shared_root(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    outside = tmp_path / "outside-output"
+    outside.mkdir(parents=True, exist_ok=True)
+
+    real_output = layout["shared"] / "runtime" / "output"
+    backup_output = layout["shared"] / "runtime" / "output.bak"
+    real_output.rename(backup_output)
+    real_output.symlink_to(outside)
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode != 0
+    assert "Mandatory shared asset is not sourced from shared root" in (res.stderr + res.stdout)
+
+
+def test_missing_asset_subdirectories_are_created_in_staging(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path, include_asset_subdirs=False)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode == 0
+    release = layout["releases"] / sha
+    assert (release / "assets" / "backgrounds").is_dir()
+    assert (release / "assets" / "music").is_dir()
+    assert (release / "assets" / "fonts").is_dir()
+
+
+def test_existing_asset_subdirectory_is_preserved(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path, include_asset_subdirs=False)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    env["IMMUTABLE_V2_TEST_HOOK_AFTER_EXPORT"] = "mkdir -p assets/backgrounds && printf keep > assets/backgrounds/sentinel.txt"
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode == 0
+    assert (layout["releases"] / sha / "assets" / "backgrounds" / "sentinel.txt").read_text(encoding="utf-8") == "keep"
+
+
+def test_missing_required_packaged_assets_root_blocks_prepare(tmp_path: Path) -> None:
+    repo, _ = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+
+    subprocess.run(["git", "rm", "-r", "assets"], cwd=repo, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "remove-assets-root"], cwd=repo, check=True, capture_output=True, text=True)
+    sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+    subprocess.run(["git", "update-ref", "refs/remotes/origin/release/test", sha], cwd=repo, check=True)
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode != 0
+    assert "Required packaged asset directory missing" in (res.stderr + res.stdout)
+
+
 def test_exported_runtime_payload_is_sanitized_before_linking(tmp_path: Path) -> None:
     repo, sha = _init_repo(tmp_path, include_runtime_payload=True)
     layout = _runtime_layout(tmp_path)
@@ -696,8 +818,47 @@ def test_preflight_json_contains_shared_path_evidence(tmp_path: Path) -> None:
     evidence = {item["relative_path"]: item for item in payload.get("path_evidence", [])}
     assert evidence["output"]["status"] == "pass"
     assert evidence["logs"]["status"] == "pass"
+    assert evidence["output"]["action"] == "existed"
+    assert evidence["logs"]["action"] == "existed"
     assert evidence["output"]["resolved_absolute_path"] == str((layout["shared"] / "runtime" / "output").resolve())
     assert evidence["logs"]["resolved_absolute_path"] == str((layout["shared"] / "logs").resolve())
+
+
+def test_preflight_json_records_created_paths(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path, include_asset_subdirs=False)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    shutil.rmtree(layout["shared"] / "runtime" / "output" / "scripts")
+    shutil.rmtree(layout["shared"] / "runtime" / "output" / "audio")
+    shutil.rmtree(layout["shared"] / "runtime" / "output" / "videos")
+
+    res = _invoke(repo, sha, "prepare", env)
+    assert res.returncode == 0
+
+    payload = json.loads((layout["releases"] / sha / "deployment_preflight.json").read_text(encoding="utf-8"))
+    evidence = {item["relative_path"]: item for item in payload.get("path_evidence", [])}
+    assert evidence["output/scripts"]["status"] == "pass"
+    assert evidence["output/scripts"]["action"] == "created"
+    assert evidence["output/audio"]["action"] == "created"
+    assert evidence["output/videos"]["action"] == "created"
+    assert evidence["assets/backgrounds"]["action"] == "created"
+    assert evidence["assets/music"]["action"] == "created"
+    assert evidence["assets/fonts"]["action"] == "created"
+
+
+def test_preflight_health_check_runs_after_directory_bootstrap(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path, include_asset_subdirs=False)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    env.pop("IMMUTABLE_V2_SKIP_HEALTHCHECK")
+    env["EXPECT_SCHEDULER_CWD"] = str(layout["releases"] / f".staging-{sha}")
+    shutil.rmtree(layout["shared"] / "runtime" / "output" / "scripts")
+    shutil.rmtree(layout["shared"] / "runtime" / "output" / "audio")
+    shutil.rmtree(layout["shared"] / "runtime" / "output" / "videos")
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode == 0
 
 
 def test_existing_prepared_release_is_left_untouched(tmp_path: Path) -> None:
@@ -761,8 +922,12 @@ def test_prepare_failure_does_not_modify_shared_assets(tmp_path: Path) -> None:
 
 
 def test_temporary_topology_integration_simulation(tmp_path: Path) -> None:
-    repo, sha = _init_repo(tmp_path)
+    repo, sha = _init_repo(tmp_path, include_runtime_payload=True, include_asset_subdirs=False)
     layout = _runtime_layout(tmp_path)
+
+    shutil.rmtree(layout["shared"] / "runtime" / "output" / "scripts")
+    shutil.rmtree(layout["shared"] / "runtime" / "output" / "audio")
+    shutil.rmtree(layout["shared"] / "runtime" / "output" / "videos")
 
     active_output = layout["active"] / "output"
     active_logs = layout["active"] / "logs"
@@ -786,6 +951,12 @@ def test_temporary_topology_integration_simulation(tmp_path: Path) -> None:
     evidence = {item["relative_path"]: item for item in payload.get("path_evidence", [])}
     assert evidence["output"]["status"] == "pass"
     assert evidence["logs"]["status"] == "pass"
+    assert evidence["output/scripts"]["action"] == "created"
+    assert evidence["output/audio"]["action"] == "created"
+    assert evidence["output/videos"]["action"] == "created"
+    assert evidence["assets/backgrounds"]["action"] == "created"
+    assert evidence["assets/music"]["action"] == "created"
+    assert evidence["assets/fonts"]["action"] == "created"
 
     assert active_output.is_dir() and not active_output.is_symlink()
     assert active_logs.is_dir() and not active_logs.is_symlink()

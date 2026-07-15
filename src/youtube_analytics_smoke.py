@@ -2,7 +2,7 @@
 
 This module performs a single explicitly invoked, read-only Analytics API query
 for one configured channel. It never refreshes credentials, never writes token
-files, never mutates scheduler state, and never touches uploader paths.
+files, and never mutates scheduler state.
 """
 
 from __future__ import annotations
@@ -44,12 +44,19 @@ ALLOWED_METRICS = (
     "subscribersLost",
 )
 
+TOKEN_SOURCE_ANALYTICS_PRIMARY = "ANALYTICS_TOKEN_PRIMARY"
+TOKEN_SOURCE_UPLOADER_FALLBACK = "UPLOADER_TOKEN_FALLBACK"
+TOKEN_SOURCE_NONE = "NONE"
+
 
 @dataclass(frozen=True, slots=True)
 class SmokeContext:
     channel_slug: str
     channel_id: str
-    token_path: Path
+    primary_token_path: Path
+    fallback_token_path: Path
+    selected_token_path: Path | None
+    selected_token_source: str
     secrets_path: Path
     token_source_present: bool
     credential_source_present: bool
@@ -121,22 +128,35 @@ def _resolve_channel_context(channel_slug: str) -> SmokeContext:
     if not channel_id:
         raise ValueError("channel_mapping_error:missing_youtube_channel_id")
 
-    token_path = Path(str(getattr(cfg, "youtube_analytics_token_path", "") or "").strip())
+    primary_token_path = Path(str(getattr(cfg, "youtube_analytics_token_path", "") or "").strip())
+    fallback_token_path = Path(str(getattr(cfg, "token_path", "") or "").strip())
     secrets_path = Path(str(getattr(cfg, "client_secrets_path", "") or "").strip())
-    token_source_present = token_path.exists()
+    selected_token_path: Path | None = None
+    selected_token_source = TOKEN_SOURCE_NONE
+    if primary_token_path.exists():
+        selected_token_path = primary_token_path
+        selected_token_source = TOKEN_SOURCE_ANALYTICS_PRIMARY
+    elif fallback_token_path.exists():
+        selected_token_path = fallback_token_path
+        selected_token_source = TOKEN_SOURCE_UPLOADER_FALLBACK
+
+    token_source_present = selected_token_path is not None
     credential_source_present = token_source_present or secrets_path.exists()
     return SmokeContext(
         channel_slug=channel_slug,
         channel_id=channel_id,
-        token_path=token_path,
+        primary_token_path=primary_token_path,
+        fallback_token_path=fallback_token_path,
+        selected_token_path=selected_token_path,
+        selected_token_source=selected_token_source,
         secrets_path=secrets_path,
         token_source_present=token_source_present,
         credential_source_present=credential_source_present,
     )
 
 
-def _load_credentials_read_only(token_path: Path) -> object | None:
-    if not token_path.exists():
+def _load_credentials_read_only(token_path: Path | None) -> object | None:
+    if token_path is None or not token_path.exists():
         return None
     try:
         with token_path.open("rb") as handle:
@@ -252,6 +272,7 @@ def run_read_only_smoke(
         "redacted_error": None,
         "credential_source_present": False,
         "token_source_present": False,
+        "selected_token_source": TOKEN_SOURCE_NONE,
         "api_call_attempted": False,
         "api_call_succeeded": False,
         "mutation_attempted": False,
@@ -267,7 +288,7 @@ def run_read_only_smoke(
 
         start_iso, end_iso = _validate_date_window(start_date, end_date)
         context = _resolve_channel_context(channel_slug)
-        credentials = _load_credentials_read_only(context.token_path)
+        credentials = _load_credentials_read_only(context.selected_token_path)
 
         report["channel_slug"] = context.channel_slug
         report["channel_id_hash"] = _hash_text(context.channel_id)[:12]
@@ -275,6 +296,7 @@ def run_read_only_smoke(
         report["end_date"] = end_iso
         report["credential_source_present"] = bool(credentials is not None)
         report["token_source_present"] = bool(context.token_source_present)
+        report["selected_token_source"] = context.selected_token_source
 
         if not _resolve_gate_enabled():
             report["result_state"] = "API_NOT_ENABLED"

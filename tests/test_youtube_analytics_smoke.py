@@ -53,14 +53,23 @@ class FakeService:
         return self._reports
 
 
-def _channel_config(tmp_path: Path, *, token_exists: bool = True):
-    token_path = tmp_path / "youtube_analytics_token.pickle"
-    if token_exists:
-        token_path.write_bytes(b"token")
+def _channel_config(
+    tmp_path: Path,
+    *,
+    analytics_token_exists: bool = True,
+    uploader_token_exists: bool = False,
+):
+    analytics_token_path = tmp_path / "youtube_analytics_token.pickle"
+    uploader_token_path = tmp_path / "youtube_token.pickle"
+    if analytics_token_exists:
+        analytics_token_path.write_bytes(b"analytics")
+    if uploader_token_exists:
+        uploader_token_path.write_bytes(b"uploader")
     return SimpleNamespace(
         channel_id="para_pusulasi",
         youtube_channel_id="UC6tU7UqYylfSA75pj3rEY_Q",
-        youtube_analytics_token_path=str(token_path),
+        youtube_analytics_token_path=str(analytics_token_path),
+        token_path=str(uploader_token_path),
         client_secrets_path=str(tmp_path / "client_secrets.json"),
     )
 
@@ -106,9 +115,120 @@ def test_valid_one_channel_request(monkeypatch, tmp_path):
 
     assert report["result_state"] == "SUCCESS"
     assert report["row_count"] == 1
+    assert report["selected_token_source"] == "ANALYTICS_TOKEN_PRIMARY"
     assert report["normalized_rows"][0]["views"] == 120
     assert report["mutation_attempted"] is False
     assert json.loads((tmp_path / "smoke.json").read_text(encoding="utf-8"))["output_hash"] == report["output_hash"]
+
+
+def test_fallback_token_selected_when_primary_missing(monkeypatch, tmp_path):
+    cfg = _channel_config(tmp_path, analytics_token_exists=False, uploader_token_exists=True)
+    _patch_channel(monkeypatch, cfg)
+    monkeypatch.setenv("YOUTUBE_ANALYTICS_API_GO", "true")
+
+    loaded_paths: list[str] = []
+
+    def _load(token_path):
+        loaded_paths.append(str(token_path))
+        return FakeCreds()
+
+    monkeypatch.setattr(smoke, "_load_credentials_read_only", _load)
+    query = FakeQuery(response={"columnHeaders": [{"name": "day"}, {"name": "views"}], "rows": [["2026-07-01", "1"]]})
+    monkeypatch.setattr(smoke, "_build_service", lambda credentials, timeout_seconds: FakeService(query))
+
+    report = smoke.run_read_only_smoke(
+        channel_slugs=["para_pusulasi"],
+        start_date="2026-07-01",
+        end_date="2026-07-07",
+        output_path=tmp_path / "smoke.json",
+    )
+
+    assert report["result_state"] == "SUCCESS"
+    assert report["selected_token_source"] == "UPLOADER_TOKEN_FALLBACK"
+    assert loaded_paths == [cfg.token_path]
+
+
+def test_primary_token_takes_precedence_over_fallback(monkeypatch, tmp_path):
+    cfg = _channel_config(tmp_path, analytics_token_exists=True, uploader_token_exists=True)
+    _patch_channel(monkeypatch, cfg)
+    monkeypatch.setenv("YOUTUBE_ANALYTICS_API_GO", "true")
+
+    loaded_paths: list[str] = []
+
+    def _load(token_path):
+        loaded_paths.append(str(token_path))
+        return FakeCreds()
+
+    monkeypatch.setattr(smoke, "_load_credentials_read_only", _load)
+    query = FakeQuery(response={"columnHeaders": [{"name": "day"}, {"name": "views"}], "rows": [["2026-07-01", "1"]]})
+    monkeypatch.setattr(smoke, "_build_service", lambda credentials, timeout_seconds: FakeService(query))
+
+    report = smoke.run_read_only_smoke(
+        channel_slugs=["para_pusulasi"],
+        start_date="2026-07-01",
+        end_date="2026-07-07",
+        output_path=tmp_path / "smoke.json",
+    )
+
+    assert report["result_state"] == "SUCCESS"
+    assert report["selected_token_source"] == "ANALYTICS_TOKEN_PRIMARY"
+    assert loaded_paths == [cfg.youtube_analytics_token_path]
+
+
+def test_both_token_paths_missing_returns_token_missing(monkeypatch, tmp_path):
+    cfg = _channel_config(tmp_path, analytics_token_exists=False, uploader_token_exists=False)
+    _patch_channel(monkeypatch, cfg)
+    monkeypatch.setenv("YOUTUBE_ANALYTICS_API_GO", "true")
+
+    report = smoke.run_read_only_smoke(
+        channel_slugs=["para_pusulasi"],
+        start_date="2026-07-01",
+        end_date="2026-07-07",
+        output_path=tmp_path / "smoke.json",
+    )
+
+    assert report["result_state"] == "TOKEN_MISSING"
+    assert report["selected_token_source"] == "NONE"
+
+
+def test_fallback_token_without_analytics_scopes(monkeypatch, tmp_path):
+    cfg = _channel_config(tmp_path, analytics_token_exists=False, uploader_token_exists=True)
+    _patch_channel(monkeypatch, cfg)
+    monkeypatch.setenv("YOUTUBE_ANALYTICS_API_GO", "true")
+    monkeypatch.setattr(
+        smoke,
+        "_load_credentials_read_only",
+        lambda token_path: FakeCreds(scopes=["https://www.googleapis.com/auth/youtube.upload"]),
+    )
+
+    report = smoke.run_read_only_smoke(
+        channel_slugs=["para_pusulasi"],
+        start_date="2026-07-01",
+        end_date="2026-07-07",
+        output_path=tmp_path / "smoke.json",
+    )
+
+    assert report["selected_token_source"] == "UPLOADER_TOKEN_FALLBACK"
+    assert report["result_state"] == "API_SCOPE_INSUFFICIENT"
+
+
+def test_fallback_token_with_analytics_scopes(monkeypatch, tmp_path):
+    cfg = _channel_config(tmp_path, analytics_token_exists=False, uploader_token_exists=True)
+    _patch_channel(monkeypatch, cfg)
+    monkeypatch.setenv("YOUTUBE_ANALYTICS_API_GO", "true")
+    monkeypatch.setattr(smoke, "_load_credentials_read_only", lambda token_path: FakeCreds())
+    query = FakeQuery(response={"columnHeaders": [{"name": "day"}, {"name": "views"}], "rows": [["2026-07-01", "1"]]})
+    monkeypatch.setattr(smoke, "_build_service", lambda credentials, timeout_seconds: FakeService(query))
+
+    report = smoke.run_read_only_smoke(
+        channel_slugs=["para_pusulasi"],
+        start_date="2026-07-01",
+        end_date="2026-07-07",
+        output_path=tmp_path / "smoke.json",
+    )
+
+    assert report["selected_token_source"] == "UPLOADER_TOKEN_FALLBACK"
+    assert report["result_state"] == "SUCCESS"
 
 
 def test_maximum_seven_day_window(monkeypatch, tmp_path):
@@ -159,7 +279,7 @@ def test_unknown_channel(monkeypatch, tmp_path):
 
 
 def test_missing_credentials(monkeypatch, tmp_path):
-    cfg = _channel_config(tmp_path, token_exists=False)
+    cfg = _channel_config(tmp_path, analytics_token_exists=False, uploader_token_exists=False)
     _patch_channel(monkeypatch, cfg)
     monkeypatch.setenv("YOUTUBE_ANALYTICS_API_GO", "true")
     monkeypatch.setattr(smoke, "_load_credentials_read_only", lambda token_path: None)
@@ -172,10 +292,11 @@ def test_missing_credentials(monkeypatch, tmp_path):
     )
 
     assert report["result_state"] == "TOKEN_MISSING"
+    assert report["selected_token_source"] == "NONE"
 
 
 def test_missing_token(monkeypatch, tmp_path):
-    cfg = _channel_config(tmp_path, token_exists=False)
+    cfg = _channel_config(tmp_path, analytics_token_exists=False, uploader_token_exists=False)
     _patch_channel(monkeypatch, cfg)
     monkeypatch.setenv("YOUTUBE_ANALYTICS_API_GO", "true")
 
@@ -187,6 +308,7 @@ def test_missing_token(monkeypatch, tmp_path):
     )
 
     assert report["result_state"] == "TOKEN_MISSING"
+    assert report["selected_token_source"] == "NONE"
 
 
 def test_api_disabled_response(monkeypatch, tmp_path):
@@ -297,10 +419,15 @@ def test_no_uploader_or_scheduler_mutation_text():
     source = Path("src/youtube_analytics_smoke.py").read_text(encoding="utf-8")
     forbidden = [
         "youtube_uploader",
+        "youtube_auth",
         "update_production_dashboard",
         "write_production_evidence",
         "append_performance_snapshot",
         "scheduler.py",
+        "InstalledAppFlow",
+        "run_local_server",
+        "pickle.dump",
+        "credentials.refresh",
         "thumbnails.set",
         "videos.insert",
         "videos.update",
@@ -351,3 +478,24 @@ def test_cli_exit_codes(monkeypatch, tmp_path):
 
     assert ok == 0
     assert bad != 0
+
+
+def test_selected_token_source_is_redacted_alias(monkeypatch, tmp_path):
+    cfg = _channel_config(tmp_path, analytics_token_exists=False, uploader_token_exists=True)
+    _patch_channel(monkeypatch, cfg)
+    monkeypatch.setenv("YOUTUBE_ANALYTICS_API_GO", "true")
+    monkeypatch.setattr(smoke, "_load_credentials_read_only", lambda token_path: None)
+
+    report = smoke.run_read_only_smoke(
+        channel_slugs=["para_pusulasi"],
+        start_date="2026-07-01",
+        end_date="2026-07-07",
+        output_path=tmp_path / "smoke.json",
+    )
+
+    assert report["selected_token_source"] in {
+        "ANALYTICS_TOKEN_PRIMARY",
+        "UPLOADER_TOKEN_FALLBACK",
+        "NONE",
+    }
+    assert str(tmp_path) not in report["selected_token_source"]

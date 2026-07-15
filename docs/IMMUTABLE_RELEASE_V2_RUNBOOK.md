@@ -19,6 +19,19 @@ The stable runtime contract is preserved:
 No systemd unit or drop-in mutation is performed.
 No `.env` content editing is performed.
 
+Bootstrap prerequisite:
+
+- `/opt/parapusulasi-shared` must already be provisioned.
+- Required shared paths for prepare:
+   - `/opt/parapusulasi-shared/.env`
+   - `/opt/parapusulasi-shared/logs`
+   - `/opt/parapusulasi-shared/runtime/output`
+   - `/opt/parapusulasi-shared/state/youtube_playlists.json`
+   - `/opt/parapusulasi-shared/state/channel_registry.json`
+   - `/opt/parapusulasi-shared/state/channels_tracker.csv`
+
+Status remains: `IMPLEMENTED_NOT_DEPLOYED`.
+
 ## 2) Threat Model And Prohibitions
 
 The workflow is fail-closed and rejects unsafe deployment attempts.
@@ -50,7 +63,7 @@ Repository-discovered contract (read-only evidence from docs/scripts):
 3. Files linked into release (no content copy):
    - `.env`
    - token/secret files (root and channel local where present)
-   - runtime directories (`output`, `logs`)
+   - runtime directories (`output`, `logs`) linked from shared root in prepared release
    - channel registry/tracker and playlist metadata when externalized
 4. Files copied metadata-only:
    - not used by default; linking strategy is preferred to preserve ownership/content
@@ -66,6 +79,7 @@ Repository-discovered contract (read-only evidence from docs/scripts):
    - scheduler import and uploader import must pass
    - optional wrapper import validation when file exists
    - scheduler `--health-check` must pass unless explicitly skipped in controlled test mode
+   - preflight is executed from staged release working directory (`.staging-<sha>` during prepare)
 9. Cutover contract:
    - lock acquisition
    - rollback target capture
@@ -94,6 +108,19 @@ Default handled set:
 - token/secret files (root + `channels/*`) -> `PROHIBITED_SECRET | RELEASE_SYMLINK`
 - `logs`, `output*` -> `RUNTIME_GENERATED | RELEASE_SYMLINK`
 - `channels/channel_registry.json`, `channels/channels_tracker.csv`, `youtube_playlists.json` -> `EXTERNAL_PERSISTENT | RELEASE_SYMLINK`
+
+Prepared-release runtime-link contract:
+
+- `<prepared-release>/output` -> `${SHARED_ROOT}/runtime/output`
+- `<prepared-release>/logs` -> `${SHARED_ROOT}/logs`
+- Active release must never be edited in place by `prepare`.
+
+Path distinction (must not be conflated):
+
+- `/opt/parapusulasi/output` is a root compatibility path.
+- `/opt/parapusulasi-current/output` points to the active immutable release path.
+- `/opt/parapusulasi/releases/<sha>/output` in a newly prepared release must be a shared-root symlink.
+- Same distinction applies to `logs`.
 
 Any unclassified secret-like file results in `UNKNOWN_BLOCKER` and abort.
 
@@ -150,8 +177,17 @@ Contains:
 - target ref
 - UTC timestamp
 - validation names and pass/fail statuses
+- resolved path evidence for required runtime and asset paths
+- per-path classification and pass/fail status
 
 No secrets are stored.
+
+Preflight validates before scheduler health-check:
+
+- `output` resolves to `${SHARED_ROOT}/runtime/output`
+- `logs` resolves to `${SHARED_ROOT}/logs`
+- `output/scripts`, `output/audio`, `output/videos` exist under shared runtime output
+- `assets`, `assets/backgrounds`, `assets/music`, `assets/fonts` exist in staged release
 
 ## 7) Locking Behavior
 
@@ -178,10 +214,21 @@ Common fail-closed blockers:
 - missing releases root/current symlink
 - symlink target outside approved release root
 - staging collision
+- non-empty staging `output` or `logs` directory (fail-closed, no deletion)
+- runtime symlink target mismatch in staging
 - insufficient disk
 - missing persistent asset
 - unknown asset classification
 - import or health-check failure
+
+Prepare cleanup guarantees on failure:
+
+- cleanup is guarded and invocation-owned only
+- only `.staging-<target-sha>` created by current invocation may be removed
+- finalized release directories are never removed
+- active release target is never removed
+- shared-root content is never removed
+- redacted prepare failure report is written under deploy-state
 - missing prepared release for cutover
 - missing rollback target release
 - concurrent lock present

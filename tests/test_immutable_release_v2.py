@@ -26,8 +26,12 @@ def _init_repo(tmp_path: Path, *, health_ok: bool = True, include_uploader: bool
     _write(
         repo / "scheduler.py",
         (
+            "import os\n"
             "import sys\n"
             "if '--health-check' in sys.argv:\n"
+            "    expected = os.environ.get('EXPECT_SCHEDULER_CWD')\n"
+            "    if expected and os.getcwd() != expected:\n"
+            "        sys.exit(19)\n"
             f"    sys.exit({0 if health_ok else 1})\n"
             "sys.exit(0)\n"
         ),
@@ -36,6 +40,16 @@ def _init_repo(tmp_path: Path, *, health_ok: bool = True, include_uploader: bool
     if include_uploader:
         _write(repo / "src" / "youtube_uploader.py", "X = 1\n")
     _write(repo / "src" / "youtube_analytics_smoke.py", "Y = 1\n")
+    for path in [
+        repo / "assets",
+        repo / "assets" / "backgrounds",
+        repo / "assets" / "music",
+        repo / "assets" / "fonts",
+    ]:
+        path.mkdir(parents=True, exist_ok=True)
+    _write(repo / "assets" / "backgrounds" / ".keep", "\n")
+    _write(repo / "assets" / "music" / ".keep", "\n")
+    _write(repo / "assets" / "fonts" / ".keep", "\n")
     _write(repo / "requirements.txt", "")
 
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
@@ -60,6 +74,26 @@ def _runtime_layout(tmp_path: Path) -> dict[str, Path]:
 
     active_sha = "a" * 40
     active = releases / active_sha
+    shared.mkdir(parents=True, exist_ok=True)
+    (shared / "runtime" / "output" / "scripts").mkdir(parents=True, exist_ok=True)
+    (shared / "runtime" / "output" / "audio").mkdir(parents=True, exist_ok=True)
+    (shared / "runtime" / "output" / "videos").mkdir(parents=True, exist_ok=True)
+    (shared / "logs").mkdir(parents=True, exist_ok=True)
+    (shared / "state").mkdir(parents=True, exist_ok=True)
+    (shared / "oauth").mkdir(parents=True, exist_ok=True)
+    (shared / "tokens").mkdir(parents=True, exist_ok=True)
+    (shared / "oauth" / "channels" / "alpha").mkdir(parents=True, exist_ok=True)
+    (shared / "tokens" / "channels" / "alpha").mkdir(parents=True, exist_ok=True)
+
+    _write(shared / ".env", "A=1\n")
+    _write(shared / "state" / "youtube_playlists.json", "{}\n")
+    _write(shared / "state" / "channel_registry.json", "{}\n")
+    _write(shared / "state" / "channels_tracker.csv", "channel\n")
+    _write(shared / "oauth" / "client_secrets.root.json", "{}\n")
+    _write(shared / "tokens" / "youtube_token.root.pickle", "token\n")
+    _write(shared / "oauth" / "channels" / "alpha" / "client_secrets.json", "{}\n")
+    _write(shared / "tokens" / "channels" / "alpha" / "youtube_token.pickle", "token\n")
+
     (active / "channels" / "alpha").mkdir(parents=True, exist_ok=True)
     (active / "output").mkdir(parents=True, exist_ok=True)
     (active / "logs").mkdir(parents=True, exist_ok=True)
@@ -335,6 +369,300 @@ def test_insufficient_disk_rejected(tmp_path: Path) -> None:
     assert "Insufficient disk space" in (res.stderr + res.stdout)
 
 
+def test_prepare_creates_shared_output_symlink_when_absent(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode == 0
+    output_link = layout["releases"] / sha / "output"
+    assert output_link.is_symlink()
+    assert output_link.resolve() == (layout["shared"] / "runtime" / "output").resolve()
+
+
+def test_prepare_creates_shared_logs_symlink_when_absent(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode == 0
+    logs_link = layout["releases"] / sha / "logs"
+    assert logs_link.is_symlink()
+    assert logs_link.resolve() == (layout["shared"] / "logs").resolve()
+
+
+def test_empty_staging_output_directory_replaced(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    env["IMMUTABLE_V2_TEST_HOOK_AFTER_EXPORT"] = "mkdir -p output"
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode == 0
+    output_link = layout["releases"] / sha / "output"
+    assert output_link.is_symlink()
+    assert output_link.resolve() == (layout["shared"] / "runtime" / "output").resolve()
+
+
+def test_empty_staging_logs_directory_replaced(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    env["IMMUTABLE_V2_TEST_HOOK_AFTER_EXPORT"] = "mkdir -p logs"
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode == 0
+    logs_link = layout["releases"] / sha / "logs"
+    assert logs_link.is_symlink()
+    assert logs_link.resolve() == (layout["shared"] / "logs").resolve()
+
+
+def test_non_empty_staging_output_blocks_prepare(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    _write(repo / "output" / "marker.txt", "x\n")
+    subprocess.run(["git", "add", "output/marker.txt"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-m", "add-output"], cwd=repo, check=True, capture_output=True, text=True)
+    new_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+    subprocess.run(["git", "update-ref", "refs/remotes/origin/release/test", new_sha], cwd=repo, check=True)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+
+    res = _invoke(repo, new_sha, "prepare", env)
+
+    assert res.returncode != 0
+    assert "Non-empty staging directory blocks link replacement" in (res.stderr + res.stdout)
+
+
+def test_non_empty_staging_logs_blocks_prepare(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    _write(repo / "logs" / "marker.txt", "x\n")
+    subprocess.run(["git", "add", "logs/marker.txt"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-m", "add-logs"], cwd=repo, check=True, capture_output=True, text=True)
+    new_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+    subprocess.run(["git", "update-ref", "refs/remotes/origin/release/test", new_sha], cwd=repo, check=True)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+
+    res = _invoke(repo, new_sha, "prepare", env)
+
+    assert res.returncode != 0
+    assert "Non-empty staging directory blocks link replacement" in (res.stderr + res.stdout)
+
+
+def test_wrong_runtime_symlink_target_blocks_prepare(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    env["IMMUTABLE_V2_TEST_HOOK_AFTER_EXPORT"] = "ln -s /tmp/wrong-target output"
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode != 0
+    assert "symlink mismatch" in (res.stderr + res.stdout)
+
+
+def test_correct_runtime_symlink_is_idempotent(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    env["IMMUTABLE_V2_TEST_HOOK_AFTER_EXPORT"] = (
+        f"ln -s '{layout['shared'] / 'runtime' / 'output'}' output; "
+        f"ln -s '{layout['shared'] / 'logs'}' logs"
+    )
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode == 0
+
+
+def test_runtime_regular_file_destination_blocks_prepare(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    env["IMMUTABLE_V2_TEST_HOOK_AFTER_EXPORT"] = "printf x > output"
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode != 0
+    assert "Unsupported staging destination type" in (res.stderr + res.stdout)
+
+
+def test_missing_shared_output_source_blocks_prepare(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+
+    (layout["shared"] / "runtime" / "output").rename(layout["shared"] / "runtime" / "output.bak")
+
+    res = _invoke(repo, sha, "prepare", env)
+    assert res.returncode != 0
+    assert "Mandatory shared asset is not sourced from shared root" in (res.stderr + res.stdout) or "Missing persistent asset source" in (res.stderr + res.stdout)
+
+
+def test_missing_shared_logs_source_blocks_prepare(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+
+    (layout["shared"] / "logs").rename(layout["shared"] / "logs.bak")
+
+    res = _invoke(repo, sha, "prepare", env)
+    assert res.returncode != 0
+    assert "Mandatory shared asset is not sourced from shared root" in (res.stderr + res.stdout) or "Missing persistent asset source" in (res.stderr + res.stdout)
+
+
+def test_shared_source_outside_approved_root_rejected(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    outside = tmp_path / "outside"
+    outside.mkdir(parents=True, exist_ok=True)
+    _write(outside / "youtube_playlists.json", "{}\n")
+    target = layout["shared"] / "state" / "youtube_playlists.json"
+    target.unlink()
+    target.symlink_to(outside / "youtube_playlists.json")
+
+    res = _invoke(repo, sha, "prepare", env)
+    assert res.returncode != 0
+    assert "escapes approved roots" in (res.stderr + res.stdout) or "Mandatory shared asset" in (res.stderr + res.stdout)
+
+
+def test_prepare_does_not_modify_active_output_and_logs(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    active_output = layout["active"] / "output"
+    active_logs = layout["active"] / "logs"
+
+    out_before = active_output.stat().st_ino
+    logs_before = active_logs.stat().st_ino
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode == 0
+    assert active_output.exists() and active_output.is_dir() and not active_output.is_symlink()
+    assert active_logs.exists() and active_logs.is_dir() and not active_logs.is_symlink()
+    assert active_output.stat().st_ino == out_before
+    assert active_logs.stat().st_ino == logs_before
+
+
+def test_preflight_health_check_runs_from_staging_cwd(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    env.pop("IMMUTABLE_V2_SKIP_HEALTHCHECK")
+    env["EXPECT_SCHEDULER_CWD"] = str(layout["releases"] / f".staging-{sha}")
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode == 0
+
+
+def test_preflight_json_contains_shared_path_evidence(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+
+    res = _invoke(repo, sha, "prepare", env)
+    assert res.returncode == 0
+
+    payload = json.loads((layout["releases"] / sha / "deployment_preflight.json").read_text(encoding="utf-8"))
+    evidence = {item["relative_path"]: item for item in payload.get("path_evidence", [])}
+    assert evidence["output"]["status"] == "pass"
+    assert evidence["logs"]["status"] == "pass"
+    assert evidence["output"]["resolved_absolute_path"] == str((layout["shared"] / "runtime" / "output").resolve())
+    assert evidence["logs"]["resolved_absolute_path"] == str((layout["shared"] / "logs").resolve())
+
+
+def test_prepare_failure_cleans_invocation_owned_staging(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    env["IMMUTABLE_V2_TEST_HOOK_BEFORE_FINALIZE"] = "exit 23"
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode != 0
+    assert not (layout["releases"] / f".staging-{sha}").exists()
+    assert not (layout["releases"] / sha).exists()
+    assert (layout["deploy_state"] / "prepare_failure_latest.json").exists()
+
+
+def test_prepare_failure_preserves_preexisting_staging(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    staging = layout["releases"] / f".staging-{sha}"
+    staging.mkdir(parents=True, exist_ok=True)
+    _write(staging / "sentinel.txt", "keep\n")
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode != 0
+    assert staging.exists()
+    assert (staging / "sentinel.txt").exists()
+
+
+def test_prepare_failure_does_not_modify_shared_assets(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    env["IMMUTABLE_V2_TEST_HOOK_BEFORE_FINALIZE"] = "exit 77"
+    shared_file = layout["shared"] / "state" / "youtube_playlists.json"
+    before = shared_file.read_text(encoding="utf-8")
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode != 0
+    assert shared_file.read_text(encoding="utf-8") == before
+
+
+def test_temporary_topology_integration_simulation(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+
+    active_output = layout["active"] / "output"
+    active_logs = layout["active"] / "logs"
+    active_output_ino = active_output.stat().st_ino
+    active_logs_ino = active_logs.stat().st_ino
+
+    env = _base_env(layout)
+    env.pop("IMMUTABLE_V2_SKIP_HEALTHCHECK")
+    env["EXPECT_SCHEDULER_CWD"] = str(layout["releases"] / f".staging-{sha}")
+
+    prepare_ok = _invoke(repo, sha, "prepare", env)
+    assert prepare_ok.returncode == 0
+
+    release = layout["releases"] / sha
+    assert (release / "output").is_symlink()
+    assert (release / "logs").is_symlink()
+    assert (release / "output").resolve() == (layout["shared"] / "runtime" / "output").resolve()
+    assert (release / "logs").resolve() == (layout["shared"] / "logs").resolve()
+
+    payload = json.loads((release / "deployment_preflight.json").read_text(encoding="utf-8"))
+    evidence = {item["relative_path"]: item for item in payload.get("path_evidence", [])}
+    assert evidence["output"]["status"] == "pass"
+    assert evidence["logs"]["status"] == "pass"
+
+    assert active_output.is_dir() and not active_output.is_symlink()
+    assert active_logs.is_dir() and not active_logs.is_symlink()
+    assert active_output.stat().st_ino == active_output_ino
+    assert active_logs.stat().st_ino == active_logs_ino
+
+    repo2, sha2 = _init_repo(tmp_path / "second")
+    layout2 = _runtime_layout(tmp_path / "second")
+    env2 = _base_env(layout2)
+    env2["IMMUTABLE_V2_TEST_HOOK_BEFORE_FINALIZE"] = "exit 31"
+    fail_res = _invoke(repo2, sha2, "prepare", env2)
+    assert fail_res.returncode != 0
+    assert not (layout2["releases"] / f".staging-{sha2}").exists()
+
+
 def test_systemd_file_writes_impossible_by_contract() -> None:
     text = SCRIPT.read_text(encoding="utf-8")
     assert "systemctl edit" not in text
@@ -365,12 +693,12 @@ def test_missing_persistent_asset_rejected(tmp_path: Path) -> None:
     layout = _runtime_layout(tmp_path)
     env = _base_env(layout)
 
-    (layout["active"] / "channels" / "channel_registry.json").unlink()
+    (layout["shared"] / "state" / "channel_registry.json").unlink()
 
     res = _invoke(repo, sha, "prepare", env)
 
     assert res.returncode != 0
-    assert "Missing persistent asset source" in (res.stderr + res.stdout)
+    assert "Missing persistent asset source" in (res.stderr + res.stdout) or "Mandatory shared asset" in (res.stderr + res.stdout)
 
 
 def test_unknown_asset_classification_rejected(tmp_path: Path) -> None:

@@ -26,6 +26,12 @@ DRY_RUN="false"
 
 PREPARED_RELEASE=""
 ROLLBACK_TARGET_BEFORE_SWITCH=""
+LOCK_ACQUIRED="false"
+PREPARE_STAGING_DIR=""
+PREPARE_TARGET_RELEASE=""
+PREPARE_STAGING_CREATED="false"
+PREPARE_FINALIZED="false"
+PRECHECK_PATH_EVIDENCE_JSON="[]"
 
 usage() {
   cat <<'EOF'
@@ -226,6 +232,7 @@ write_preflight_json() {
   "release_sha": "$TARGET_SHA",
   "target_ref": "$TARGET_REF",
   "timestamp_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "path_evidence": $PRECHECK_PATH_EVIDENCE_JSON,
   "validations": [
     {"name": "python_syntax", "status": "pass"},
     {"name": "scheduler_import", "status": "$scheduler_import"},
@@ -287,6 +294,13 @@ classify_asset() {
 resolve_asset_source() {
   local rel="$1"
   local active_root="$2"
+  local mapped
+  if mapped="$(source_for_root_asset "$rel" 2>/dev/null)"; then
+    if [[ -e "$mapped" ]]; then
+      printf '%s\n' "$mapped"
+      return 0
+    fi
+  fi
   local shared_candidate="$SHARED_ROOT/$rel"
   if [[ -e "$shared_candidate" ]]; then
     printf '%s\n' "$shared_candidate"
@@ -298,6 +312,128 @@ resolve_asset_source() {
 ensure_parent_dir() {
   local path="$1"
   run_cmd mkdir -p "$(dirname "$path")"
+}
+
+assert_relative_path_safe() {
+  local rel="$1"
+  [[ -n "$rel" ]] || die "Relative path must not be empty"
+  [[ "$rel" != /* ]] || die "Absolute paths are not allowed: $rel"
+  [[ "$rel" != *".."* ]] || die "Path traversal is not allowed: $rel"
+}
+
+ensure_symlink_to_source() {
+  local dest="$1"
+  local src="$2"
+  local context="$3"
+  local expected_resolved actual_resolved
+  expected_resolved="$(canon_path "$src")"
+
+  if [[ -L "$dest" ]]; then
+    actual_resolved="$(canon_path "$dest")"
+    if [[ "$actual_resolved" == "$expected_resolved" ]]; then
+      return 0
+    fi
+    die "$context symlink target mismatch: $dest -> $actual_resolved (expected $expected_resolved)"
+  fi
+
+  if [[ -e "$dest" ]]; then
+    if [[ -d "$dest" ]]; then
+      die "$context destination is a directory and cannot be replaced automatically: $dest"
+    fi
+    run_cmd rm -f "$dest"
+  fi
+
+  if [[ "$DRY_RUN" == "true" ]]; then
+    log "DRY-RUN: ln -s $src $dest"
+    return 0
+  fi
+
+  ln -s "$src" "$dest"
+  actual_resolved="$(canon_path "$dest")"
+  [[ "$actual_resolved" == "$expected_resolved" ]] || die "$context symlink verification failed: $dest"
+}
+
+replace_empty_staging_path_with_link() {
+  local staging_root="$1"
+  local rel="$2"
+  local src="$3"
+  local dest expected_resolved actual_resolved
+
+  is_within_root "$staging_root" "$RELEASES_ROOT" || die "Staging root escapes approved releases root: $staging_root"
+  assert_relative_path_safe "$rel"
+  is_within_root "$src" "$SHARED_ROOT" || die "Shared source escapes approved shared root: $src"
+  [[ -e "$src" ]] || die "Missing shared source for staging link: $src"
+
+  dest="$staging_root/$rel"
+  is_within_root "$(dirname "$dest")" "$staging_root" || die "Staging destination escapes staging root: $dest"
+
+  expected_resolved="$(canon_path "$src")"
+
+  if [[ -L "$dest" ]]; then
+    actual_resolved="$(canon_path "$dest")"
+    if [[ "$actual_resolved" == "$expected_resolved" ]]; then
+      return 0
+    fi
+    die "Staging destination symlink mismatch for $rel: $actual_resolved (expected $expected_resolved)"
+  fi
+
+  if [[ ! -e "$dest" ]]; then
+    if [[ "$DRY_RUN" == "true" ]]; then
+      log "DRY-RUN: ln -s $src $dest"
+      return 0
+    fi
+    ln -s "$src" "$dest"
+    [[ "$(canon_path "$dest")" == "$expected_resolved" ]] || die "Staging link verification failed for $dest"
+    return 0
+  fi
+
+  if [[ -d "$dest" ]]; then
+    if find "$dest" -mindepth 1 -print -quit | grep -q .; then
+      local entries
+      entries="$(find "$dest" -mindepth 1 -maxdepth 2 -print | head -n 20 | sed 's|^|  - |')"
+      die "Non-empty staging directory blocks link replacement: $dest\n$entries"
+    fi
+    if [[ "$DRY_RUN" == "true" ]]; then
+      log "DRY-RUN: rmdir $dest && ln -s $src $dest"
+      return 0
+    fi
+    rmdir "$dest"
+    ln -s "$src" "$dest"
+    [[ "$(canon_path "$dest")" == "$expected_resolved" ]] || die "Staging link verification failed for $dest"
+    return 0
+  fi
+
+  die "Unsupported staging destination type for $rel: $dest"
+}
+
+source_for_root_asset() {
+  local rel="$1"
+  case "$rel" in
+    .env) printf '%s/.env\n' "$SHARED_ROOT" ;;
+    youtube_playlists.json) printf '%s/state/youtube_playlists.json\n' "$SHARED_ROOT" ;;
+    channels/channel_registry.json) printf '%s/state/channel_registry.json\n' "$SHARED_ROOT" ;;
+    channels/channels_tracker.csv) printf '%s/state/channels_tracker.csv\n' "$SHARED_ROOT" ;;
+    logs) printf '%s/logs\n' "$SHARED_ROOT" ;;
+    output) printf '%s/runtime/output\n' "$SHARED_ROOT" ;;
+    client_secrets.json) printf '%s/oauth/client_secrets.root.json\n' "$SHARED_ROOT" ;;
+    youtube_token.pickle) printf '%s/tokens/youtube_token.root.pickle\n' "$SHARED_ROOT" ;;
+    youtube_analytics_token.pickle) printf '%s/tokens/youtube_analytics_token.root.pickle\n' "$SHARED_ROOT" ;;
+    token.json) printf '%s/tokens/token.root.json\n' "$SHARED_ROOT" ;;
+    token_analytics.json) printf '%s/tokens/token_analytics.root.json\n' "$SHARED_ROOT" ;;
+    *) return 1 ;;
+  esac
+}
+
+asset_requires_shared_root() {
+  local rel="$1"
+  case "$rel" in
+    .env|youtube_playlists.json|channels/channel_registry.json|channels/channels_tracker.csv|logs|output)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 link_persistent_assets() {
@@ -338,18 +474,21 @@ link_persistent_assets() {
       esac
     fi
 
+    if asset_requires_shared_root "$rel"; then
+      is_within_root "$src" "$SHARED_ROOT" || die "Mandatory shared asset is not sourced from shared root: $rel -> $src"
+    fi
+
     is_within_root "$src" "$active_root" || is_within_root "$src" "$SHARED_ROOT" || die "Persistent asset source escapes approved roots: $src"
     ensure_parent_dir "$dest"
 
-    if [[ -e "$dest" || -L "$dest" ]]; then
-      run_cmd rm -rf "$dest"
-    fi
-
-    if [[ "$DRY_RUN" == "true" ]]; then
-      log "DRY-RUN: ln -s $src $dest"
-    else
-      ln -s "$src" "$dest"
-    fi
+    case "$rel" in
+      output|logs)
+        replace_empty_staging_path_with_link "$release_dir" "$rel" "$src"
+        ;;
+      *)
+        ensure_symlink_to_source "$dest" "$src" "Persistent asset"
+        ;;
+    esac
   done
 
   # Channel-local secret assets: never copy content; only symlink exact files if present.
@@ -359,16 +498,11 @@ link_persistent_assets() {
       class="$(classify_asset "$rel")"
       [[ "$class" != UNKNOWN_BLOCKER* ]] || die "Unknown asset classification: $rel"
       dest="$release_dir/$rel"
+      src_file="$(canon_path "$src_file")"
+      is_within_root "$src_file" "$SHARED_ROOT" || is_within_root "$src_file" "$active_root" || die "Channel asset source escapes approved roots: $src_file"
       ensure_parent_dir "$dest"
-      if [[ -e "$dest" || -L "$dest" ]]; then
-        run_cmd rm -f "$dest"
-      fi
-      if [[ "$DRY_RUN" == "true" ]]; then
-        log "DRY-RUN: ln -s $src_file $dest"
-      else
-        ln -s "$src_file" "$dest"
-      fi
-    done < <(find "$active_root/channels" -type f \( -name 'youtube_token.pickle' -o -name 'youtube_analytics_token.pickle' -o -name 'client_secrets.json' -o -name 'token.json' -o -name 'token_analytics.json' \))
+      ensure_symlink_to_source "$dest" "$src_file" "Channel asset"
+    done < <(find "$active_root/channels" \( -type f -o -type l \) \( -name 'youtube_token.pickle' -o -name 'youtube_analytics_token.pickle' -o -name 'client_secrets.json' -o -name 'token.json' -o -name 'token_analytics.json' \))
   fi
 
   # Fail closed on unknown secret-like assets under active root channels.
@@ -387,9 +521,106 @@ run_preflight() {
   local uploader_import="fail"
   local wrapper_import="skip"
   local health_check="fail"
+  local shared_output_root shared_logs_root
 
   [[ -x "$pybin" ]] || die "Python interpreter missing in prepared release"
   [[ -f "$release_dir/scheduler.py" ]] || die "scheduler.py missing in prepared release"
+
+  shared_output_root="$(canon_path "$SHARED_ROOT/runtime/output")"
+  shared_logs_root="$(canon_path "$SHARED_ROOT/logs")"
+  [[ -d "$shared_output_root" ]] || die "Shared runtime output missing: $shared_output_root"
+  [[ -d "$shared_logs_root" ]] || die "Shared logs missing: $shared_logs_root"
+
+  local evidence_tmp
+  evidence_tmp="$(mktemp)"
+  local rel dest resolved class status
+  local -a required_paths=(
+    "output"
+    "logs"
+    "output/scripts"
+    "output/audio"
+    "output/videos"
+    "assets"
+    "assets/backgrounds"
+    "assets/music"
+    "assets/fonts"
+  )
+
+  for rel in "${required_paths[@]}"; do
+    dest="$release_dir/$rel"
+    status="pass"
+    class="release_required"
+    resolved="missing"
+
+    if [[ -e "$dest" || -L "$dest" ]]; then
+      resolved="$(canon_path "$dest")"
+    else
+      status="fail"
+      class="missing"
+    fi
+
+    case "$rel" in
+      output)
+        class="runtime_output_link"
+        [[ "$resolved" == "$shared_output_root" ]] || status="fail"
+        ;;
+      logs)
+        class="runtime_logs_link"
+        [[ "$resolved" == "$shared_logs_root" ]] || status="fail"
+        ;;
+      output/scripts|output/audio|output/videos)
+        class="runtime_output_child"
+        [[ "$status" == "pass" ]] && is_within_root "$resolved" "$shared_output_root" || status="fail"
+        ;;
+      assets|assets/backgrounds|assets/music|assets/fonts)
+        class="release_assets"
+        [[ "$status" == "pass" ]] && is_within_root "$resolved" "$release_dir" || status="fail"
+        ;;
+    esac
+
+    printf '%s|%s|%s|%s\n' "$rel" "$resolved" "$class" "$status" >> "$evidence_tmp"
+  done
+
+  PRECHECK_PATH_EVIDENCE_JSON="$(python3 - "$TARGET_SHA" "$evidence_tmp" <<'PY'
+import json
+import sys
+from datetime import datetime, timezone
+
+target_sha = sys.argv[1]
+evidence_path = sys.argv[2]
+now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+items = []
+with open(evidence_path, encoding='utf-8') as fh:
+    for line in fh:
+        rel, resolved, cls, status = line.rstrip('\n').split('|', 3)
+        items.append(
+            {
+                'relative_path': rel,
+                'resolved_absolute_path': resolved,
+                'classification': cls,
+                'status': status,
+                'target_sha': target_sha,
+                'timestamp_utc': now,
+            }
+        )
+print(json.dumps(items, ensure_ascii=False))
+PY
+)"
+  rm -f "$evidence_tmp"
+
+  if PRECHECK_PATH_EVIDENCE_JSON="$PRECHECK_PATH_EVIDENCE_JSON" python3 - <<'PY'
+import json
+import os
+import sys
+
+items = json.loads(os.environ['PRECHECK_PATH_EVIDENCE_JSON'])
+sys.exit(0 if all(item.get('status') == 'pass' for item in items) else 1)
+PY
+  then
+    :
+  else
+    die "Preflight required path validation failed"
+  fi
 
   # Syntax and imports must pass from the staged release root.
   (cd "$release_dir" && "$pybin" -m py_compile scheduler.py src/*.py >/dev/null 2>&1) || die "Python syntax validation failed"
@@ -481,13 +712,76 @@ acquire_lock() {
     return 0
   fi
   mkdir "$LOCK_DIR" 2>/dev/null || die "Another deployment appears active: lock exists at $LOCK_DIR"
+  LOCK_ACQUIRED="true"
 }
 
 release_lock() {
   if [[ "$DRY_RUN" == "true" ]]; then
     return 0
   fi
-  rm -rf "$LOCK_DIR" || true
+  if [[ "$LOCK_ACQUIRED" == "true" ]]; then
+    rm -rf "$LOCK_DIR" || true
+    LOCK_ACQUIRED="false"
+  fi
+}
+
+write_prepare_failure_report() {
+  local code="$1"
+  local file="$DEPLOY_STATE_ROOT/prepare_failure_latest.json"
+
+  if [[ "$DRY_RUN" == "true" ]]; then
+    return 0
+  fi
+
+  mkdir -p "$DEPLOY_STATE_ROOT"
+  cat > "$file" <<EOF
+{
+  "timestamp_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "mode": "prepare",
+  "target_sha": "$TARGET_SHA",
+  "target_ref": "$TARGET_REF",
+  "exit_code": $code,
+  "staging_dir": "${PREPARE_STAGING_DIR}",
+  "staging_created": "${PREPARE_STAGING_CREATED}",
+  "finalized": "${PREPARE_FINALIZED}"
+}
+EOF
+}
+
+cleanup_prepare_staging_if_owned() {
+  [[ "$PREPARE_STAGING_CREATED" == "true" ]] || return 0
+  [[ "$PREPARE_FINALIZED" != "true" ]] || return 0
+  [[ -n "$PREPARE_STAGING_DIR" ]] || return 0
+  [[ -d "$PREPARE_STAGING_DIR" ]] || return 0
+
+  is_within_root "$PREPARE_STAGING_DIR" "$RELEASES_ROOT" || {
+    log "Skip prepare cleanup: staging path escapes releases root: $PREPARE_STAGING_DIR"
+    return 0
+  }
+
+  local expected_base
+  expected_base=".staging-$TARGET_SHA"
+  if [[ "$(basename "$PREPARE_STAGING_DIR")" != "$expected_base" ]]; then
+    log "Skip prepare cleanup: staging basename mismatch"
+    return 0
+  fi
+
+  if [[ -n "$PREPARE_TARGET_RELEASE" && -d "$PREPARE_TARGET_RELEASE" ]]; then
+    log "Skip prepare cleanup: target release already finalized"
+    return 0
+  fi
+
+  rm -rf "$PREPARE_STAGING_DIR"
+}
+
+on_prepare_failure() {
+  local code="$1"
+  set +e
+  write_prepare_failure_report "$code"
+  cleanup_prepare_staging_if_owned
+  release_lock
+  trap - ERR
+  exit "$code"
 }
 
 on_error_rollback() {
@@ -620,6 +914,12 @@ mode_prepare() {
   staging_dir="$(staging_dir_for_sha "$TARGET_SHA")"
   active_target="$(capture_active_target)"
 
+  PREPARE_STAGING_DIR="$staging_dir"
+  PREPARE_TARGET_RELEASE="$release_dir"
+  PREPARE_STAGING_CREATED="false"
+  PREPARE_FINALIZED="false"
+  trap 'on_prepare_failure $?' ERR
+
   verify_existing_release_identity_or_fail "$release_dir"
   if [[ -n "$PREPARED_RELEASE" ]]; then
     log "Release already prepared and matching target SHA: $PREPARED_RELEASE"
@@ -639,6 +939,7 @@ mode_prepare() {
 
   run_cmd mkdir -p "$RELEASES_ROOT"
   run_cmd mkdir -p "$staging_dir"
+  PREPARE_STAGING_CREATED="true"
 
   if [[ "$DRY_RUN" == "true" ]]; then
     log "DRY-RUN: export git archive for $TARGET_SHA into $staging_dir"
@@ -646,11 +947,20 @@ mode_prepare() {
     git archive "$TARGET_SHA" | tar -x -C "$staging_dir"
   fi
 
+  if [[ -n "${IMMUTABLE_V2_TEST_HOOK_AFTER_EXPORT:-}" ]]; then
+    (cd "$staging_dir" && bash -c "$IMMUTABLE_V2_TEST_HOOK_AFTER_EXPORT")
+  fi
+
   assert_no_forbidden_payload "$staging_dir"
 
   assert_python_and_deps "$staging_dir"
   link_persistent_assets "$staging_dir" "$active_target"
   run_preflight "$staging_dir"
+
+  if [[ -n "${IMMUTABLE_V2_TEST_HOOK_BEFORE_FINALIZE:-}" ]]; then
+    (cd "$staging_dir" && bash -c "$IMMUTABLE_V2_TEST_HOOK_BEFORE_FINALIZE")
+  fi
+
   write_release_metadata "$staging_dir"
 
   if [[ "$DRY_RUN" == "true" ]]; then
@@ -658,6 +968,8 @@ mode_prepare() {
   else
     mv "$staging_dir" "$release_dir"
   fi
+  PREPARE_FINALIZED="true"
+  trap - ERR
 
   log "Prepared immutable release: $release_dir"
 }

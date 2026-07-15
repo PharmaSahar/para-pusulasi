@@ -32,6 +32,8 @@ Bootstrap prerequisite:
 
 Status remains: `IMPLEMENTED_NOT_DEPLOYED`.
 
+Git history may still contain runtime-owned evidence payload under `logs/` and `output/`. Prepare sanitizes only the invocation-owned staging export before persistent linking; the final prepared release must not ship Git-exported runtime payload in those paths.
+
 ## 2) Threat Model And Prohibitions
 
 The workflow is fail-closed and rejects unsafe deployment attempts.
@@ -80,6 +82,7 @@ Repository-discovered contract (read-only evidence from docs/scripts):
    - optional wrapper import validation when file exists
    - scheduler `--health-check` must pass unless explicitly skipped in controlled test mode
    - preflight is executed from staged release working directory (`.staging-<sha>` during prepare)
+   - exported `logs/` and `output/` payload is provenance-checked and removed from staging before shared-root symlinks are created
 9. Cutover contract:
    - lock acquisition
    - rollback target capture
@@ -108,6 +111,12 @@ Default handled set:
 - token/secret files (root + `channels/*`) -> `PROHIBITED_SECRET | RELEASE_SYMLINK`
 - `logs`, `output*` -> `RUNTIME_GENERATED | RELEASE_SYMLINK`
 - `channels/channel_registry.json`, `channels/channels_tracker.csv`, `youtube_playlists.json` -> `EXTERNAL_PERSISTENT | RELEASE_SYMLINK`
+
+Prepare sanitization rule:
+
+- if `logs/` or `output/` is exported from Git into invocation-owned staging, prepare must verify every file in that tree is attributable to the target Git tree before removing the exported copy
+- unexpected staging entries under `logs/` or `output/` fail closed
+- a correct pre-existing shared-root symlink for `logs/` or `output/` remains idempotent and is not deleted
 
 Prepared-release runtime-link contract:
 
@@ -182,6 +191,14 @@ Contains:
 
 No secrets are stored.
 
+Prepare sequence for runtime-owned payload:
+
+1. Export exact target SHA into invocation-owned staging.
+2. Provenance-check exported `logs/` and `output/` trees against the target Git tree.
+3. Remove only the exported staging copies of `logs/` and `output/`.
+4. Create or verify shared-root symlinks to `${SHARED_ROOT}/logs` and `${SHARED_ROOT}/runtime/output`.
+5. Continue preflight from the staged release working directory.
+
 Preflight validates before scheduler health-check:
 
 - `output` resolves to `${SHARED_ROOT}/runtime/output`
@@ -215,6 +232,7 @@ Common fail-closed blockers:
 - symlink target outside approved release root
 - staging collision
 - non-empty staging `output` or `logs` directory (fail-closed, no deletion)
+- Git-exported runtime-owned payload under `logs/` or `output/` is removed only after provenance verification; unexpected entries remain fail-closed
 - runtime symlink target mismatch in staging
 - insufficient disk
 - missing persistent asset

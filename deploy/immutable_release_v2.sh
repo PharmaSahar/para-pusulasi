@@ -251,6 +251,85 @@ assert_no_forbidden_payload() {
   [[ -z "$forbidden" ]] || die "Unexpected deployment payload file in release source: $forbidden"
 }
 
+remove_exported_runtime_payload() {
+  local staging_root="$1"
+  local active_target="$2"
+  local rel candidate src expected_resolved actual_resolved tracked_paths tracked_rel entry entry_type
+
+  is_within_root "$staging_root" "$RELEASES_ROOT" || die "Staging root escapes approved releases root: $staging_root"
+  [[ "$staging_root" != "$active_target" ]] || die "Active release cannot be sanitized as staging payload: $staging_root"
+  [[ "$PREPARE_STAGING_CREATED" == "true" ]] || die "Runtime payload sanitization requires invocation-owned staging"
+  [[ ! -e "$PREPARE_TARGET_RELEASE" ]] || die "Prepared release unexpectedly exists before runtime payload sanitization: $PREPARE_TARGET_RELEASE"
+
+  for rel in logs output; do
+    candidate="$staging_root/$rel"
+    src="$(resolve_asset_source "$rel" "$active_target")"
+    expected_resolved="$(canon_path "$src")"
+
+    [[ -e "$candidate" ]] || continue
+    is_within_root "$(dirname "$candidate")" "$staging_root" || die "Staging runtime payload escapes staging root: $candidate"
+
+    if [[ -L "$candidate" ]]; then
+      actual_resolved="$(canon_path "$candidate")"
+      [[ "$actual_resolved" == "$expected_resolved" ]] || die "Staging destination symlink mismatch for $rel: $actual_resolved (expected $expected_resolved)"
+      continue
+    fi
+
+    [[ -d "$candidate" ]] || die "Exported runtime payload is not a directory: $candidate"
+
+    tracked_paths="$(git ls-tree -r --name-only "$TARGET_SHA" -- "$rel")"
+    if [[ -z "$tracked_paths" ]]; then
+      if find "$candidate" -mindepth 1 -print -quit | grep -q .; then
+        local entries
+        entries="$(find "$candidate" -mindepth 1 -maxdepth 2 -print | head -n 20 | sed 's|^|  - |')"
+        die "Unexpected staging payload for untracked runtime directory: $candidate\n$entries"
+      fi
+      continue
+    fi
+
+    local normalized_tracked_paths=""
+
+    while IFS= read -r tracked_rel; do
+      [[ -n "$tracked_rel" ]] || continue
+      tracked_rel="${tracked_rel#"$rel"/}"
+      normalized_tracked_paths+="$tracked_rel"
+      normalized_tracked_paths+=$'\n'
+      [[ -e "$candidate/$tracked_rel" ]] || die "Exported runtime payload missing tracked entry: $candidate/$tracked_rel"
+    done <<< "$tracked_paths"
+
+    while IFS= read -r entry; do
+      [[ -n "$entry" ]] || continue
+      [[ "$entry" != "$candidate" ]] || continue
+          entry_type="$(python3 -c 'from pathlib import Path; import stat, sys; mode = Path(sys.argv[1]).lstat().st_mode; print("directory" if stat.S_ISDIR(mode) else "regular file" if stat.S_ISREG(mode) else "symbolic link" if stat.S_ISLNK(mode) else "fifo" if stat.S_ISFIFO(mode) else "socket" if stat.S_ISSOCK(mode) else "block special file" if stat.S_ISBLK(mode) else "character special file" if stat.S_ISCHR(mode) else "unknown")' "$entry")"
+      case "$entry_type" in
+        "directory")
+          continue
+          ;;
+        "regular file")
+          tracked_rel="${entry#"$candidate"/}"
+          grep -Fxq -- "$tracked_rel" <<< "$normalized_tracked_paths" || die "Unexpected exported runtime payload entry: $entry"
+          ;;
+        "symbolic link")
+          die "Unexpected symlink in exported runtime payload: $entry"
+          ;;
+        "fifo"|"socket"|"block special file"|"character special file")
+          die "Unexpected special file in exported runtime payload: $entry"
+          ;;
+        *)
+          die "Unexpected exported runtime payload entry type: $entry_type ($entry)"
+          ;;
+      esac
+    done < <(find "$candidate" -mindepth 1 -print)
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+      log "DRY-RUN: rm -rf $candidate"
+    else
+      rm -rf -- "$candidate"
+    fi
+    [[ ! -e "$candidate" ]] || die "Failed to remove exported runtime payload: $candidate"
+  done
+}
+
 assert_python_and_deps() {
   local release_dir="$1"
   local pybin="$release_dir/venv/bin/python"
@@ -951,6 +1030,7 @@ mode_prepare() {
     (cd "$staging_dir" && bash -c "$IMMUTABLE_V2_TEST_HOOK_AFTER_EXPORT")
   fi
 
+  remove_exported_runtime_payload "$staging_dir" "$active_target"
   assert_no_forbidden_payload "$staging_dir"
 
   assert_python_and_deps "$staging_dir"

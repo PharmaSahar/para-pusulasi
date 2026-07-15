@@ -5,6 +5,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 SCRIPT = Path(__file__).resolve().parents[1] / "deploy" / "immutable_release_v2.sh"
 
 
@@ -19,7 +21,13 @@ def _write(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def _init_repo(tmp_path: Path, *, health_ok: bool = True, include_uploader: bool = True) -> tuple[Path, str]:
+def _init_repo(
+    tmp_path: Path,
+    *,
+    health_ok: bool = True,
+    include_uploader: bool = True,
+    include_runtime_payload: bool = False,
+) -> tuple[Path, str]:
     repo = tmp_path / "repo"
     repo.mkdir(parents=True, exist_ok=True)
 
@@ -40,6 +48,21 @@ def _init_repo(tmp_path: Path, *, health_ok: bool = True, include_uploader: bool
     if include_uploader:
         _write(repo / "src" / "youtube_uploader.py", "X = 1\n")
     _write(repo / "src" / "youtube_analytics_smoke.py", "Y = 1\n")
+    if include_runtime_payload:
+        for path, content in {
+            repo / "logs" / "activation_controller_report_latest.json": '{"kind": "activation_controller_report"}\n',
+            repo / "logs" / "routing_guard_review_queue_latest.json": '{"kind": "routing_guard_review_queue"}\n',
+            repo / "logs" / "runtime_flag_ab_evidence_latest.json": '{"kind": "runtime_flag_ab_evidence"}\n',
+            repo / "logs" / "thumbnail_streak_path_latest.json": '{"kind": "thumbnail_streak_path"}\n',
+            repo / "logs" / "p0_p1_artifacts_bundle_latest.json": '{"kind": "p0_p1_artifacts_bundle"}\n',
+            repo / "logs" / "thumbnail_403_root_cause_latest.json": '{"kind": "thumbnail_403_root_cause"}\n',
+            repo / "logs" / "trace_completeness_latest.json": '{"kind": "trace_completeness"}\n',
+            repo / "logs" / "p0_validation_metrics_latest.json": '{"kind": "p0_validation_metrics"}\n',
+            repo / "output" / "state" / "activation_reports" / "2026-07-09T17-59-04.json": '{"status": "pass"}\n',
+            repo / "output" / "state" / "activation_reports" / "2026-07-10T12-36-09.json": '{"status": "pass"}\n',
+            repo / "output" / "state" / "activation_reports" / "2026-07-10T09-31-49.json": '{"status": "pass"}\n',
+        }.items():
+            _write(path, content)
     for path in [
         repo / "assets",
         repo / "assets" / "backgrounds",
@@ -395,6 +418,93 @@ def test_prepare_creates_shared_logs_symlink_when_absent(tmp_path: Path) -> None
     assert logs_link.resolve() == (layout["shared"] / "logs").resolve()
 
 
+def test_exported_runtime_payload_is_sanitized_before_linking(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path, include_runtime_payload=True)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode == 0
+    release = layout["releases"] / sha
+    logs_link = release / "logs"
+    output_link = release / "output"
+    assert logs_link.is_symlink()
+    assert output_link.is_symlink()
+    assert logs_link.resolve() == (layout["shared"] / "logs").resolve()
+    assert output_link.resolve() == (layout["shared"] / "runtime" / "output").resolve()
+    assert not (logs_link / "activation_controller_report_latest.json").exists()
+    assert not (output_link / "state" / "activation_reports").exists()
+
+
+@pytest.mark.parametrize("rel", ["logs", "output"])
+def test_untracked_file_inside_exported_runtime_payload_blocks_sanitization(tmp_path: Path, rel: str) -> None:
+    repo, sha = _init_repo(tmp_path, include_runtime_payload=True)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    env["IMMUTABLE_V2_TEST_HOOK_AFTER_EXPORT"] = f'mkdir -p {rel} && printf x > {rel}/unexpected.txt'
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode != 0
+    assert "Unexpected exported runtime payload entry" in (res.stderr + res.stdout)
+
+
+@pytest.mark.parametrize("rel", ["logs", "output"])
+def test_external_symlink_inside_exported_runtime_payload_blocks_sanitization(tmp_path: Path, rel: str) -> None:
+    repo, sha = _init_repo(tmp_path, include_runtime_payload=True)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    env["IMMUTABLE_V2_TEST_HOOK_AFTER_EXPORT"] = f'ln -s /tmp/outside {rel}/unexpected-link'
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode != 0
+    assert "Unexpected symlink in exported runtime payload" in (res.stderr + res.stdout)
+
+
+@pytest.mark.parametrize("rel", ["logs", "output"])
+@pytest.mark.parametrize("special_kind", ["fifo", "socket", "device"])
+def test_special_file_inside_exported_runtime_payload_blocks_sanitization(tmp_path: Path, rel: str, special_kind: str) -> None:
+    if special_kind == "device" and os.geteuid() != 0:
+        pytest.skip("device nodes require elevated privileges")
+
+    repo, sha = _init_repo(tmp_path, include_runtime_payload=True)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+
+    if special_kind == "fifo":
+        hook = f"mkfifo {rel}/special-fifo"
+    elif special_kind == "socket":
+        hook = (
+            "python3 - <<'PY'\n"
+            "import socket\n"
+            "from pathlib import Path\n"
+            f"path = Path('{rel}/special-socket')\n"
+            "sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)\n"
+            "sock.bind(str(path))\n"
+            "sock.close()\n"
+            "PY"
+        )
+    else:
+        hook = (
+            "python3 - <<'PY'\n"
+            "import os\n"
+            "import stat\n"
+            "from pathlib import Path\n"
+            f"path = Path('{rel}/special-device')\n"
+            "os.mknod(path, stat.S_IFCHR | 0o600, os.makedev(1, 7))\n"
+            "PY"
+        )
+
+    env["IMMUTABLE_V2_TEST_HOOK_AFTER_EXPORT"] = hook
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode != 0
+    assert "Unexpected special file in exported runtime payload" in (res.stderr + res.stdout)
+
+
 def test_empty_staging_output_directory_replaced(tmp_path: Path) -> None:
     repo, sha = _init_repo(tmp_path)
     layout = _runtime_layout(tmp_path)
@@ -424,42 +534,34 @@ def test_empty_staging_logs_directory_replaced(tmp_path: Path) -> None:
 
 
 def test_non_empty_staging_output_blocks_prepare(tmp_path: Path) -> None:
-    repo, sha = _init_repo(tmp_path)
-    _write(repo / "output" / "marker.txt", "x\n")
-    subprocess.run(["git", "add", "output/marker.txt"], cwd=repo, check=True)
-    subprocess.run(["git", "commit", "-m", "add-output"], cwd=repo, check=True, capture_output=True, text=True)
-    new_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
-    subprocess.run(["git", "update-ref", "refs/remotes/origin/release/test", new_sha], cwd=repo, check=True)
+    repo, sha = _init_repo(tmp_path, include_runtime_payload=True)
     layout = _runtime_layout(tmp_path)
     env = _base_env(layout)
+    env["IMMUTABLE_V2_TEST_HOOK_AFTER_EXPORT"] = "mkdir -p output && printf x > output/marker.txt"
 
-    res = _invoke(repo, new_sha, "prepare", env)
+    res = _invoke(repo, sha, "prepare", env)
 
     assert res.returncode != 0
-    assert "Non-empty staging directory blocks link replacement" in (res.stderr + res.stdout)
+    assert "Unexpected exported runtime payload entry" in (res.stderr + res.stdout)
 
 
 def test_non_empty_staging_logs_blocks_prepare(tmp_path: Path) -> None:
-    repo, sha = _init_repo(tmp_path)
-    _write(repo / "logs" / "marker.txt", "x\n")
-    subprocess.run(["git", "add", "logs/marker.txt"], cwd=repo, check=True)
-    subprocess.run(["git", "commit", "-m", "add-logs"], cwd=repo, check=True, capture_output=True, text=True)
-    new_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
-    subprocess.run(["git", "update-ref", "refs/remotes/origin/release/test", new_sha], cwd=repo, check=True)
+    repo, sha = _init_repo(tmp_path, include_runtime_payload=True)
     layout = _runtime_layout(tmp_path)
     env = _base_env(layout)
+    env["IMMUTABLE_V2_TEST_HOOK_AFTER_EXPORT"] = "mkdir -p logs && printf x > logs/marker.txt"
 
-    res = _invoke(repo, new_sha, "prepare", env)
+    res = _invoke(repo, sha, "prepare", env)
 
     assert res.returncode != 0
-    assert "Non-empty staging directory blocks link replacement" in (res.stderr + res.stdout)
+    assert "Unexpected exported runtime payload entry" in (res.stderr + res.stdout)
 
 
 def test_wrong_runtime_symlink_target_blocks_prepare(tmp_path: Path) -> None:
-    repo, sha = _init_repo(tmp_path)
+    repo, sha = _init_repo(tmp_path, include_runtime_payload=True)
     layout = _runtime_layout(tmp_path)
     env = _base_env(layout)
-    env["IMMUTABLE_V2_TEST_HOOK_AFTER_EXPORT"] = "ln -s /tmp/wrong-target output"
+    env["IMMUTABLE_V2_TEST_HOOK_AFTER_EXPORT"] = "rm -rf output && ln -s /tmp/wrong-target output"
 
     res = _invoke(repo, sha, "prepare", env)
 
@@ -468,11 +570,11 @@ def test_wrong_runtime_symlink_target_blocks_prepare(tmp_path: Path) -> None:
 
 
 def test_correct_runtime_symlink_is_idempotent(tmp_path: Path) -> None:
-    repo, sha = _init_repo(tmp_path)
+    repo, sha = _init_repo(tmp_path, include_runtime_payload=True)
     layout = _runtime_layout(tmp_path)
     env = _base_env(layout)
     env["IMMUTABLE_V2_TEST_HOOK_AFTER_EXPORT"] = (
-        f"ln -s '{layout['shared'] / 'runtime' / 'output'}' output; "
+        f"rm -rf output logs && ln -s '{layout['shared'] / 'runtime' / 'output'}' output && "
         f"ln -s '{layout['shared'] / 'logs'}' logs"
     )
 
@@ -482,15 +584,15 @@ def test_correct_runtime_symlink_is_idempotent(tmp_path: Path) -> None:
 
 
 def test_runtime_regular_file_destination_blocks_prepare(tmp_path: Path) -> None:
-    repo, sha = _init_repo(tmp_path)
+    repo, sha = _init_repo(tmp_path, include_runtime_payload=True)
     layout = _runtime_layout(tmp_path)
     env = _base_env(layout)
-    env["IMMUTABLE_V2_TEST_HOOK_AFTER_EXPORT"] = "printf x > output"
+    env["IMMUTABLE_V2_TEST_HOOK_AFTER_EXPORT"] = "rm -rf output && printf x > output"
 
     res = _invoke(repo, sha, "prepare", env)
 
     assert res.returncode != 0
-    assert "Unsupported staging destination type" in (res.stderr + res.stdout)
+    assert "Exported runtime payload is not a directory" in (res.stderr + res.stdout)
 
 
 def test_missing_shared_output_source_blocks_prepare(tmp_path: Path) -> None:
@@ -551,6 +653,25 @@ def test_prepare_does_not_modify_active_output_and_logs(tmp_path: Path) -> None:
     assert active_logs.stat().st_ino == logs_before
 
 
+def test_prepare_does_not_modify_shared_output_and_logs(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path, include_runtime_payload=True)
+    layout = _runtime_layout(tmp_path)
+    _write(layout["shared"] / "logs" / "shared-sentinel.log", "keep\n")
+    _write(layout["shared"] / "runtime" / "output" / "scripts" / "shared-sentinel.txt", "keep\n")
+    env = _base_env(layout)
+
+    shared_logs_before = (layout["shared"] / "logs").stat().st_ino
+    shared_output_before = (layout["shared"] / "runtime" / "output").stat().st_ino
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode == 0
+    assert (layout["shared"] / "logs" / "shared-sentinel.log").read_text(encoding="utf-8") == "keep\n"
+    assert (layout["shared"] / "runtime" / "output" / "scripts" / "shared-sentinel.txt").read_text(encoding="utf-8") == "keep\n"
+    assert (layout["shared"] / "logs").stat().st_ino == shared_logs_before
+    assert (layout["shared"] / "runtime" / "output").stat().st_ino == shared_output_before
+
+
 def test_preflight_health_check_runs_from_staging_cwd(tmp_path: Path) -> None:
     repo, sha = _init_repo(tmp_path)
     layout = _runtime_layout(tmp_path)
@@ -577,6 +698,23 @@ def test_preflight_json_contains_shared_path_evidence(tmp_path: Path) -> None:
     assert evidence["logs"]["status"] == "pass"
     assert evidence["output"]["resolved_absolute_path"] == str((layout["shared"] / "runtime" / "output").resolve())
     assert evidence["logs"]["resolved_absolute_path"] == str((layout["shared"] / "logs").resolve())
+
+
+def test_existing_prepared_release_is_left_untouched(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path, include_runtime_payload=True)
+    layout = _runtime_layout(tmp_path)
+    release = layout["releases"] / sha
+    release.mkdir(parents=True, exist_ok=True)
+    _write(release / ".immutable_release_metadata.json", json.dumps({"release_sha": sha}))
+    _write(release / "logs" / "release-sentinel.log", "keep\n")
+    _write(release / "output" / "state" / "release-sentinel.json", "{}\n")
+    env = _base_env(layout)
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode == 0
+    assert (release / "logs" / "release-sentinel.log").read_text(encoding="utf-8") == "keep\n"
+    assert (release / "output" / "state" / "release-sentinel.json").read_text(encoding="utf-8") == "{}\n"
 
 
 def test_prepare_failure_cleans_invocation_owned_staging(tmp_path: Path) -> None:

@@ -26,6 +26,17 @@ An optional `--timeout-seconds` flag is available. The wrapper accepts repeated 
 - The wrapper never instantiates uploader code or calls mutation-capable YouTube endpoints.
 - The wrapper never mutates titles, thumbnails, metadata, videos, playlists, visibility, or uploads.
 
+## Read-Only Token Resolution
+
+The wrapper uses only this token resolution order:
+
+1. `cfg.youtube_analytics_token_path` (`ANALYTICS_TOKEN_PRIMARY`)
+2. `cfg.token_path` (`UPLOADER_TOKEN_FALLBACK`) only when primary is missing
+3. `NONE` when both are missing
+
+No other token path is attempted.
+No token refresh or OAuth login fallback is allowed.
+
 ## Allowed Query Surface
 
 Allowed dimensions:
@@ -82,6 +93,7 @@ The output is written only to the explicit local path provided at runtime and in
 - `redacted_error`
 - `credential_source_present`
 - `token_source_present`
+- `selected_token_source` (`ANALYTICS_TOKEN_PRIMARY`, `UPLOADER_TOKEN_FALLBACK`, or `NONE`)
 - `api_call_attempted`
 - `api_call_succeeded`
 - `mutation_attempted`

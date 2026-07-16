@@ -32,9 +32,16 @@ Complete remaining platform defaults and fallback paths that still assume a fina
 4. WP-A2-4 Regression Hardening
 
 ### Current Status
-- A2 status: active
-- WP-A2-1 status: completed
-- WP-A2-2 status: implementation in progress
+- A2 status: completed
+- WP-A2-1 status: completed and pushed (`0470036fcc8ca1f91e4d637165e6543ab70e96ac`)
+- WP-A2-2 status: completed and pushed (`61aa2409f1c519bce4770c2737a6a7db05a350fc`)
+- WP-A2-3 status: completed and pushed (`60a65e282cb02754b75554761845dc809223f2fe`)
+- WP-A2-4 status: completed after validation
+- Phase A2 closure notes:
+- no deployment performed
+- no production restart performed
+- no upload/schedule action performed
+- no quarantine clear performed
 
 ### Non-Goals
 - no deployment

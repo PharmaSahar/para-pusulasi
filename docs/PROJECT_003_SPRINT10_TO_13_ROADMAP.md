@@ -49,6 +49,20 @@ Complete remaining platform defaults and fallback paths that still assume a fina
 - no recommendation-governance work
 - no quarantine clearing
 
+## PROJECT003 PHASE A3 — RECOMMENDATION GOVERNANCE EXPANSION
+
+### Current Focus
+- A3.1 Recommendation Evaluation Foundation
+- status: implementation in progress
+- advisory-only
+- offline
+- append-only
+- deterministic
+- no runtime integration
+- no ranking
+- no experiment planning
+- no approval/execution work
+
 ## SPRINT 10 — Recommendation Evaluation Foundation
 
 ### Mission

@@ -36,13 +36,31 @@ def _init_repo(
     _write(
         repo / "scheduler.py",
         (
+            "import json\n"
             "import os\n"
             "import sys\n"
             "if '--health-check' in sys.argv:\n"
             "    expected = os.environ.get('EXPECT_SCHEDULER_CWD')\n"
             "    if expected and os.getcwd() != expected:\n"
             "        sys.exit(19)\n"
-            f"    sys.exit({0 if health_ok else 1})\n"
+            "    stderr_text = os.environ.get('SIMULATE_HEALTH_STDERR', '')\n"
+            "    forced_exit = int(os.environ.get('SIMULATE_HEALTH_EXIT_CODE', '0'))\n"
+            "    if stderr_text:\n"
+            "        print(stderr_text, file=sys.stderr)\n"
+            "    errors = json.loads(os.environ.get('SIMULATE_HEALTH_ERRORS_JSON', '[]'))\n"
+            "    if errors:\n"
+            "        print('Health check: FAIL')\n"
+            "        for error in errors:\n"
+            "            print(f'- {error}')\n"
+            "        sys.exit(forced_exit or 1)\n"
+            "    if forced_exit:\n"
+            "        print('Health check: FAIL')\n"
+            "        sys.exit(forced_exit)\n"
+            f"    if {0 if health_ok else 1} == 0:\n"
+            "        print('Health check: PASS')\n"
+            "        sys.exit(0)\n"
+            "    print('Health check: FAIL')\n"
+            "    sys.exit(1)\n"
             "sys.exit(0)\n"
         ),
     )
@@ -861,6 +879,62 @@ def test_preflight_health_check_runs_after_directory_bootstrap(tmp_path: Path) -
     assert res.returncode == 0
 
 
+def test_preflight_health_warning_does_not_block_prepare(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path, include_asset_subdirs=False)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    env.pop("IMMUTABLE_V2_SKIP_HEALTHCHECK")
+    env["EXPECT_SCHEDULER_CWD"] = str(layout["releases"] / f".staging-{sha}")
+    env["SIMULATE_HEALTH_ERRORS_JSON"] = json.dumps(["Unable to resolve youtube.googleapis.com: temporary dns failure"])
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode == 0
+    payload = json.loads((layout["releases"] / sha / "deployment_preflight.json").read_text(encoding="utf-8"))
+    assert payload["validations"][-1]["status"] == "pass"
+    assert payload["health_evidence"]["warnings"] == ["Unable to resolve youtube.googleapis.com: temporary dns failure"]
+    assert "scheduler.py --health-check" in payload["health_evidence"]["command"]
+
+
+def test_preflight_health_blocking_error_writes_report_and_cleans(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    env.pop("IMMUTABLE_V2_SKIP_HEALTHCHECK")
+    env["EXPECT_SCHEDULER_CWD"] = str(layout["releases"] / f".staging-{sha}")
+    env["SIMULATE_HEALTH_ERRORS_JSON"] = json.dumps([
+        "Missing Telegram configuration. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env."
+    ])
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode != 0
+    assert not (layout["releases"] / f".staging-{sha}").exists()
+    report = json.loads((layout["deploy_state"] / "prepare_failure_latest.json").read_text(encoding="utf-8"))
+    assert report["failed_phase"] == "preflight"
+    assert "Missing Telegram configuration" in report["error_summary"]
+    assert report["exit_code"] == res.returncode
+    assert not layout["lock_dir"].exists()
+
+
+def test_preflight_health_stderr_is_captured_and_blocks(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    env.pop("IMMUTABLE_V2_SKIP_HEALTHCHECK")
+    env["EXPECT_SCHEDULER_CWD"] = str(layout["releases"] / f".staging-{sha}")
+    env["SIMULATE_HEALTH_STDERR"] = "RuntimeError: simulated preflight crash"
+    env["SIMULATE_HEALTH_EXIT_CODE"] = "1"
+    env["SIMULATE_HEALTH_ERRORS_JSON"] = json.dumps([])
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode != 0
+    report = json.loads((layout["deploy_state"] / "prepare_failure_latest.json").read_text(encoding="utf-8"))
+    assert "simulated preflight crash" in report["error_summary"]
+    assert not (layout["releases"] / f".staging-{sha}").exists()
+
+
 def test_existing_prepared_release_is_left_untouched(tmp_path: Path) -> None:
     repo, sha = _init_repo(tmp_path, include_runtime_payload=True)
     layout = _runtime_layout(tmp_path)
@@ -919,6 +993,97 @@ def test_prepare_failure_does_not_modify_shared_assets(tmp_path: Path) -> None:
 
     assert res.returncode != 0
     assert shared_file.read_text(encoding="utf-8") == before
+
+
+def test_prepare_failure_report_is_redacted(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    env.pop("IMMUTABLE_V2_SKIP_HEALTHCHECK")
+    env["EXPECT_SCHEDULER_CWD"] = str(layout["releases"] / f".staging-{sha}")
+    env["SIMULATE_HEALTH_ERRORS_JSON"] = json.dumps(["Missing Telegram configuration. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env."])
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode != 0
+    report_text = (layout["deploy_state"] / "prepare_failure_latest.json").read_text(encoding="utf-8")
+    assert "ANTHROPIC_API_KEY" not in report_text
+    assert "token\n" not in report_text
+
+
+def test_sanitization_failure_writes_report_and_cleans(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path, include_runtime_payload=True)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    env["IMMUTABLE_V2_TEST_HOOK_AFTER_EXPORT"] = "mkdir -p output && printf x > output/unexpected.txt"
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode != 0
+    assert not (layout["releases"] / f".staging-{sha}").exists()
+    report = json.loads((layout["deploy_state"] / "prepare_failure_latest.json").read_text(encoding="utf-8"))
+    assert report["failed_phase"] == "runtime_payload_sanitization"
+
+
+def test_linking_failure_writes_report_and_cleans(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    (layout["shared"] / "state" / "channel_registry.json").unlink()
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode != 0
+    assert not (layout["releases"] / f".staging-{sha}").exists()
+    report = json.loads((layout["deploy_state"] / "prepare_failure_latest.json").read_text(encoding="utf-8"))
+    assert report["failed_phase"] == "persistent_linking"
+
+
+def test_directory_bootstrap_failure_writes_report_and_cleans(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    shutil.rmtree(layout["shared"] / "runtime" / "output" / "scripts")
+    _write(layout["shared"] / "runtime" / "output" / "scripts", "not-a-dir\n")
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode != 0
+    assert not (layout["releases"] / f".staging-{sha}").exists()
+    report = json.loads((layout["deploy_state"] / "prepare_failure_latest.json").read_text(encoding="utf-8"))
+    assert report["failed_phase"] == "directory_bootstrap"
+
+
+def test_import_failure_writes_report_and_cleans(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path, include_uploader=False)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode != 0
+    assert not (layout["releases"] / f".staging-{sha}").exists()
+    report = json.loads((layout["deploy_state"] / "prepare_failure_latest.json").read_text(encoding="utf-8"))
+    assert report["failed_phase"] == "preflight"
+
+
+def test_dependency_setup_failure_writes_report_and_cleans(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    env.pop("IMMUTABLE_V2_SKIP_DEP_INSTALL")
+    _write(repo / "requirements.txt", "definitely-not-a-real-package-for-tests-12345\n")
+    subprocess.run(["git", "add", "requirements.txt"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-m", "break-deps"], cwd=repo, check=True, capture_output=True, text=True)
+    sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+    subprocess.run(["git", "update-ref", "refs/remotes/origin/release/test", sha], cwd=repo, check=True)
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode != 0
+    assert not (layout["releases"] / f".staging-{sha}").exists()
+    report = json.loads((layout["deploy_state"] / "prepare_failure_latest.json").read_text(encoding="utf-8"))
+    assert report["failed_phase"] == "dependency_setup"
 
 
 def test_temporary_topology_integration_simulation(tmp_path: Path) -> None:

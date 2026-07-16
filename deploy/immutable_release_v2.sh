@@ -33,6 +33,14 @@ PREPARE_STAGING_CREATED="false"
 PREPARE_FINALIZED="false"
 PRECHECK_PATH_EVIDENCE_JSON="[]"
 PREPARE_BOOTSTRAP_CREATED_RELATIVE_PATHS=""
+PREPARE_FAILURE_PHASE=""
+PREPARE_FAILURE_SUMMARY=""
+PREPARE_ACTIVE_TARGET=""
+PREPARE_ACTIVE_RELEASE_SHA=""
+PRECHECK_HEALTH_STDOUT_JSON='""'
+PRECHECK_HEALTH_STDERR_JSON='""'
+PRECHECK_HEALTH_WARNINGS_JSON='[]'
+PRECHECK_HEALTH_COMMAND=""
 
 usage() {
   cat <<'EOF'
@@ -56,6 +64,7 @@ log() {
 }
 
 die() {
+  PREPARE_FAILURE_SUMMARY="$(printf '%s' "$*" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g' | sed 's/^ //; s/ $//')"
   log "ERROR: $*"
   exit 1
 }
@@ -234,6 +243,13 @@ write_preflight_json() {
   "target_ref": "$TARGET_REF",
   "timestamp_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "path_evidence": $PRECHECK_PATH_EVIDENCE_JSON,
+  "health_evidence": {
+    "command": $(python3 -c 'import json,sys; print(json.dumps(sys.argv[1], ensure_ascii=False))' "$PRECHECK_HEALTH_COMMAND"),
+    "cwd": $(python3 -c 'import json,sys; print(json.dumps(sys.argv[1], ensure_ascii=False))' "$release_dir"),
+    "stdout": $PRECHECK_HEALTH_STDOUT_JSON,
+    "stderr": $PRECHECK_HEALTH_STDERR_JSON,
+    "warnings": $PRECHECK_HEALTH_WARNINGS_JSON
+  },
   "validations": [
     {"name": "python_syntax", "status": "pass"},
     {"name": "scheduler_import", "status": "$scheduler_import"},
@@ -392,6 +408,15 @@ resolve_asset_source() {
 ensure_parent_dir() {
   local path="$1"
   run_cmd mkdir -p "$(dirname "$path")"
+}
+
+json_string_from_file() {
+  local file="$1"
+  python3 -c 'import json, pathlib, sys; print(json.dumps(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"), ensure_ascii=False))' "$file"
+}
+
+set_prepare_failure_phase() {
+  PREPARE_FAILURE_PHASE="$1"
 }
 
 record_prepare_bootstrap_created_path() {
@@ -659,6 +684,126 @@ bootstrap_prepare_release_directories() {
   done
 }
 
+prepare_preprod_state_root() {
+  printf '%s/preprod-health/%s\n' "$DEPLOY_STATE_ROOT" "$TARGET_SHA"
+}
+
+run_prepare_scheduler_health_check() {
+  local release_dir="$1"
+  local pybin="$release_dir/venv/bin/python"
+  local state_root stdout_file stderr_file rc
+
+  state_root="$(prepare_preprod_state_root)"
+  stdout_file="$(mktemp)"
+  stderr_file="$(mktemp)"
+  PRECHECK_HEALTH_COMMAND="PREPROD_ISOLATION_MODE=true PREPROD_STATE_ROOT=$state_root SCHEDULE_ENABLED=false UPLOAD_ENABLED=false SHORTS_UPLOAD_ENABLED=false LIVE_COLLECTOR_ENABLED=false YOUTUBE_ANALYTICS_API_GO=false $pybin scheduler.py --health-check"
+
+  mkdir -p "$state_root/state" "$state_root/telemetry" "$state_root/logs"
+
+  set +e
+  (
+    cd "$release_dir" &&
+    PREPROD_ISOLATION_MODE=true \
+    PREPROD_STATE_ROOT="$state_root" \
+    SCHEDULE_ENABLED=false \
+    UPLOAD_ENABLED=false \
+    SHORTS_UPLOAD_ENABLED=false \
+    LIVE_COLLECTOR_ENABLED=false \
+    YOUTUBE_ANALYTICS_API_GO=false \
+    SCHEDULER_LOG_FILE="$state_root/logs/scheduler.log" \
+    SCHEDULER_QUEUE_FILE="$state_root/state/channel_queue.json" \
+    SCHEDULER_PID_FILE="$state_root/state/production_scheduler.pid" \
+    SCHEDULER_SINGLETON_LOCK_FILE="$state_root/state/scheduler_singleton.lock" \
+    SCHEDULER_SINGLETON_META_FILE="$state_root/state/scheduler_singleton_meta.json" \
+    RUNTIME_EVIDENCE_LATEST_FILE="$state_root/state/runtime_optimization_evidence_latest.json" \
+    SAFETY_GATE_LATEST_FILE="$state_root/state/production_safety_gate_latest.json" \
+    ACTIVATION_CONTROLLER_REPORT_PATH="$state_root/state/activation_controller_report.json" \
+    ACTIVATION_CONTROLLER_REPORT_ARCHIVE_DIR="$state_root/state/activation_reports" \
+    ACTIVATION_FLAGS_PATH="$state_root/state/learning_activation_flags.json" \
+    GOVERNANCE_REFRESH_LATEST_PATH="$state_root/state/governance_refresh_run_latest.json" \
+    GOVERNANCE_READINESS_MD_PATH="$state_root/state/governance_readiness_latest.md" \
+    PRODUCTION_DASHBOARD_JSON_PATH="$state_root/state/production_dashboard_latest.json" \
+    PRODUCTION_DASHBOARD_MD_PATH="$state_root/state/production_dashboard_latest.md" \
+    PRODUCTION_EVENTS_PATH="$state_root/telemetry/production_events.jsonl" \
+    PRODUCTION_OBSERVABILITY_LATEST_PATH="$state_root/telemetry/production_observability_latest.json" \
+    JOB_STORE_DB_PATH="$state_root/state/jobs.db" \
+    "$pybin" scheduler.py --health-check
+  ) >"$stdout_file" 2>"$stderr_file"
+  rc=$?
+  set -e
+
+  PRECHECK_HEALTH_STDOUT_JSON="$(json_string_from_file "$stdout_file")"
+  PRECHECK_HEALTH_STDERR_JSON="$(json_string_from_file "$stderr_file")"
+  PRECHECK_HEALTH_WARNINGS_JSON="$(python3 - "$stdout_file" "$stderr_file" <<'PY'
+import json
+import pathlib
+import sys
+
+warnings = []
+for path in sys.argv[1:]:
+    text = pathlib.Path(path).read_text(encoding='utf-8')
+    for line in text.splitlines():
+        entry = line.strip()
+        if entry.startswith('- '):
+            entry = entry[2:]
+        if entry.startswith('Unable to resolve youtube.googleapis.com') and entry not in warnings:
+            warnings.append(entry)
+print(json.dumps(warnings, ensure_ascii=False))
+PY
+)"
+
+  if [[ "$rc" -eq 0 ]]; then
+    rm -f "$stdout_file" "$stderr_file"
+    return 0
+  fi
+
+  if [[ -s "$stderr_file" ]]; then
+    PREPARE_FAILURE_SUMMARY="$(python3 - "$stderr_file" <<'PY'
+import pathlib
+import sys
+text = pathlib.Path(sys.argv[1]).read_text(encoding='utf-8').strip().splitlines()
+print((text[-1] if text else 'staged scheduler health stderr present')[:500])
+PY
+)"
+    rm -f "$stdout_file" "$stderr_file"
+    return 1
+  fi
+
+  local blocking_errors
+  blocking_errors="$(python3 - "$stdout_file" <<'PY'
+import pathlib
+import sys
+errors = []
+for line in pathlib.Path(sys.argv[1]).read_text(encoding='utf-8').splitlines():
+    entry = line.strip()
+    if entry.startswith('- '):
+        entry = entry[2:]
+    if not entry or entry == 'Health check: FAIL':
+        continue
+    if entry.startswith('Unable to resolve youtube.googleapis.com'):
+        continue
+    if entry.startswith('202') or entry.startswith('Health check: PASS'):
+        continue
+    errors.append(entry)
+print('\n'.join(errors))
+PY
+)"
+
+  if [[ -z "$blocking_errors" ]]; then
+    if [[ "$PRECHECK_HEALTH_WARNINGS_JSON" == "[]" ]]; then
+      PREPARE_FAILURE_SUMMARY="staged scheduler health returned non-zero without a blocking detail"
+      rm -f "$stdout_file" "$stderr_file"
+      return 1
+    fi
+    rm -f "$stdout_file" "$stderr_file"
+    return 0
+  fi
+
+  PREPARE_FAILURE_SUMMARY="$(printf '%s' "$blocking_errors" | head -n 1 | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g' | sed 's/^ //; s/ $//')"
+  rm -f "$stdout_file" "$stderr_file"
+  return 1
+}
+
 run_preflight() {
   local release_dir="$1"
   local pybin="$release_dir/venv/bin/python"
@@ -794,24 +939,24 @@ PY
 
   if [[ "${IMMUTABLE_V2_SKIP_HEALTHCHECK:-0}" == "1" ]]; then
     health_check="pass"
+    PRECHECK_HEALTH_STDOUT_JSON='"health_check_skipped"'
+    PRECHECK_HEALTH_STDERR_JSON='""'
+    PRECHECK_HEALTH_WARNINGS_JSON='[]'
+    PRECHECK_HEALTH_COMMAND='health_check_skipped'
   else
-    if (
-      cd "$release_dir" &&
-      PREPROD_ISOLATION_MODE=true \
-      SCHEDULE_ENABLED=false \
-      UPLOAD_ENABLED=false \
-      SHORTS_UPLOAD_ENABLED=false \
-      LIVE_COLLECTOR_ENABLED=false \
-      YOUTUBE_ANALYTICS_API_GO=false \
-      "$pybin" scheduler.py --health-check
-    ) >/dev/null 2>&1; then
+    if run_prepare_scheduler_health_check "$release_dir"; then
       health_check="pass"
     else
       health_check="fail"
     fi
   fi
 
-  [[ "$health_check" == "pass" ]] || die "Preflight scheduler health check failed"
+  if [[ "$health_check" != "pass" ]]; then
+    if [[ -n "$PREPARE_FAILURE_SUMMARY" ]]; then
+      die "Preflight scheduler health check failed: $PREPARE_FAILURE_SUMMARY"
+    fi
+    die "Preflight scheduler health check failed"
+  fi
   write_preflight_json "$release_dir" "$scheduler_import" "$uploader_import" "$wrapper_import" "$health_check"
 }
 
@@ -866,24 +1011,38 @@ release_lock() {
 write_prepare_failure_report() {
   local code="$1"
   local file="$DEPLOY_STATE_ROOT/prepare_failure_latest.json"
+  local tmp_file operator_tool_sha summary_json phase_json target_ref_json target_sha_json staging_json active_sha_json
 
   if [[ "$DRY_RUN" == "true" ]]; then
     return 0
   fi
 
   mkdir -p "$DEPLOY_STATE_ROOT"
-  cat > "$file" <<EOF
+  tmp_file="${file}.tmp.$$"
+  operator_tool_sha="$(git rev-parse HEAD 2>/dev/null || printf 'unknown')"
+  summary_json="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1], ensure_ascii=False))' "${PREPARE_FAILURE_SUMMARY:-prepare failed}")"
+  phase_json="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1], ensure_ascii=False))' "${PREPARE_FAILURE_PHASE:-unknown}")"
+  target_ref_json="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1], ensure_ascii=False))' "$TARGET_REF")"
+  target_sha_json="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1], ensure_ascii=False))' "$TARGET_SHA")"
+  staging_json="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1], ensure_ascii=False))' "$PREPARE_STAGING_DIR")"
+  active_sha_json="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1], ensure_ascii=False))' "$PREPARE_ACTIVE_RELEASE_SHA")"
+  cat > "$tmp_file" <<EOF
 {
   "timestamp_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "mode": "prepare",
-  "target_sha": "$TARGET_SHA",
-  "target_ref": "$TARGET_REF",
+  "target_ref": $target_ref_json,
+  "target_sha": $target_sha_json,
+  "operator_tool_sha": "${operator_tool_sha}",
+  "failed_phase": $phase_json,
   "exit_code": $code,
-  "staging_dir": "${PREPARE_STAGING_DIR}",
+  "error_summary": $summary_json,
+  "staging_path": $staging_json,
+  "active_release_sha": $active_sha_json,
   "staging_created": "${PREPARE_STAGING_CREATED}",
   "finalized": "${PREPARE_FINALIZED}"
 }
 EOF
+  mv "$tmp_file" "$file"
 }
 
 cleanup_prepare_staging_if_owned() {
@@ -919,6 +1078,22 @@ on_prepare_failure() {
   cleanup_prepare_staging_if_owned
   release_lock
   trap - ERR
+  exit "$code"
+}
+
+on_prepare_exit() {
+  local code="$1"
+  trap - EXIT
+  if [[ "$code" -eq 0 ]]; then
+    return 0
+  fi
+  set +e
+  if [[ -z "$PREPARE_FAILURE_SUMMARY" ]]; then
+    PREPARE_FAILURE_SUMMARY="prepare failed during ${PREPARE_FAILURE_PHASE:-unknown}"
+  fi
+  write_prepare_failure_report "$code"
+  cleanup_prepare_staging_if_owned
+  release_lock
   exit "$code"
 }
 
@@ -1057,16 +1232,28 @@ mode_prepare() {
   PREPARE_STAGING_CREATED="false"
   PREPARE_FINALIZED="false"
   PREPARE_BOOTSTRAP_CREATED_RELATIVE_PATHS=""
-  trap 'on_prepare_failure $?' ERR
+  PREPARE_FAILURE_PHASE="prepare_initialization"
+  PREPARE_FAILURE_SUMMARY=""
+  PRECHECK_HEALTH_STDOUT_JSON='""'
+  PRECHECK_HEALTH_STDERR_JSON='""'
+  PRECHECK_HEALTH_WARNINGS_JSON='[]'
+  PRECHECK_HEALTH_COMMAND=""
+  PREPARE_ACTIVE_TARGET="$active_target"
+  PREPARE_ACTIVE_RELEASE_SHA="$(basename "$active_target")"
+  trap 'on_prepare_exit $?' EXIT
 
+  set_prepare_failure_phase "verify_existing_release"
   verify_existing_release_identity_or_fail "$release_dir"
   if [[ -n "$PREPARED_RELEASE" ]]; then
+    trap - EXIT
     log "Release already prepared and matching target SHA: $PREPARED_RELEASE"
     return 0
   fi
 
+  set_prepare_failure_phase "staging_collision_check"
   [[ ! -e "$staging_dir" ]] || die "Staging collision: $staging_dir already exists"
 
+  set_prepare_failure_phase "disk_space_check"
   check_disk_space
 
   if [[ "$DRY_RUN" == "true" ]]; then
@@ -1079,9 +1266,11 @@ mode_prepare() {
   fi
 
   run_cmd mkdir -p "$RELEASES_ROOT"
+  set_prepare_failure_phase "staging_create"
   run_cmd mkdir -p "$staging_dir"
   PREPARE_STAGING_CREATED="true"
 
+  set_prepare_failure_phase "git_export"
   if [[ "$DRY_RUN" == "true" ]]; then
     log "DRY-RUN: export git archive for $TARGET_SHA into $staging_dir"
   else
@@ -1092,27 +1281,35 @@ mode_prepare() {
     (cd "$staging_dir" && bash -c "$IMMUTABLE_V2_TEST_HOOK_AFTER_EXPORT")
   fi
 
+  set_prepare_failure_phase "runtime_payload_sanitization"
   remove_exported_runtime_payload "$staging_dir" "$active_target"
+  set_prepare_failure_phase "forbidden_payload_guard"
   assert_no_forbidden_payload "$staging_dir"
 
+  set_prepare_failure_phase "dependency_setup"
   assert_python_and_deps "$staging_dir"
+  set_prepare_failure_phase "persistent_linking"
   link_persistent_assets "$staging_dir" "$active_target"
+  set_prepare_failure_phase "directory_bootstrap"
   bootstrap_prepare_release_directories "$staging_dir" "$active_target"
+  set_prepare_failure_phase "preflight"
   run_preflight "$staging_dir"
 
   if [[ -n "${IMMUTABLE_V2_TEST_HOOK_BEFORE_FINALIZE:-}" ]]; then
     (cd "$staging_dir" && bash -c "$IMMUTABLE_V2_TEST_HOOK_BEFORE_FINALIZE")
   fi
 
+  set_prepare_failure_phase "metadata_write"
   write_release_metadata "$staging_dir"
 
+  set_prepare_failure_phase "finalization"
   if [[ "$DRY_RUN" == "true" ]]; then
     log "DRY-RUN: mv $staging_dir $release_dir"
   else
     mv "$staging_dir" "$release_dir"
   fi
   PREPARE_FINALIZED="true"
-  trap - ERR
+  trap - EXIT
 
   log "Prepared immutable release: $release_dir"
 }

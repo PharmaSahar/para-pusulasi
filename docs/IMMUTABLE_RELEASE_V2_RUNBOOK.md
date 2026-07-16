@@ -80,7 +80,9 @@ Repository-discovered contract (read-only evidence from docs/scripts):
 8. Health-check contract:
    - scheduler import and uploader import must pass
    - optional wrapper import validation when file exists
-   - scheduler `--health-check` must pass unless explicitly skipped in controlled test mode
+   - staged-release preflight runs `scheduler.py --health-check` from staged release CWD with isolated mutable-path env overrides
+   - local release-build failures remain blocking
+   - optional external DNS resolution warnings may be recorded without blocking prepare
    - preflight is executed from staged release working directory (`.staging-<sha>` during prepare)
    - exported `logs/` and `output/` payload is provenance-checked and removed from staging before shared-root symlinks are created
 9. Cutover contract:
@@ -188,6 +190,7 @@ Contains:
 - validation names and pass/fail statuses
 - resolved path evidence for required runtime and asset paths
 - per-path classification, action (`existed|created|optional|blocked`), and pass/fail status
+- staged health evidence: command, cwd, stdout, stderr, warnings
 
 No secrets are stored.
 
@@ -224,6 +227,15 @@ Bootstrap guardrails:
 - bootstrap validates approved roots and exact relative paths
 - bootstrap never deletes existing content and never rewrites ownership/permissions on existing directories
 - active release and finalized release are never bootstrap targets
+
+Staged scheduler health contract:
+
+- command runs from staged release CWD, never from the active release CWD
+- mutable scheduler/runtime artifact env paths are redirected to an isolated preprod-health state root under deploy-state
+- prepare health remains read-only for service state, uploads, OAuth, Analytics, and YouTube mutations
+- stdout/stderr are captured into preflight evidence
+- `Unable to resolve youtube.googleapis.com ...` is treated as an optional warning during prepare preflight, not a blocking failure
+- all other scheduler health failures remain blocking
 
 ## 7) Locking Behavior
 
@@ -265,7 +277,9 @@ Prepare cleanup guarantees on failure:
 - finalized release directories are never removed
 - active release target is never removed
 - shared-root content is never removed
-- redacted prepare failure report is written under deploy-state
+- redacted prepare failure report is written atomically under deploy-state
+- failure report records target ref/SHA, operator-tool SHA, failed phase, exit code, sanitized summary, staging path, and active release SHA
+- prepare failure releases any acquired deployment lock before exiting with the original non-zero code
 - missing prepared release for cutover
 - missing rollback target release
 - concurrent lock present

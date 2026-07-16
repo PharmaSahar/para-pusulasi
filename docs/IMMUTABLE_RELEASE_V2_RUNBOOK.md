@@ -253,12 +253,21 @@ Staged scheduler health contract:
 
 ## 7) Locking Behavior
 
-A lock directory prevents concurrent mutation attempts.
+A lock-holder marker prevents concurrent mutation attempts.
 Default lock path:
 
 - `/opt/parapusulasi/deploy.lock`
 
-If lock exists, cutover/rollback abort.
+Active lock representation:
+
+- `/opt/parapusulasi/deploy.lock/.active_lock/`
+- owner metadata file: `/opt/parapusulasi/deploy.lock/.active_lock/owner.json`
+
+Lock semantics:
+
+- If `.active_lock` exists, cutover/rollback/prepare abort with `lock exists`.
+- If `deploy.lock` exists but is empty, it is treated as unlocked.
+- On lock release, `.active_lock` is removed; pre-provisioned `deploy.lock` directories are preserved.
 
 ## 8) Auto-Rollback Behavior
 

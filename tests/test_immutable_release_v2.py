@@ -1556,12 +1556,29 @@ def test_deployment_lock_prevents_concurrent_runs(tmp_path: Path) -> None:
 
     prep = _invoke(repo, sha, "prepare", env)
     assert prep.returncode == 0
-    layout["lock_dir"].mkdir(parents=True, exist_ok=True)
+    (layout["lock_dir"] / ".active_lock").mkdir(parents=True, exist_ok=True)
 
     res = _invoke(repo, sha, "cutover", env)
 
     assert res.returncode != 0
     assert "lock exists" in (res.stderr + res.stdout)
+
+
+def test_empty_lock_directory_does_not_block_cutover(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    fakebin, _ = _fake_bin(tmp_path)
+    env = _base_env(layout, fakebin)
+
+    prep = _invoke(repo, sha, "prepare", env)
+    assert prep.returncode == 0
+
+    # A pre-provisioned empty lock directory is not an active lock holder.
+    layout["lock_dir"].mkdir(parents=True, exist_ok=True)
+
+    cut = _invoke(repo, sha, "cutover", env)
+
+    assert cut.returncode == 0
 
 
 def test_wrapper_never_executes_automatically(tmp_path: Path) -> None:

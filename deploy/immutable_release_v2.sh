@@ -19,6 +19,7 @@ SHARED_ROOT="${IMMUTABLE_V2_SHARED_ROOT:-$DEFAULT_SHARED_ROOT}"
 OPERATOR_ROOT="${IMMUTABLE_V2_OPERATOR_ROOT:-$DEFAULT_OPERATOR_ROOT}"
 LOCK_DIR="${IMMUTABLE_V2_LOCK_DIR:-$DEFAULT_LOCK_DIR}"
 MIN_FREE_KB="${IMMUTABLE_V2_MIN_FREE_KB:-1048576}"
+LOCK_DIR_PREEXISTED="false"
 
 TARGET_REF=""
 TARGET_SHA=""
@@ -1030,7 +1031,40 @@ acquire_lock() {
     log "DRY-RUN: acquire lock $LOCK_DIR"
     return 0
   fi
-  mkdir "$LOCK_DIR" 2>/dev/null || die "Another deployment appears active: lock exists at $LOCK_DIR"
+
+  if [[ -e "$LOCK_DIR" && ! -d "$LOCK_DIR" ]]; then
+    die "Invalid lock path: $LOCK_DIR is not a directory"
+  fi
+
+  if [[ -d "$LOCK_DIR" ]]; then
+    LOCK_DIR_PREEXISTED="true"
+  fi
+
+  mkdir -p "$LOCK_DIR"
+
+  local marker_dir owner_file owner_payload
+  marker_dir="$LOCK_DIR/.active_lock"
+  owner_file="$marker_dir/owner.json"
+
+  mkdir "$marker_dir" 2>/dev/null || die "Another deployment appears active: lock exists at $LOCK_DIR"
+
+  owner_payload="$(python3 - <<PY
+import json
+import os
+import socket
+from datetime import datetime, timezone
+
+print(json.dumps({
+    "pid": os.getpid(),
+    "host": socket.gethostname(),
+    "started_at_utc": datetime.now(timezone.utc).isoformat(),
+    "mode": "${MODE}",
+    "target_sha": "${TARGET_SHA}",
+    "target_ref": "${TARGET_REF}",
+}, ensure_ascii=False))
+PY
+)"
+  printf '%s\n' "$owner_payload" > "$owner_file"
   LOCK_ACQUIRED="true"
 }
 
@@ -1039,7 +1073,12 @@ release_lock() {
     return 0
   fi
   if [[ "$LOCK_ACQUIRED" == "true" ]]; then
-    rm -rf "$LOCK_DIR" || true
+    local marker_dir
+    marker_dir="$LOCK_DIR/.active_lock"
+    rm -rf "$marker_dir" || true
+    if [[ "$LOCK_DIR_PREEXISTED" != "true" ]]; then
+      rmdir "$LOCK_DIR" 2>/dev/null || true
+    fi
     LOCK_ACQUIRED="false"
   fi
 }

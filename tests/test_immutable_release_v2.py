@@ -39,7 +39,7 @@ def _init_repo(
             "import json\n"
             "import os\n"
             "import sys\n"
-            "if '--health-check' in sys.argv:\n"
+            "if '--health-check' in sys.argv or '--startup-preflight' in sys.argv:\n"
             "    expected = os.environ.get('EXPECT_SCHEDULER_CWD')\n"
             "    if expected and os.getcwd() != expected:\n"
             "        sys.exit(19)\n"
@@ -114,12 +114,14 @@ def _runtime_layout(tmp_path: Path) -> dict[str, Path]:
     releases = base / "releases"
     current = base / "current"
     shared = base / "shared"
+    operator = base / "operator"
     deploy_state = base / "deploy_state"
     lock_dir = base / "deploy.lock"
 
     active_sha = "a" * 40
     active = releases / active_sha
     shared.mkdir(parents=True, exist_ok=True)
+    operator.mkdir(parents=True, exist_ok=True)
     (shared / "runtime" / "output" / "scripts").mkdir(parents=True, exist_ok=True)
     (shared / "runtime" / "output" / "audio").mkdir(parents=True, exist_ok=True)
     (shared / "runtime" / "output" / "videos").mkdir(parents=True, exist_ok=True)
@@ -138,6 +140,8 @@ def _runtime_layout(tmp_path: Path) -> dict[str, Path]:
     _write(shared / "tokens" / "youtube_token.root.pickle", "token\n")
     _write(shared / "oauth" / "channels" / "alpha" / "client_secrets.json", "{}\n")
     _write(shared / "tokens" / "channels" / "alpha" / "youtube_token.pickle", "token\n")
+    _write(operator / "channels" / "alpha" / "client_secrets.json", "{}\n")
+    _write(operator / "channels" / "alpha" / "youtube_token.pickle", "token\n")
 
     (active / "channels" / "alpha").mkdir(parents=True, exist_ok=True)
     (active / "output").mkdir(parents=True, exist_ok=True)
@@ -160,6 +164,7 @@ def _runtime_layout(tmp_path: Path) -> dict[str, Path]:
         "releases": releases,
         "current": current,
         "shared": shared,
+        "operator": operator,
         "deploy_state": deploy_state,
         "lock_dir": lock_dir,
         "active": active,
@@ -211,6 +216,7 @@ def _base_env(layout: dict[str, Path], fakebin: Path | None = None) -> dict[str,
         "IMMUTABLE_V2_CURRENT_LINK": str(layout["current"]),
         "IMMUTABLE_V2_DEPLOY_STATE_ROOT": str(layout["deploy_state"]),
         "IMMUTABLE_V2_SHARED_ROOT": str(layout["shared"]),
+        "IMMUTABLE_V2_OPERATOR_ROOT": str(layout["operator"]),
         "IMMUTABLE_V2_LOCK_DIR": str(layout["lock_dir"]),
         "IMMUTABLE_V2_SKIP_FETCH": "1",
         "IMMUTABLE_V2_SKIP_DEP_INSTALL": "1",
@@ -440,6 +446,21 @@ def test_prepare_creates_shared_logs_symlink_when_absent(tmp_path: Path) -> None
     assert logs_link.resolve() == (layout["shared"] / "logs").resolve()
 
 
+def test_prepare_links_channel_tokens_from_operator_root(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+
+    # The active release tree intentionally lacks channel token files.
+    target = layout["releases"] / sha / "channels" / "alpha" / "youtube_token.pickle"
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode == 0
+    assert target.is_symlink()
+    assert target.resolve() == (layout["operator"] / "channels" / "alpha" / "youtube_token.pickle").resolve()
+
+
 @pytest.mark.parametrize("child", ["scripts", "audio", "videos"])
 def test_missing_shared_runtime_child_is_created_during_prepare(tmp_path: Path, child: str) -> None:
     repo, sha = _init_repo(tmp_path)
@@ -528,6 +549,19 @@ def test_missing_asset_subdirectories_are_created_in_staging(tmp_path: Path) -> 
     assert (release / "assets" / "backgrounds").is_dir()
     assert (release / "assets" / "music").is_dir()
     assert (release / "assets" / "fonts").is_dir()
+
+
+def test_prepare_records_startup_preflight_command(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    env.pop("IMMUTABLE_V2_SKIP_HEALTHCHECK")
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode == 0
+    preflight = json.loads((layout["releases"] / sha / "deployment_preflight.json").read_text(encoding="utf-8"))
+    assert "scheduler.py --startup-preflight" in preflight["health_evidence"]["command"]
 
 
 def test_existing_asset_subdirectory_is_preserved(tmp_path: Path) -> None:
@@ -893,7 +927,7 @@ def test_preflight_health_warning_does_not_block_prepare(tmp_path: Path) -> None
     payload = json.loads((layout["releases"] / sha / "deployment_preflight.json").read_text(encoding="utf-8"))
     assert payload["validations"][-1]["status"] == "pass"
     assert payload["health_evidence"]["warnings"] == ["Unable to resolve youtube.googleapis.com: temporary dns failure"]
-    assert "scheduler.py --health-check" in payload["health_evidence"]["command"]
+    assert "scheduler.py --startup-preflight" in payload["health_evidence"]["command"]
 
 
 def test_preflight_health_blocking_error_writes_report_and_cleans(tmp_path: Path) -> None:

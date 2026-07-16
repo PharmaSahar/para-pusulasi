@@ -104,6 +104,59 @@ def test_scheduler_health_check_exits_without_starting_scheduler(monkeypatch, ca
     assert calls == {"startup": 1, "ready": 0}
 
 
+def test_scheduler_startup_preflight_uses_runtime_root_and_does_not_start_scheduler(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(scheduler.sys, "argv", ["scheduler.py", "--startup-preflight"])
+    monkeypatch.chdir(tmp_path)
+    calls = {"startup": 0, "provider": 0, "ready": 0}
+
+    class _Result:
+        ok = True
+        errors = ()
+
+    def _fake_startup_health(**_kwargs):
+        calls["startup"] += 1
+        return _Result()
+
+    def _fake_provider_preflight(**_kwargs):
+        calls["provider"] += 1
+        return True, "ok"
+
+    def _fake_ready_channels():
+        calls["ready"] += 1
+        assert Path.cwd() == Path(scheduler.__file__).resolve().parent
+        return ["demo"]
+
+    monkeypatch.setattr(scheduler, "_run_startup_health_check", _fake_startup_health)
+    monkeypatch.setattr(scheduler, "_run_provider_preflight_check", _fake_provider_preflight)
+    monkeypatch.setattr(scheduler, "get_ready_channels", _fake_ready_channels)
+
+    scheduler.main()
+
+    out = capsys.readouterr().out
+    assert "Startup preflight: PASS" in out
+    assert calls == {"startup": 1, "provider": 1, "ready": 1}
+
+
+def test_scheduler_startup_preflight_fails_when_no_ready_channels(monkeypatch, capsys):
+    monkeypatch.setattr(scheduler.sys, "argv", ["scheduler.py", "--startup-preflight"])
+
+    class _Result:
+        ok = True
+        errors = ()
+
+    monkeypatch.setattr(scheduler, "_run_startup_health_check", lambda **_kwargs: _Result())
+    monkeypatch.setattr(scheduler, "_run_provider_preflight_check", lambda **_kwargs: (True, "ok"))
+    monkeypatch.setattr(scheduler, "get_ready_channels", lambda: [])
+
+    with pytest.raises(SystemExit) as exc:
+        scheduler.main()
+
+    out = capsys.readouterr().out
+    assert exc.value.code == 1
+    assert "Startup preflight: FAIL" in out
+    assert "Hiçbir kanalın token'i yok! Önce setup_channel.py çalıştırın." in out
+
+
 def test_scheduler_sync_analytics_now_runs_once_and_exits(monkeypatch, capsys):
     monkeypatch.setattr(scheduler.sys, "argv", ["scheduler.py", "--sync-analytics-now"])
     calls = {"refresh": 0}
@@ -201,6 +254,70 @@ def test_scheduler_default_startup_writes_safety_gate_result(monkeypatch):
         scheduler.main()
 
     assert calls["safety"] == 1
+
+
+def test_scheduler_default_startup_is_cwd_independent(monkeypatch, tmp_path):
+    monkeypatch.setattr(scheduler.sys, "argv", ["scheduler.py"])
+    monkeypatch.chdir(tmp_path)
+
+    class _StartupResult:
+        ok = True
+        errors = ()
+
+    class _StopLoop(Exception):
+        pass
+
+    class _FakeEvery:
+        @property
+        def day(self):
+            return self
+
+        @property
+        def hour(self):
+            return self
+
+        @property
+        def hours(self):
+            return self
+
+        def at(self, *_args, **_kwargs):
+            return self
+
+        def do(self, *_args, **_kwargs):
+            return self
+
+    class _FakeThread:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            pass
+
+    fake_schedule = SimpleNamespace(
+        every=lambda *args, **kwargs: _FakeEvery(),
+        run_pending=lambda: (_ for _ in ()).throw(_StopLoop()),
+    )
+
+    fake_utils = SimpleNamespace(
+        cleanup_old_renders=lambda **kwargs: None,
+        notify_startup=lambda _n: None,
+    )
+
+    seen = {"cwd": None}
+
+    monkeypatch.setattr(scheduler, "_run_startup_health_check", lambda **_kwargs: _StartupResult())
+    monkeypatch.setattr(scheduler, "_run_provider_preflight_check", lambda **_kwargs: (True, "ok"))
+    monkeypatch.setattr(scheduler, "get_ready_channels", lambda: seen.__setitem__("cwd", Path.cwd()) or ["demo"])
+    monkeypatch.setattr(scheduler, "setup_schedule", lambda: ["demo"])
+    monkeypatch.setattr(scheduler, "catch_up_overdue_queue_entries", lambda: {})
+    monkeypatch.setattr(scheduler, "schedule", fake_schedule)
+    monkeypatch.setattr(scheduler.threading, "Thread", _FakeThread)
+    monkeypatch.setitem(sys.modules, "src.scheduler_utils", fake_utils)
+
+    with pytest.raises(_StopLoop):
+        scheduler.main()
+
+    assert seen["cwd"] == Path(scheduler.__file__).resolve().parent
 
 
 def test_scheduler_default_startup_path_unchanged(monkeypatch):

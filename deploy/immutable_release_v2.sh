@@ -9,12 +9,14 @@ DEFAULT_RELEASES_ROOT="/opt/parapusulasi/releases"
 DEFAULT_CURRENT_LINK="/opt/parapusulasi-current"
 DEFAULT_DEPLOY_STATE_ROOT="/opt/parapusulasi/deploy-state"
 DEFAULT_SHARED_ROOT="/opt/parapusulasi-shared"
+DEFAULT_OPERATOR_ROOT="/opt/parapusulasi"
 DEFAULT_LOCK_DIR="/opt/parapusulasi/deploy.lock"
 
 RELEASES_ROOT="${IMMUTABLE_V2_RELEASES_ROOT:-$DEFAULT_RELEASES_ROOT}"
 CURRENT_LINK="${IMMUTABLE_V2_CURRENT_LINK:-$DEFAULT_CURRENT_LINK}"
 DEPLOY_STATE_ROOT="${IMMUTABLE_V2_DEPLOY_STATE_ROOT:-$DEFAULT_DEPLOY_STATE_ROOT}"
 SHARED_ROOT="${IMMUTABLE_V2_SHARED_ROOT:-$DEFAULT_SHARED_ROOT}"
+OPERATOR_ROOT="${IMMUTABLE_V2_OPERATOR_ROOT:-$DEFAULT_OPERATOR_ROOT}"
 LOCK_DIR="${IMMUTABLE_V2_LOCK_DIR:-$DEFAULT_LOCK_DIR}"
 MIN_FREE_KB="${IMMUTABLE_V2_MIN_FREE_KB:-1048576}"
 
@@ -408,6 +410,31 @@ resolve_asset_source() {
   printf '%s/%s\n' "$active_root" "$rel"
 }
 
+resolve_channel_asset_source() {
+  local rel="$1"
+  local active_root="$2"
+  local operator_candidate="$OPERATOR_ROOT/$rel"
+  local active_candidate="$active_root/$rel"
+  local shared_candidate="$SHARED_ROOT/$rel"
+
+  if [[ -e "$operator_candidate" ]]; then
+    printf '%s\n' "$operator_candidate"
+    return 0
+  fi
+
+  if [[ -e "$active_candidate" ]]; then
+    printf '%s\n' "$active_candidate"
+    return 0
+  fi
+
+  if [[ -e "$shared_candidate" ]]; then
+    printf '%s\n' "$shared_candidate"
+    return 0
+  fi
+
+  return 1
+}
+
 ensure_parent_dir() {
   local path="$1"
   run_cmd mkdir -p "$(dirname "$path")"
@@ -612,16 +639,22 @@ link_persistent_assets() {
 
   # Channel-local secret assets: never copy content; only symlink exact files if present.
   if [[ -d "$active_root/channels" ]]; then
+    local channel_secret_scan_root="$active_root"
+    if [[ -d "$OPERATOR_ROOT/channels" ]]; then
+      channel_secret_scan_root="$OPERATOR_ROOT"
+    fi
+
     while IFS= read -r src_file; do
-      rel="${src_file#$active_root/}"
+      rel="${src_file#$channel_secret_scan_root/}"
       class="$(classify_asset "$rel")"
       [[ "$class" != UNKNOWN_BLOCKER* ]] || die "Unknown asset classification: $rel"
       dest="$release_dir/$rel"
-      src_file="$(canon_path "$src_file")"
-      is_within_root "$src_file" "$SHARED_ROOT" || is_within_root "$src_file" "$active_root" || die "Channel asset source escapes approved roots: $src_file"
+      src_file="$(resolve_channel_asset_source "$rel" "$active_root")"
+      [[ -e "$src_file" ]] || continue
+      is_within_root "$src_file" "$SHARED_ROOT" || is_within_root "$src_file" "$active_root" || is_within_root "$src_file" "$OPERATOR_ROOT" || die "Channel asset source escapes approved roots: $src_file"
       ensure_parent_dir "$dest"
       ensure_symlink_to_source "$dest" "$src_file" "Channel asset"
-    done < <(find "$active_root/channels" \( -type f -o -type l \) \( -name 'youtube_token.pickle' -o -name 'youtube_analytics_token.pickle' -o -name 'client_secrets.json' -o -name 'token.json' -o -name 'token_analytics.json' \))
+    done < <(find "$channel_secret_scan_root/channels" \( -type f -o -type l \) \( -name 'youtube_token.pickle' -o -name 'youtube_analytics_token.pickle' -o -name 'client_secrets.json' -o -name 'token.json' -o -name 'token_analytics.json' \))
   fi
 
   # Fail closed on unknown secret-like assets under active root channels.
@@ -699,7 +732,7 @@ run_prepare_scheduler_health_check() {
   state_root="$(prepare_preprod_state_root)"
   stdout_file="$(mktemp)"
   stderr_file="$(mktemp)"
-  PRECHECK_HEALTH_COMMAND="PREPROD_ISOLATION_MODE=true PREPROD_STATE_ROOT=$state_root SCHEDULE_ENABLED=false UPLOAD_ENABLED=false SHORTS_UPLOAD_ENABLED=false LIVE_COLLECTOR_ENABLED=false YOUTUBE_ANALYTICS_API_GO=false $pybin scheduler.py --health-check"
+  PRECHECK_HEALTH_COMMAND="PREPROD_ISOLATION_MODE=true PREPROD_STATE_ROOT=$state_root SCHEDULE_ENABLED=false UPLOAD_ENABLED=false SHORTS_UPLOAD_ENABLED=false LIVE_COLLECTOR_ENABLED=false YOUTUBE_ANALYTICS_API_GO=false $pybin scheduler.py --startup-preflight"
 
   mkdir -p "$state_root/state" "$state_root/telemetry" "$state_root/logs"
 
@@ -730,7 +763,7 @@ run_prepare_scheduler_health_check() {
     PRODUCTION_EVENTS_PATH="$state_root/telemetry/production_events.jsonl" \
     PRODUCTION_OBSERVABILITY_LATEST_PATH="$state_root/telemetry/production_observability_latest.json" \
     JOB_STORE_DB_PATH="$state_root/state/jobs.db" \
-    "$pybin" scheduler.py --health-check
+    "$pybin" scheduler.py --startup-preflight
   ) >"$stdout_file" 2>"$stderr_file"
   rc=$?
   set -e

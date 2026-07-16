@@ -1774,6 +1774,7 @@ def _print_help() -> None:
     print("  python scheduler.py --list   # Aktif kanallari listele")
     print("  python scheduler.py --status # Kuyruk durumunu goster")
     print("  python scheduler.py --health-check # Uretim hazirlik kontrolunu calistir")
+    print("  python scheduler.py --startup-preflight # Sistemd-esdeger baslangic hazirlik kontrolu")
     print("  python scheduler.py --safety-check-now # Production safety gate raporu olustur")
     print("  python scheduler.py --skip-provider-preflight # Anthropic preflight kontrolunu atla")
     print("  python scheduler.py --sync-analytics-now # Canli YouTube Analytics sync ve optimizasyonu calistir")
@@ -1807,6 +1808,28 @@ def _run_startup_health_check(*, create_missing_directories: bool, require_teleg
     )
     logger.info("Health check result: %s", "PASS" if result.ok else "FAIL")
     return result
+
+
+def _run_startup_preflight(*, skip_provider_preflight: bool):
+    startup_health = _run_startup_health_check(
+        create_missing_directories=True,
+        require_telegram=True,
+    )
+    if not startup_health.ok:
+        return startup_health, False, "not_run_due_to_health_check_fail", [], list(startup_health.errors)
+
+    provider_ok, provider_detail = _run_provider_preflight_check(
+        skip_preflight=skip_provider_preflight,
+    )
+    if not provider_ok:
+        detail = str(provider_detail or "")
+        return startup_health, False, detail, [], [f"Anthropic preflight failed: {detail}"]
+
+    ready = get_ready_channels()
+    if not ready:
+        return startup_health, True, str(provider_detail or ""), [], ["Hiçbir kanalın token'i yok! Önce setup_channel.py çalıştırın."]
+
+    return startup_health, True, str(provider_detail or ""), ready, []
 
 
 def _record_safety_gate_result(
@@ -1961,6 +1984,8 @@ def main():
     args = sys.argv[1:]
     skip_provider_preflight = "--skip-provider-preflight" in args
 
+    os.chdir(Path(__file__).resolve().parent)
+
     _assert_preprod_isolation_paths()
 
     if "--help" in args or "-h" in args:
@@ -1977,6 +2002,20 @@ def main():
             return
         print("Health check: FAIL")
         for error in result.errors:
+            print(f"- {error}")
+        sys.exit(1)
+
+    if "--startup-preflight" in args:
+        startup_health, provider_ok, provider_detail, ready, errors = _run_startup_preflight(
+            skip_provider_preflight=skip_provider_preflight,
+        )
+        if startup_health.ok and provider_ok and ready:
+            print("Startup preflight: PASS")
+            print(f"- ready_channels={len(ready)}")
+            print(f"- provider_preflight={provider_detail}")
+            return
+        print("Startup preflight: FAIL")
+        for error in errors:
             print(f"- {error}")
         sys.exit(1)
 
@@ -2022,35 +2061,19 @@ def main():
     else:
         logger.info("JOB_STORE_MODE=json aktif: JSON production source of truth.")
 
-    startup_health = _run_startup_health_check(
-        create_missing_directories=True,
-        require_telegram=True,
+    startup_health, provider_ok, provider_detail, ready, errors = _run_startup_preflight(
+        skip_provider_preflight=skip_provider_preflight,
     )
-    if not startup_health.ok:
+    if not startup_health.ok or not provider_ok or not ready:
         _record_safety_gate_result(
             mode="startup",
             startup_health=startup_health,
-            provider_preflight_ok=False,
-            provider_preflight_detail="not_run_due_to_health_check_fail",
+            provider_preflight_ok=provider_ok,
+            provider_preflight_detail=provider_detail,
         )
-        for error in startup_health.errors:
+        for error in errors:
             logger.error("Startup validation failed: %s", error)
             print(f"ERROR: {error}")
-        sys.exit(1)
-
-    provider_ok, provider_detail = _run_provider_preflight_check(
-        skip_preflight=skip_provider_preflight,
-    )
-    if not provider_ok:
-        detail = str(provider_detail or "")
-        _record_safety_gate_result(
-            mode="startup",
-            startup_health=startup_health,
-            provider_preflight_ok=False,
-            provider_preflight_detail=detail,
-        )
-        logger.error("Startup provider preflight failed: %s", detail)
-        print(f"ERROR: Anthropic preflight failed: {detail}")
         sys.exit(1)
 
     _record_safety_gate_result(
@@ -2069,11 +2092,6 @@ def main():
         _has_utils = False
         def notify_startup(n): pass
         def cleanup_old_renders(**kw): return 0
-
-    ready = get_ready_channels()
-    if not ready:
-        console.print("[red]Hiçbir kanalın token'i yok! Önce setup_channel.py çalıştırın.[/red]")
-        sys.exit(1)
 
     logger.info("Scheduler starting")
     _write_pid_record()

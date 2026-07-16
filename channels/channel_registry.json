@@ -37,7 +37,8 @@
       "status": "active",
       "youtube_channel_id": "UC6tU7UqYylfSA75pj3rEY_Q",
       "elevenlabs_voice_id": "7VqWGAWwo2HMrylfKrcm",
-      "elevenlabs_enabled": true
+      "elevenlabs_enabled": true,
+      "allow_market_language": true
     },
     "borsa_akademi": {
       "name": "Borsa Akademi",
@@ -74,7 +75,8 @@
       "status": "active",
       "youtube_channel_id": "UCwQERXHCUOngXXTnJ9goBSQ",
       "elevenlabs_voice_id": "ctoYieZ4J7WwcdhujpMq",
-      "elevenlabs_enabled": true
+      "elevenlabs_enabled": true,
+      "allow_market_language": true
     },
     "kripto_rehber": {
       "name": "Kripto Rehber",
@@ -112,7 +114,8 @@
       "status": "active",
       "youtube_channel_id": "UCyFK7LdIPM01fAf3f0W2x9Q",
       "elevenlabs_voice_id": "D1xRw7f8ZHedI7xJgfvz",
-      "elevenlabs_enabled": false
+      "elevenlabs_enabled": false,
+      "allow_market_language": true
     },
     "kariyer_pusulasi": {
       "name": "Kariyer Pusulasi",
@@ -150,7 +153,8 @@
       "status": "active",
       "youtube_channel_id": "UC-LxyfIrfqWDfFCzJLVBwEg",
       "elevenlabs_voice_id": "PdYVUd1CAGSXsTvZZTNn",
-      "elevenlabs_enabled": false
+      "elevenlabs_enabled": false,
+      "allow_market_language": false
     },
     "girisim_okulu": {
       "name": "Girisim Okulu",
@@ -185,7 +189,8 @@
       "youtube_channel_id": "UCvfuE893JTeSJx72j3eq3hQ",
       "status": "active",
       "elevenlabs_voice_id": "IuRRIAcbQK5AQk1XevPj",
-      "elevenlabs_enabled": false
+      "elevenlabs_enabled": false,
+      "allow_market_language": false
     },
     "saglik_pusulasi": {
       "name": "Saglik Pusulasi",
@@ -223,7 +228,8 @@
       "status": "active",
       "youtube_channel_id": "UCFgiTIusu01pgxviXU33jBQ",
       "elevenlabs_voice_id": "mBUB5zYuPwfVE6DTcEjf",
-      "elevenlabs_enabled": false
+      "elevenlabs_enabled": false,
+      "allow_market_language": false
     },
     "teknoloji_pusulasi": {
       "name": "Teknoloji Pusulasi",
@@ -261,7 +267,8 @@
       "status": "active",
       "youtube_channel_id": "UCZgzLieTfwq6_euBi1nEsrQ",
       "elevenlabs_voice_id": "D1xRw7f8ZHedI7xJgfvz",
-      "elevenlabs_enabled": false
+      "elevenlabs_enabled": false,
+      "allow_market_language": false
     },
     "egitim_rehberi": {
       "name": "Egitim Rehberi",
@@ -299,7 +306,8 @@
       "status": "active",
       "youtube_channel_id": "UCVmjUlrK8L5rA-To5iGDbIw",
       "elevenlabs_voice_id": "KbaseEXyT9EE0CQLEfbB",
-      "elevenlabs_enabled": false
+      "elevenlabs_enabled": false,
+      "allow_market_language": false
     },
     "gayrimenkul_tv": {
       "name": "Gayrimenkul TV",
@@ -337,7 +345,8 @@
       "status": "active",
       "youtube_channel_id": "UCIAevq41ewEZORIZ7ODMOoA",
       "elevenlabs_voice_id": "j82ax9yhzfYwq9lDvRWL",
-      "elevenlabs_enabled": false
+      "elevenlabs_enabled": false,
+      "allow_market_language": true
     },
     "psikoloji_okulu": {
       "name": "Psikoloji Okulu",

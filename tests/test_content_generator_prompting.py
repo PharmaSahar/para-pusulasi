@@ -105,6 +105,55 @@ def test_topic_prompt_market_language_enabled_when_explicitly_allowed():
     assert "Turkiye finans gundemiyle alakali" in prompt
 
 
+def test_topic_prompt_topic_hint_does_not_enable_market_language_without_policy(monkeypatch):
+    class FakeAnthropicClient:
+        def __init__(self, api_key=None, max_retries=None):
+            self.messages = object()
+
+    class FakeConfig:
+        anthropic_api_key = "key"
+        niche = "saglik"
+        persona = "Sen Saglik Pusulasi icin yazan editor-sensin."
+        name = "Saglik Pusulasi"
+        topics = ["beslenme", "uyku", "stres"]
+
+    monkeypatch.setattr(content_generator.anthropic, "Anthropic", FakeAnthropicClient)
+
+    generator = content_generator.ContentGenerator(channel_cfg=FakeConfig())
+    allowed = generator._active_channel_allows_market_language(
+        topic_hint="BIST 100 ve dolar analizi",
+    )
+
+    assert allowed is False
+
+
+def test_topic_prompt_finance_dna_text_does_not_enable_market_language_when_policy_false(monkeypatch):
+    class FakeAnthropicClient:
+        def __init__(self, api_key=None, max_retries=None):
+            self.messages = object()
+
+    class FakeConfig:
+        anthropic_api_key = "key"
+        niche = "saglik"
+        allow_market_language = False
+        persona = "Sen Saglik Pusulasi icin yazan editor-sensin."
+        name = "Saglik Pusulasi"
+        topics = ["beslenme", "uyku", "stres"]
+        tone = "BIST, dolar ve portfoy analizi yapan uzman"
+        audience = "finans yatirimcisi"
+        voice_archetype = "piyasa yorumcusu"
+        evidence_style = "borsa sinyali"
+        forbidden_patterns = ["kripto firsatlari"]
+        signature_structure = ["hisse analizi"]
+
+    monkeypatch.setattr(content_generator.anthropic, "Anthropic", FakeAnthropicClient)
+
+    generator = content_generator.ContentGenerator(channel_cfg=FakeConfig())
+    allowed = generator._active_channel_allows_market_language()
+
+    assert allowed is False
+
+
 def test_non_finance_trending_topics_filter_drops_market_topics():
     filtered = content_generator._filter_trending_topics_for_niche(
         [

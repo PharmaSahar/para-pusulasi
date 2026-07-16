@@ -335,3 +335,49 @@ def test_quarantine_persistence_failure_is_fail_safe_and_never_uploads(monkeypat
     scheduler.render_and_schedule("demo_channel")
 
     assert calls["notify_upload"] == 0
+
+
+def test_misroute_guard_respects_explicit_allow_market_language_true(monkeypatch, tmp_path):
+    import src.scheduler_utils as scheduler_utils
+
+    registry_path = tmp_path / "channel_registry.json"
+    payload = {
+        "channels": {
+            "demo_channel": {
+                "niche": "saglik",
+                "allow_market_language": True,
+            }
+        }
+    }
+    registry_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr(scheduler_utils, "CHANNEL_REGISTRY_PATH", registry_path)
+
+    blocked = scheduler_utils._is_misrouted_queue_entry(
+        "demo_channel",
+        {"title": "Dolar/TL ve BIST 100 gorunumu"},
+    )
+
+    assert blocked is False
+
+
+def test_misroute_guard_blocks_market_title_when_policy_false(monkeypatch, tmp_path):
+    import src.scheduler_utils as scheduler_utils
+
+    registry_path = tmp_path / "channel_registry.json"
+    payload = {
+        "channels": {
+            "demo_channel": {
+                "niche": "saglik",
+                "allow_market_language": False,
+            }
+        }
+    }
+    registry_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr(scheduler_utils, "CHANNEL_REGISTRY_PATH", registry_path)
+
+    blocked = scheduler_utils._is_misrouted_queue_entry(
+        "demo_channel",
+        {"title": "Dolar/TL ve BIST 100 gorunumu"},
+    )
+
+    assert blocked is True

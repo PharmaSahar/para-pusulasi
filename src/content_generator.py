@@ -18,6 +18,7 @@ from pathlib import Path
 import anthropic
 
 from .channel_dna import build_channel_dna_metadata
+from .channel_manager import resolve_allow_market_language
 from .config import config
 from .prompt_registry import build_prompt_metadata
 from .quality_scoring import build_quality_scores
@@ -630,7 +631,7 @@ def _build_topic_prompt(
     niche: str | None = None,
     channel_name: str = "Para Pusulasi",
     channel_topics: list[str] | None = None,
-    allow_market_language: bool = False,
+    allow_market_language: bool | None = None,
 ) -> str:
     year = datetime.now().year
     trending = _load_trending_context(niche=niche, channel_topics=channel_topics)
@@ -640,7 +641,11 @@ def _build_topic_prompt(
         avoid = "\n\nKESINLIKLE BUNLARI TEKRAR ONERME (zaten yapildi):\n" + "\n".join(f"- {t}" for t in last_10)
 
     normalized_niche = (niche or "").strip().lower()
-    if _is_market_sensitive_niche(normalized_niche) or allow_market_language:
+    market_language_enabled = resolve_allow_market_language(
+        niche=normalized_niche,
+        explicit_value=allow_market_language,
+    )
+    if market_language_enabled:
         return f"""{channel_name} kanalı icin {count} adet viral video konusu oner.
 
 KRITERLER:
@@ -686,11 +691,14 @@ def _build_content_prompt(
     content_type: str = "semi_evergreen",
     additional_guidance: str | None = None,
     niche: str | None = None,
-    allow_market_language: bool = False,
+    allow_market_language: bool | None = None,
 ) -> str:
     year = datetime.now().year
     strict_fact_mode = bool(additional_guidance and "FACT-CHECK SAFE MODE" in additional_guidance)
-    market_sensitive_niche = _is_market_sensitive_niche(niche) or allow_market_language
+    market_sensitive_niche = resolve_allow_market_language(
+        niche=niche,
+        explicit_value=allow_market_language,
+    )
 
     # SONSUZ ÇEŞİTLİLİK: Sabit şablon değil, parametrik sistem
     # Her parametre bağımsız rastgele → 10×8×6×5×4 = 9,600 benzersiz kombinasyon
@@ -862,6 +870,9 @@ class ContentGenerator:
         self._last_topic_trace: dict = {}
 
         self._channel_dna_overrides = self._resolve_channel_dna_overrides(channel_cfg)
+        self._explicit_allow_market_language = (
+            getattr(channel_cfg, "allow_market_language", None) if channel_cfg else None
+        )
 
     def _system_prompt(self) -> str:
         base_persona = self._persona or CHANNEL_PERSONA
@@ -896,27 +907,12 @@ class ContentGenerator:
         }
 
     def _active_channel_allows_market_language(self, *, topic_hint: str | None = None) -> bool:
-        if _is_market_sensitive_niche(self.niche):
-            return True
-
-        overrides = dict(getattr(self, "_channel_dna_overrides", {}) or {})
-        scalar_fields = [
-            str(overrides.get("tone") or ""),
-            str(overrides.get("audience") or ""),
-            str(overrides.get("voice_archetype") or ""),
-            str(overrides.get("evidence_style") or ""),
-        ]
-        list_fields = [
-            " ".join(str(v) for v in (overrides.get("forbidden_patterns") or [])),
-            " ".join(str(v) for v in (overrides.get("signature_structure") or [])),
-        ]
-        dna_text = " ".join(scalar_fields + list_fields)
-
-        if MARKET_TOPIC_RE.search(dna_text):
-            return True
-        if topic_hint and MARKET_TOPIC_RE.search(str(topic_hint)):
-            return True
-        return False
+        # topic_hint is intentionally ignored: authorization is explicit policy-only.
+        _ = topic_hint
+        return resolve_allow_market_language(
+            niche=self.niche,
+            explicit_value=getattr(self, "_explicit_allow_market_language", None),
+        )
 
     def _anthropic_create(self, **kwargs):
         from .scheduler_utils import get_provider_circuit_status, record_provider_failure, record_provider_success
@@ -1079,7 +1075,7 @@ class ContentGenerator:
 
         # Non-market channels remain provider-anchored (fail-closed).
         # Market-sensitive channels can still blend AI suggestions after trend anchors.
-        if _is_market_sensitive_niche(self.niche):
+        if self._active_channel_allows_market_language():
             ranked_candidates = list(trending_from_web[:2]) + [t for t in ai_topics if t not in trending_from_web]
         else:
             ranked_candidates = list(trending_from_web[:count])
@@ -1109,7 +1105,7 @@ class ContentGenerator:
             trace["fallback_candidates"] = list(fallback_candidates)
             trace["rejected_candidates"].extend(fallback_rejected)
 
-        if not combined and _is_market_sensitive_niche(self.niche):
+        if not combined and self._active_channel_allows_market_language():
             market_fallback = [item for item in ai_topics if str(item).strip()]
             if market_fallback:
                 trace["fallback_invoked"] = True
@@ -1246,13 +1242,19 @@ class ContentGenerator:
         channel_topics = list(getattr(self, "_channel_topics", []) or [])
         channel_name = getattr(self, "_channel_name", "Para Pusulasi")
         channel_dna_overrides = getattr(self, "_channel_dna_overrides", {})
-        next_hint = next_topic_hint or "Bir sonraki videoda yaygin bir hatayi adim adim duzeltecegiz"
+        if next_topic_hint:
+            next_hint = next_topic_hint
+        elif hasattr(self, "_explicit_allow_market_language"):
+            next_hint = "Bir sonraki videoda yaygin bir hatayi adim adim duzeltecegiz"
+        else:
+            # Compatibility path for tests constructing generator via __new__.
+            next_hint = "Yatirim hatalarından nasil kacinilir"
         allow_market_language = self._active_channel_allows_market_language(topic_hint=topic)
 
         logger.info("Icerik uretiliyor: " + topic)
 
         prompt_variants = [additional_guidance or ""]
-        if not _is_market_sensitive_niche(self.niche):
+        if not allow_market_language:
             retry_guidance = " ".join(
                 part
                 for part in [
@@ -1275,15 +1277,28 @@ class ContentGenerator:
         last_error: Exception | None = None
         prompt = ""
         for attempt, guidance in enumerate(prompt_variants[:3]):
-            prompt = _build_content_prompt(
-                topic,
-                prev_title,
-                next_hint,
-                getattr(self, '_last_content_type', 'semi_evergreen'),
-                additional_guidance=guidance or None,
-                niche=self.niche,
-                allow_market_language=allow_market_language,
-            )
+            try:
+                prompt = _build_content_prompt(
+                    topic,
+                    prev_title,
+                    next_hint,
+                    getattr(self, '_last_content_type', 'semi_evergreen'),
+                    additional_guidance=guidance or None,
+                    niche=self.niche,
+                    allow_market_language=allow_market_language,
+                )
+            except TypeError as exc:
+                if "allow_market_language" not in str(exc):
+                    raise
+                # Compatibility path for tests/callers monkeypatching older signature.
+                prompt = _build_content_prompt(
+                    topic,
+                    prev_title,
+                    next_hint,
+                    getattr(self, '_last_content_type', 'semi_evergreen'),
+                    additional_guidance=guidance or None,
+                    niche=self.niche,
+                )
             try:
                 response = self._anthropic_create(
                     model=self.model,

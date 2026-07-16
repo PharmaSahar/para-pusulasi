@@ -23,10 +23,10 @@ from pathlib import Path
 import fcntl
 
 from dotenv import dotenv_values
+from .channel_manager import resolve_allow_market_language
 
 logger = logging.getLogger("SchedulerUtils")
 CHANNEL_REGISTRY_PATH = Path("channels/channel_registry.json")
-CORE_MARKET_NICHES = {"kisisel_finans", "borsa", "kripto"}
 ACTIVE_QUEUE_STATUSES = {"active", "restored"}
 QUARANTINE_TRAIL_PATH = Path("logs/queue_quarantine_decisions.jsonl")
 QUEUE_FORBIDDEN_MARKET_RE = re.compile(
@@ -1717,7 +1717,11 @@ def _is_misrouted_queue_entry(channel_id: str, entry: dict) -> bool:
     channels = dict(registry.get("channels") or {})
     channel_cfg = dict(channels.get(channel_id) or {})
     niche = str(channel_cfg.get("niche") or "").strip().lower()
-    if niche in CORE_MARKET_NICHES:
+    allow_market_language = resolve_allow_market_language(
+        niche=niche,
+        explicit_value=channel_cfg.get("allow_market_language"),
+    )
+    if allow_market_language:
         return False
     title = str(entry.get("title") or "")
     return bool(title and QUEUE_FORBIDDEN_MARKET_RE.search(title))

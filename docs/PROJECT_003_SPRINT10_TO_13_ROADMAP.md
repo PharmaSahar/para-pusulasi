@@ -33,7 +33,8 @@ Complete remaining platform defaults and fallback paths that still assume a fina
 
 ### Current Status
 - A2 status: active
-- WP-A2-1 status: implementation in progress
+- WP-A2-1 status: completed
+- WP-A2-2 status: implementation in progress
 
 ### Non-Goals
 - no deployment

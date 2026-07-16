@@ -11,6 +11,29 @@ from typing import Any
 REGISTRY_PATH = "channels/channel_registry.json"
 CHANNELS_DIR = "channels"
 ANALYTICS_TOKEN_POLICY_ENV = "ANALYTICS_TOKEN_POLICY"
+MARKET_LANGUAGE_NICHES = frozenset({"kisisel_finans", "borsa", "kripto", "gayrimenkul"})
+
+
+def _normalize_bool(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return None
+
+
+def resolve_allow_market_language(*, niche: str | None, explicit_value: object = None) -> bool:
+    """Resolve channel market-language policy with deterministic niche fallback."""
+    explicit = _normalize_bool(explicit_value)
+    if explicit is not None:
+        return explicit
+    normalized_niche = str(niche or "").strip().lower()
+    return normalized_niche in MARKET_LANGUAGE_NICHES
 
 
 @dataclass
@@ -37,6 +60,7 @@ class ChannelConfig:
     forbidden_patterns: list = field(default_factory=list)
     signature_structure: list = field(default_factory=list)
     channel_dna_version: str = "v1"
+    allow_market_language: bool = False
 
     # API anahtarlari (channels/{id}/.env'den yuklenir)
     anthropic_api_key: str = ""
@@ -132,6 +156,10 @@ def get_channel(channel_id: str) -> ChannelConfig:
         raise ValueError(f"Kanal bulunamadi: '{channel_id}'. Mevcut: {available}")
     data = dict(channels[channel_id])  # kopya al
     data.pop("channel_id", None)  # cift gelmesin
+    data["allow_market_language"] = resolve_allow_market_language(
+        niche=data.get("niche"),
+        explicit_value=data.get("allow_market_language"),
+    )
     # ChannelConfig'in kabul etmediği extra alanları temizle
     import dataclasses
     known = {f.name for f in dataclasses.fields(ChannelConfig)}

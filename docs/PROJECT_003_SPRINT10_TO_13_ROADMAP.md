@@ -20,6 +20,27 @@
 - A1 excludes A2 work.
 - No deployment, scheduler restart, upload, or quarantine clearing in this phase.
 
+## PROJECT003 PHASE A2 — PLATFORM NEUTRALIZATION
+
+### Mission
+Complete remaining platform defaults and fallback paths that still assume a finance-first baseline, while preserving production execution behavior.
+
+### Work Packages
+1. WP-A2-1 Neutral Platform Defaults
+2. WP-A2-2 Explicit Channel Policy
+3. WP-A2-3 Brand and Metadata Isolation
+4. WP-A2-4 Regression Hardening
+
+### Current Status
+- A2 status: active
+- WP-A2-1 status: implementation in progress
+
+### Non-Goals
+- no deployment
+- no scheduler or upload execution changes
+- no recommendation-governance work
+- no quarantine clearing
+
 ## SPRINT 10 — Recommendation Evaluation Foundation
 
 ### Mission

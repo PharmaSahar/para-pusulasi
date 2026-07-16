@@ -27,7 +27,7 @@ class ChannelConfig:
     # Opsiyonel alanlar (yeni kanallar için default)
     slogan: str = ""
     category_id: str = "27"
-    pexels_query: str = "business finance money"
+    pexels_query: str = "business office planning"
     persona: str = ""
     topics: list = field(default_factory=list)
     tone: str = ""

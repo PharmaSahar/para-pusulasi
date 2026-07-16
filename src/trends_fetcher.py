@@ -38,7 +38,7 @@ NICHE_SEED_KEYWORDS = {
 }
 
 
-def get_trending_topics(niche: str = "kisisel_finans", count: int = 5) -> list[str]:
+def get_trending_topics(niche: str = "general", count: int = 5) -> list[str]:
     """
     Google Trends'den Türkiye gündem konularını getir.
     pytrends kütüphanesi kullanır.
@@ -46,7 +46,7 @@ def get_trending_topics(niche: str = "kisisel_finans", count: int = 5) -> list[s
     return list(get_trending_topics_with_metadata(niche=niche, count=count).get("topics", []))
 
 
-def get_trending_topics_with_metadata(niche: str = "kisisel_finans", count: int = 5) -> dict:
+def get_trending_topics_with_metadata(niche: str = "general", count: int = 5) -> dict:
     """Return trending topics with provider raw/normalized rows for provenance."""
     normalized_niche = str(niche or "").strip().lower()
     meta = {

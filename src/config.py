@@ -22,7 +22,8 @@ class Config:
     elevenlabs_voice_id: str = field(default_factory=lambda: os.getenv("ELEVENLABS_VOICE_ID", ""))
 
     # Kanal Ayarları
-    channel_niche: str = field(default_factory=lambda: os.getenv("CHANNEL_NICHE", "kisisel_finans"))
+    # Channel-neutral default for startup paths where CHANNEL_NICHE is not set.
+    channel_niche: str = field(default_factory=lambda: os.getenv("CHANNEL_NICHE", "general"))
     channel_language: str = field(default_factory=lambda: os.getenv("CHANNEL_LANGUAGE", "tr"))
     default_category_id: str = field(default_factory=lambda: os.getenv("DEFAULT_CATEGORY_ID", "22"))
 

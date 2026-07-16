@@ -38,3 +38,48 @@ def test_get_channel_resolves_explicit_channel_dna_fields(tmp_path, monkeypatch)
     assert cfg.forbidden_patterns == ["piyasa spekulasyonu"]
     assert cfg.signature_structure == ["hook", "adim", "ozet"]
     assert cfg.channel_dna_version == "v2"
+
+
+def test_get_channel_assigns_neutral_pexels_query_default_when_missing(tmp_path, monkeypatch):
+    registry = {
+        "channels": {
+            "saglik_pusulasi": {
+                "name": "Saglik Pusulasi",
+                "niche": "saglik",
+                "language": "tr",
+                "upload_times": ["10:30"],
+                "color_primary": [1, 2, 3],
+                "color_bg": [4, 5, 6],
+            }
+        }
+    }
+    registry_path = tmp_path / "channel_registry.json"
+    registry_path.write_text(json.dumps(registry, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr(channel_manager, "REGISTRY_PATH", str(registry_path))
+
+    cfg = channel_manager.get_channel("saglik_pusulasi")
+
+    assert cfg.pexels_query == "business office planning"
+
+
+def test_get_channel_preserves_explicit_pexels_query_from_registry(tmp_path, monkeypatch):
+    registry = {
+        "channels": {
+            "saglik_pusulasi": {
+                "name": "Saglik Pusulasi",
+                "niche": "saglik",
+                "language": "tr",
+                "upload_times": ["10:30"],
+                "color_primary": [1, 2, 3],
+                "color_bg": [4, 5, 6],
+                "pexels_query": "health wellness nutrition clinic fitness",
+            }
+        }
+    }
+    registry_path = tmp_path / "channel_registry.json"
+    registry_path.write_text(json.dumps(registry, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr(channel_manager, "REGISTRY_PATH", str(registry_path))
+
+    cfg = channel_manager.get_channel("saglik_pusulasi")
+
+    assert cfg.pexels_query == "health wellness nutrition clinic fitness"

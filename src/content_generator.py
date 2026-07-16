@@ -630,6 +630,7 @@ def _build_topic_prompt(
     niche: str | None = None,
     channel_name: str = "Para Pusulasi",
     channel_topics: list[str] | None = None,
+    allow_market_language: bool = False,
 ) -> str:
     year = datetime.now().year
     trending = _load_trending_context(niche=niche, channel_topics=channel_topics)
@@ -639,7 +640,7 @@ def _build_topic_prompt(
         avoid = "\n\nKESINLIKLE BUNLARI TEKRAR ONERME (zaten yapildi):\n" + "\n".join(f"- {t}" for t in last_10)
 
     normalized_niche = (niche or "").strip().lower()
-    if _is_market_sensitive_niche(normalized_niche):
+    if _is_market_sensitive_niche(normalized_niche) or allow_market_language:
         return f"""{channel_name} kanalı icin {count} adet viral video konusu oner.
 
 KRITERLER:
@@ -660,9 +661,9 @@ GUNCEL GUNDEM:
 
 KRITERLER:
 - Konular kanalın ana nişi olan '{niche_label}' ile doğrudan ilgili olsun
-- Finansal piyasa, BIST, hisse, dolar kuru, Bitcoin, altın, faiz ve enflasyon iddialarını kendiliğinden ekleme
+- Alan dışı terimler ve ilgisiz iddialar ekleme
 - Clickbait ama yaniltici olmayan, egitici konular üret
-- Gerekmedikçe somut piyasa rakamı, hedef fiyat, yüzde oran veya tarih içeren başlık kurma
+- Gerekmedikçe kesin rakam, hedef yüzde veya tarih içeren başlık kurma
 - Her satira sadece konu yaz, baska hicbir sey ekleme
 
 NIS ODAKLARI:
@@ -685,10 +686,11 @@ def _build_content_prompt(
     content_type: str = "semi_evergreen",
     additional_guidance: str | None = None,
     niche: str | None = None,
+    allow_market_language: bool = False,
 ) -> str:
     year = datetime.now().year
     strict_fact_mode = bool(additional_guidance and "FACT-CHECK SAFE MODE" in additional_guidance)
-    market_sensitive_niche = _is_market_sensitive_niche(niche)
+    market_sensitive_niche = _is_market_sensitive_niche(niche) or allow_market_language
 
     # SONSUZ ÇEŞİTLİLİK: Sabit şablon değil, parametrik sistem
     # Her parametre bağımsız rastgele → 10×8×6×5×4 = 9,600 benzersiz kombinasyon
@@ -776,7 +778,10 @@ FACT-CHECK SAFE MODE AKTIF:
         if not market_sensitive_niche:
             real_world_rule = "• Kanalın kendi alanındaki günlük, somut ve pratik örnekleri kullan; alakasız piyasa referansları ekleme"
 
-    return f"""Türk finans YouTube kanalı için TAMAMEN ORİJİNAL, YAPAY HİSSETTİRMEYEN senaryo yaz.
+    channel_prompt_identity = "Türk finans YouTube kanalı" if market_sensitive_niche else "Türk YouTube kanalı"
+    creator_tone_label = "DOĞAL TÜRK FİNANS YOUTUBER'I TONU" if market_sensitive_niche else "DOĞAL TÜRK YOUTUBER TONU"
+
+    return f"""{channel_prompt_identity} için TAMAMEN ORİJİNAL, YAPAY HİSSETTİRMEYEN senaryo yaz.
 
 KONU: {topic}
 YIL: {year}
@@ -805,7 +810,7 @@ KESİNLİKLE YASAKLANAN İFADELER:
 ✗ "Bugünkü konumuz şu..." (sıkıcı standart)
 ✗ "Videoyu izlemeye devam ederseniz..." (izleyiciyi kaçırır)
 
-DOĞAL TÜRK FİNANS YOUTUBER'I TONU:
+{creator_tone_label}:
 • Samimi, konuşma dili ama bilgi dolu
 • "Bak sana şunu söyleyeyim..." "Şimdi düşün bir..." gibi geçişler
 {number_style_rule}
@@ -825,7 +830,7 @@ Sadece JSON döndür:
   "next_video_teaser": "Bir cümle merak bırak: '{next_topic_hint}'",
     "thumbnail_prompt": "Konuya OZGUN Ingilizce gorsel promptu: tek ana fikir, yuksek kontrast, sinematik isik, 1 odak nesne veya yuz ifadesi. Keep all text inside the central-left safe area. Do not place text near the bottom 22% or right 20% of the frame. Use maximum 2 short lines. Large readable Turkish title only. 'business finance' gibi genel terimler KULLANMA",
   "pexels_search": "Bu videonun KONUSUNA ÖZGÜ 3-5 kelimelik İngilizce Pexels arama terimi (örn: 'crypto trader phone night city' veya 'retirement couple beach sunset happy')",
-  "chart_data": "Varsa bu videoda gösterilebilecek 1 finansal veri seti (JSON formatında): {{'type': 'bar|line|pie', 'title': 'Grafik başlığı', 'data': {{'labels': [...], 'values': [...]}}}}, yoksa null",
+    "chart_data": "Varsa bu videoda gösterilebilecek 1 veri seti (JSON formatında): {{'type': 'bar|line|pie', 'title': 'Grafik başlığı', 'data': {{'labels': [...], 'values': [...]}}}}, yoksa null",
   "category_id": "27"
 }}
 }}"""
@@ -856,26 +861,62 @@ class ContentGenerator:
         self._provenance_context = dict(provenance_context or {})
         self._last_topic_trace: dict = {}
 
-        self._channel_dna_overrides = self._extract_channel_dna_overrides(channel_cfg)
+        self._channel_dna_overrides = self._resolve_channel_dna_overrides(channel_cfg)
 
     def _system_prompt(self) -> str:
         base_persona = self._persona or CHANNEL_PERSONA
         return f"{base_persona.rstrip()}\n{CONTENT_SAFETY_BOUNDARY}"
 
     @staticmethod
-    def _extract_channel_dna_overrides(channel_cfg) -> dict:
+    def _resolve_channel_dna_overrides(channel_cfg) -> dict:
         if not channel_cfg:
-            return {}
-        candidate_fields = {
-            "tone": getattr(channel_cfg, "tone", None),
-            "audience": getattr(channel_cfg, "audience", None),
-            "voice_archetype": getattr(channel_cfg, "voice_archetype", None),
-            "evidence_style": getattr(channel_cfg, "evidence_style", None),
-            "forbidden_patterns": getattr(channel_cfg, "forbidden_patterns", None),
-            "signature_structure": getattr(channel_cfg, "signature_structure", None),
-            "channel_dna_version": getattr(channel_cfg, "channel_dna_version", None),
+            return {
+                "tone": "acik, guvenilir, alan-odakli",
+                "audience": "Kanalin kendi nisine ilgi duyan izleyici kitlesi",
+                "voice_archetype": "alan rehberi",
+                "evidence_style": "dogrulanabilir kaynak ve pratik ornek odakli",
+                "forbidden_patterns": [],
+                "signature_structure": [],
+                "channel_dna_version": "v1",
+            }
+
+        niche_label = str(getattr(channel_cfg, "niche", "") or "genel").strip().lower() or "genel"
+        channel_name = str(getattr(channel_cfg, "name", "") or "kanal").strip() or "kanal"
+        explicit_forbidden = getattr(channel_cfg, "forbidden_patterns", None)
+        explicit_signature = getattr(channel_cfg, "signature_structure", None)
+
+        return {
+            "tone": getattr(channel_cfg, "tone", None) or "acik, guvenilir, alan-odakli",
+            "audience": getattr(channel_cfg, "audience", None) or f"{channel_name} kanalinin {niche_label} odakli izleyici kitlesi",
+            "voice_archetype": getattr(channel_cfg, "voice_archetype", None) or f"{niche_label} rehberi",
+            "evidence_style": getattr(channel_cfg, "evidence_style", None) or "dogrulanabilir kaynak ve pratik ornek odakli",
+            "forbidden_patterns": explicit_forbidden if explicit_forbidden is not None else [],
+            "signature_structure": explicit_signature if explicit_signature is not None else [],
+            "channel_dna_version": getattr(channel_cfg, "channel_dna_version", None) or "v1",
         }
-        return {key: value for key, value in candidate_fields.items() if value is not None}
+
+    def _active_channel_allows_market_language(self, *, topic_hint: str | None = None) -> bool:
+        if _is_market_sensitive_niche(self.niche):
+            return True
+
+        overrides = dict(getattr(self, "_channel_dna_overrides", {}) or {})
+        scalar_fields = [
+            str(overrides.get("tone") or ""),
+            str(overrides.get("audience") or ""),
+            str(overrides.get("voice_archetype") or ""),
+            str(overrides.get("evidence_style") or ""),
+        ]
+        list_fields = [
+            " ".join(str(v) for v in (overrides.get("forbidden_patterns") or [])),
+            " ".join(str(v) for v in (overrides.get("signature_structure") or [])),
+        ]
+        dna_text = " ".join(scalar_fields + list_fields)
+
+        if MARKET_TOPIC_RE.search(dna_text):
+            return True
+        if topic_hint and MARKET_TOPIC_RE.search(str(topic_hint)):
+            return True
+        return False
 
     def _anthropic_create(self, **kwargs):
         from .scheduler_utils import get_provider_circuit_status, record_provider_failure, record_provider_success
@@ -1019,6 +1060,7 @@ class ContentGenerator:
             niche=self.niche,
             channel_name=channel_name,
             channel_topics=channel_topics,
+            allow_market_language=self._active_channel_allows_market_language(),
         ) + trend_hint + avoid
         logger.info(f"'{self.niche}' icin {count} konu uretiliyor...")
 
@@ -1204,7 +1246,8 @@ class ContentGenerator:
         channel_topics = list(getattr(self, "_channel_topics", []) or [])
         channel_name = getattr(self, "_channel_name", "Para Pusulasi")
         channel_dna_overrides = getattr(self, "_channel_dna_overrides", {})
-        next_hint = next_topic_hint or "Yatirim hatalarından nasil kacinilir"
+        next_hint = next_topic_hint or "Bir sonraki videoda yaygin bir hatayi adim adim duzeltecegiz"
+        allow_market_language = self._active_channel_allows_market_language(topic_hint=topic)
 
         logger.info("Icerik uretiliyor: " + topic)
 
@@ -1239,6 +1282,7 @@ class ContentGenerator:
                 getattr(self, '_last_content_type', 'semi_evergreen'),
                 additional_guidance=guidance or None,
                 niche=self.niche,
+                allow_market_language=allow_market_language,
             )
             try:
                 response = self._anthropic_create(

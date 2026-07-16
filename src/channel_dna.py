@@ -26,10 +26,10 @@ def _canonical_dna_payload(payload: dict) -> str:
 
 def build_channel_dna_metadata(
     *,
-    tone: str = "samimi, gercekci, heyecanli ama bilimsel temelli",
-    audience: str = "Turkiye'de 25-50 yas, aylik 15.000-80.000 TL gelirli, yatirim yapmak isteyen bireyler",
-    voice_archetype: str = "finans mentoru",
-    evidence_style: str = "veri destekli, somut rakam odakli",
+    tone: str = "acik, guvenilir, alan-odakli",
+    audience: str = "Kanalin kendi nisine ilgi duyan izleyici kitlesi",
+    voice_archetype: str = "alan rehberi",
+    evidence_style: str = "dogrulanabilir kaynak ve pratik ornek odakli",
     forbidden_patterns: list[str] | tuple[str, ...] | None = None,
     signature_structure: list[str] | tuple[str, ...] | None = None,
     channel_dna_version: str = DEFAULT_CHANNEL_DNA_VERSION,

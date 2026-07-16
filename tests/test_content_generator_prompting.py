@@ -59,7 +59,8 @@ def test_non_finance_topic_prompt_avoids_market_claims():
     )
 
     assert "kanalın ana nişi" in prompt
-    assert "Finansal piyasa, BIST, hisse, dolar kuru, Bitcoin, altın, faiz ve enflasyon" in prompt
+    assert "Alan dışı terimler ve ilgisiz iddialar ekleme" in prompt
+    assert "Finansal piyasa, BIST, hisse" not in prompt
     assert "Saglik Pusulasi" in prompt
 
 
@@ -73,7 +74,35 @@ def test_non_finance_content_prompt_uses_non_market_real_world_rule():
     )
 
     assert "alakasız piyasa referansları ekleme" in prompt
+    assert "Türk finans YouTube kanalı" not in prompt
+    assert "DOĞAL TÜRK FİNANS YOUTUBER'I TONU" not in prompt
     assert "enflasyon, kira, maaş baskısı" not in prompt
+
+
+def test_market_content_prompt_keeps_finance_identity():
+    prompt = content_generator._build_content_prompt(
+        topic="BIST 100 teknik analiz",
+        prev_title=None,
+        next_topic_hint="Portfoy dagilimi",
+        content_type="semi_evergreen",
+        niche="kisisel_finans",
+    )
+
+    assert "Türk finans YouTube kanalı" in prompt
+    assert "DOĞAL TÜRK FİNANS YOUTUBER'I TONU" in prompt
+
+
+def test_topic_prompt_market_language_enabled_when_explicitly_allowed():
+    prompt = content_generator._build_topic_prompt(
+        3,
+        [],
+        niche="saglik",
+        channel_name="Saglik Pusulasi",
+        channel_topics=["beslenme", "uyku", "stres"],
+        allow_market_language=True,
+    )
+
+    assert "Turkiye finans gundemiyle alakali" in prompt
 
 
 def test_non_finance_trending_topics_filter_drops_market_topics():

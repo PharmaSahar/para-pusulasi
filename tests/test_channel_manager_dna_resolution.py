@@ -1,0 +1,40 @@
+import json
+
+from src import channel_manager
+
+
+def test_get_channel_resolves_explicit_channel_dna_fields(tmp_path, monkeypatch):
+    registry = {
+        "channels": {
+            "saglik_pusulasi": {
+                "name": "Saglik Pusulasi",
+                "niche": "saglik",
+                "language": "tr",
+                "upload_times": ["10:30"],
+                "color_primary": [1, 2, 3],
+                "color_bg": [4, 5, 6],
+                "persona": "Saglik odakli kanal",
+                "topics": ["uyku"],
+                "tone": "bilimsel ve sade",
+                "audience": "saglik odakli yetiskinler",
+                "voice_archetype": "saglik rehberi",
+                "evidence_style": "kaynak destekli",
+                "forbidden_patterns": ["piyasa spekulasyonu"],
+                "signature_structure": ["hook", "adim", "ozet"],
+                "channel_dna_version": "v2",
+            }
+        }
+    }
+    registry_path = tmp_path / "channel_registry.json"
+    registry_path.write_text(json.dumps(registry, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr(channel_manager, "REGISTRY_PATH", str(registry_path))
+
+    cfg = channel_manager.get_channel("saglik_pusulasi")
+
+    assert cfg.tone == "bilimsel ve sade"
+    assert cfg.audience == "saglik odakli yetiskinler"
+    assert cfg.voice_archetype == "saglik rehberi"
+    assert cfg.evidence_style == "kaynak destekli"
+    assert cfg.forbidden_patterns == ["piyasa spekulasyonu"]
+    assert cfg.signature_structure == ["hook", "adim", "ozet"]
+    assert cfg.channel_dna_version == "v2"

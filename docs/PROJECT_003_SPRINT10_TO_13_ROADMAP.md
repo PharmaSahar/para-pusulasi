@@ -7,6 +7,19 @@
 - Sprint 10 must remain additive and governed.
 - Production remains unchanged during roadmap planning.
 
+## Project003 Phase A1 — Channel-Neutral Prompt Builder
+
+### Scope Registration
+- Channel-neutral topic prompt path in content generation.
+- Channel-neutral content prompt path in content generation.
+- Explicit per-channel DNA resolution from channel configuration.
+- Removal of finance-biased fallback DNA defaults.
+- Focused representative-channel tests for prompt and DNA behavior.
+
+### Guardrails
+- A1 excludes A2 work.
+- No deployment, scheduler restart, upload, or quarantine clearing in this phase.
+
 ## SPRINT 10 — Recommendation Evaluation Foundation
 
 ### Mission

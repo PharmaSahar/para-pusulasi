@@ -30,6 +30,13 @@ class ChannelConfig:
     pexels_query: str = "business finance money"
     persona: str = ""
     topics: list = field(default_factory=list)
+    tone: str = ""
+    audience: str = ""
+    voice_archetype: str = ""
+    evidence_style: str = ""
+    forbidden_patterns: list = field(default_factory=list)
+    signature_structure: list = field(default_factory=list)
+    channel_dna_version: str = "v1"
 
     # API anahtarlari (channels/{id}/.env'den yuklenir)
     anthropic_api_key: str = ""

@@ -193,3 +193,120 @@ def test_channel_dna_attachment_does_not_change_prompt_text(monkeypatch):
 
     monkeypatch.setattr(cg.ContentGenerator, "__init__", original_init)
     monkeypatch.setattr(cg.ContentGenerator, "generate_topic_ideas", original_topics)
+
+
+def test_content_generator_resolves_explicit_channel_dna_fields(monkeypatch):
+    import src.content_generator as cg
+
+    class FakeMessages:
+        def create(self, **kwargs):
+            payload = {
+                "title": "Title",
+                "description": "Description",
+                "tags": ["a"],
+                "script": "Script",
+                "thumbnail_prompt": "Thumb",
+                "category_id": "27",
+                "hook": "Hook",
+                "next_video_teaser": "Teaser",
+                "pexels_search": "query",
+                "chart_data": None,
+            }
+            return SimpleNamespace(content=[SimpleNamespace(text=json.dumps(payload, ensure_ascii=False))])
+
+    class FakeClient:
+        def __init__(self):
+            self.messages = FakeMessages()
+
+    class FakeConfig:
+        anthropic_api_key = "key"
+        niche = "saglik"
+        persona = "Saglik editoru"
+        name = "Saglik Pusulasi"
+        topics = ["uyku", "beslenme"]
+        tone = "bilimsel ve net"
+        audience = "saglik meraklisi yetiskinler"
+        voice_archetype = "saglik rehberi"
+        evidence_style = "kaynak odakli"
+        forbidden_patterns = ["piyasa spekulasyonu"]
+        signature_structure = ["hook", "adim", "ozet"]
+        channel_dna_version = "v2"
+
+    captured = {}
+
+    monkeypatch.setattr(cg.anthropic, "Anthropic", lambda **_kwargs: FakeClient())
+    monkeypatch.setattr(cg, "_content_has_niche_mismatch", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(cg, "build_prompt_metadata", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(cg, "build_quality_scores", lambda **_kwargs: {})
+
+    def fake_build_channel_dna_metadata(**kwargs):
+        captured.update(kwargs)
+        return {"channel_dna_id": "cd_test", "channel_dna_hash": "h", "channel_dna_version": kwargs.get("channel_dna_version", "v1")}
+
+    monkeypatch.setattr(cg, "build_channel_dna_metadata", fake_build_channel_dna_metadata)
+
+    generator = cg.ContentGenerator(channel_cfg=FakeConfig())
+    generator.generate_video_content("Uyku rutini")
+
+    assert captured["tone"] == "bilimsel ve net"
+    assert captured["audience"] == "saglik meraklisi yetiskinler"
+    assert captured["voice_archetype"] == "saglik rehberi"
+    assert captured["evidence_style"] == "kaynak odakli"
+    assert captured["forbidden_patterns"] == ["piyasa spekulasyonu"]
+    assert captured["signature_structure"] == ["hook", "adim", "ozet"]
+    assert captured["channel_dna_version"] == "v2"
+
+
+def test_content_generator_resolves_neutral_channel_dna_defaults(monkeypatch):
+    import src.content_generator as cg
+
+    class FakeMessages:
+        def create(self, **kwargs):
+            payload = {
+                "title": "Title",
+                "description": "Description",
+                "tags": ["a"],
+                "script": "Script",
+                "thumbnail_prompt": "Thumb",
+                "category_id": "27",
+                "hook": "Hook",
+                "next_video_teaser": "Teaser",
+                "pexels_search": "query",
+                "chart_data": None,
+            }
+            return SimpleNamespace(content=[SimpleNamespace(text=json.dumps(payload, ensure_ascii=False))])
+
+    class FakeClient:
+        def __init__(self):
+            self.messages = FakeMessages()
+
+    class FakeConfig:
+        anthropic_api_key = "key"
+        niche = "saglik"
+        persona = "Saglik editoru"
+        name = "Saglik Pusulasi"
+        topics = ["uyku", "beslenme"]
+
+    captured = {}
+
+    monkeypatch.setattr(cg.anthropic, "Anthropic", lambda **_kwargs: FakeClient())
+    monkeypatch.setattr(cg, "_content_has_niche_mismatch", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(cg, "build_prompt_metadata", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(cg, "build_quality_scores", lambda **_kwargs: {})
+
+    def fake_build_channel_dna_metadata(**kwargs):
+        captured.update(kwargs)
+        return {"channel_dna_id": "cd_test", "channel_dna_hash": "h", "channel_dna_version": kwargs.get("channel_dna_version", "v1")}
+
+    monkeypatch.setattr(cg, "build_channel_dna_metadata", fake_build_channel_dna_metadata)
+
+    generator = cg.ContentGenerator(channel_cfg=FakeConfig())
+    generator.generate_video_content("Uyku rutini")
+
+    assert captured["tone"] == "acik, guvenilir, alan-odakli"
+    assert "saglik odakli" in captured["audience"]
+    assert captured["voice_archetype"] == "saglik rehberi"
+    assert captured["evidence_style"] == "dogrulanabilir kaynak ve pratik ornek odakli"
+    assert captured["forbidden_patterns"] == []
+    assert captured["signature_structure"] == []
+    assert captured["channel_dna_version"] == "v1"

@@ -38,7 +38,7 @@ class VideoCreator:
         else:
             self.color_primary = (212, 175, 55)
             self.color_bg = (15, 25, 60)
-            self.channel_name = "Para Pusulasi"
+            self.channel_name = "Genel Kanal"
         # Watermark yolu
         if channel_cfg and hasattr(channel_cfg, "base_dir"):
             wm_channel = f"{channel_cfg.base_dir}/branding/watermark_150x150.png"
@@ -427,7 +427,7 @@ class VideoCreator:
             y += 80
 
         # Banner alt yazi
-        banner_text = "Para Pusulasi | 2026"
+        banner_text = f"{self.channel_name} | 2026"
         bb2 = draw.textbbox((0, 0), banner_text, font=font_small)
         bx = (W - (bb2[2] - bb2[0])) // 2
         draw.text((bx, H - 82), banner_text, font=font_small, fill="white")

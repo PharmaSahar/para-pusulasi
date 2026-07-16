@@ -78,12 +78,12 @@ class VideoCreator:
             self.color_primary = tuple(channel_cfg.color_primary)
             self.color_bg = tuple(channel_cfg.color_bg)
             self.channel_name = channel_cfg.name
-            self.channel_tagline = getattr(channel_cfg, "tagline", "Finans & Yatırım Rehberi")
+            self.channel_tagline = getattr(channel_cfg, "tagline", "Uzmanlik Rehberi")
         else:
             self.color_primary = (212, 175, 55)   # Altın sarısı
             self.color_bg = (10, 18, 40)           # Lacivert
-            self.channel_name = "Para Pusulası"
-            self.channel_tagline = "Finans & Yatırım Rehberi"
+            self.channel_name = "Genel Kanal"
+            self.channel_tagline = "Uzmanlik Rehberi"
         if channel_cfg and hasattr(channel_cfg, "base_dir"):
             wm = f"{channel_cfg.base_dir}/branding/watermark_150x150.png"
             self.watermark_path = wm if Path(wm).exists() else "assets/branding/watermark_150x150.png"

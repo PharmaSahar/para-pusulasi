@@ -115,7 +115,7 @@ def test_generate_video_content_makes_exactly_one_messages_create(monkeypatch, t
 
     assert content.title == "Title"
     assert messages.calls == 1
-    assert captured["next_topic_hint"] == "Yatirim hatalarından nasil kacinilir"
+    assert captured["next_topic_hint"] == "Bir sonraki videoda yaygin bir hatayi adim adim duzeltecegiz"
 
 
 def test_generate_and_save_makes_exactly_two_messages_create_and_reuses_second_topic_hint(monkeypatch, tmp_path):

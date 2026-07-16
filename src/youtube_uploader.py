@@ -549,12 +549,11 @@ class YouTubeUploader:
         words = [w for w in re.findall(r"[a-z0-9ığüşöç]+", ascii_title) if len(w) >= 3]
         defaults = [
             niche.strip() or "egitim",
-            "finans",
             "strateji",
             "analiz",
             "risk yonetimi",
             "turkiye",
-            "yatirim",
+            "rehber",
         ]
         merged = defaults + words
         out: list[str] = []

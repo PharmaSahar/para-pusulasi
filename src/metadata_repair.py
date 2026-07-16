@@ -152,12 +152,12 @@ def fallback_tags_from_title(title: str, niche: str = "") -> list[str]:
         words.append(token)
 
     defaults = [
-        "finans",
-        "yatirim",
-        "turkiye",
         "egitim",
-        "para pusulasi",
-        niche.strip() or "kisisel finans",
+        "strateji",
+        "turkiye",
+        "analiz",
+        "icerik",
+        niche.strip() or "genel",
     ]
 
     merged = defaults + words
@@ -323,10 +323,10 @@ def normalize_metadata(
     ok, chapter_count, min_gap_ok = chapter_rule_ok(description)
     chapter_issue = False if int(duration_sec or 0) < 60 else not ok
 
+    original_tags = sanitize_tags(tags)
     normalized_tags = ensure_minimum_tags(title=title, tags=tags, niche=niche, min_tags=min_tags)
-    tag_issue = len(sanitize_tags(tags)) < min_tags
-
-    seo_before = score_seo_proxy(title=title, description=description, tags=sanitize_tags(tags))
+    tag_issue = len(original_tags) < min_tags
+    seo_before = score_seo_proxy(title=title, description=description, tags=original_tags)
     new_description = build_normalized_description(
         title=title,
         base_description=description,

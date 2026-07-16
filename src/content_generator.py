@@ -26,41 +26,43 @@ from .quality_scoring import build_quality_scores
 logger = logging.getLogger(__name__)
 _ANTHROPIC_GATE_LOCK = threading.Lock()
 _LAST_ANTHROPIC_CALL_AT = 0.0
+DEFAULT_CHANNEL_NAME = "Genel Kanal"
+DEFAULT_SEO_LABEL = "Video Rehberi"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SISTEM PROMPTU - Kanal Kimligi ve Icerik Stratejisi
 # ─────────────────────────────────────────────────────────────────────────────
-CHANNEL_PERSONA = """Sen "Para Pusulas" adli Turkiye'nin en hizli buyuyen kisisel finans YouTube kanalinin icerik direktoru ve bas senaristsin.
+CHANNEL_PERSONA = """Sen Turkiye odakli egitici bir YouTube kanalinin icerik direktoru ve bas senaristsin.
 
 KANAL KIMLIGIN:
-- Kanal adi: Para Pusulasi
-- Slogan: "Paranizi calismaya gonderin!"
-- Ton: Samimi, gercekci, heyecanli ama bilimsel temelli
-- Hedef kitle: Turkiye'de 25-50 yas, aylik 15.000-80.000 TL gelirli, yatirim yapmak isteyen bireyler
+- Kanal adi: Kanal kimligi
+- Slogan: "Bilgiyi eyleme donustur"
+- Ton: Samimi, gercekci, heyecanli ama kanita dayali
+- Hedef kitle: Turkiye'de 25-50 yas arasi, pratik ve uygulanabilir bilgi arayan izleyiciler
 - Dil: Akici Turkce, teknik terimler varsa kisa aciklama
 
 VIRAL ICERIK FORMULUN (Bu formulu her videon icin uygula):
 1. HOOK (0-30 sn): Sok edici bir istatistik veya soru ile baslat
-   - "Turkiye'de her 10 kisi 8'i emekli oluncaya kadar yeterli birikimi yok"
-   - "Bu videoyu izleyenler ortalama 3 ay sonra ilk yatirimlarini yapti"
+    - "Turkiye'de her 10 kisiden 8'i surekli erteledigi bir hedefe sahip"
+    - "Bu videoyu izleyenler ortalama 3 hafta icinde ilk adimi atiyor"
 2. ONCEKI VIDEODAN REFERANS (30-45 sn): Kanal surekliligini kur
 3. ANA ICERIK (Bolumler halinde, her bolum 2-3 dk): Net, ogretici, somut
-4. GERCEK RAKAMLAR: Hep 5.000-250.000 TL arasi kullan, kucuk rakamlardan kac
-5. 2026 GUNCEL VERILERI: Enflasyon, BIST, dolar kuru gercekligi
+4. GERCEK RAKAMLAR: Konuya uygun somut ve dogrulanabilir degerler kullan
+5. 2026 GUNCEL VERILERI: Alanin guncel durumunu gercek kaynaklarla anlat
 6. CTA (Orta): "Abone ol, bildirimi ac" - izleyiciyi kaybetme
 7. SONUC + SONRAKI VIDEO DUYURUSU: Merak birak, bir sonraki konuyu duyur
 
 BASLIK KURALLARI (YouTube Algoritmasini Kir):
-- Sayi + Somut Sonuc + Yil: "37.000 TL ile 8 Ayda %94 Getiri (2026 Gercek Hesabi)"
-- Merak + Kayip Korkusu: "Bu Hatadan Habersizseniz Birikimleriniz Eriyecek"
-- Karsilastirma: "Borsa mi Altin mi? 10.000 TL ile 12 Ay Test Ettim"
-- Kisisel Hikaye: "Maasimin %40'ini Biriktiren Adamla 1 Gun Gecirdim"
+- Sayi + Somut Sonuc + Yil: "30 Gunde 7 Adimla Duzenli Rutin Kurma (2026 Rehberi)"
+- Merak + Kayip Korkusu: "Bu Hatayi Yapiyorsan Ilerlemen Duruyor"
+- Karsilastirma: "Iki Farkli Yontemi 30 Gun Denedim: Hangisi Calisti?"
+- Kisisel Hikaye: "Bir Izleyicinin Aliskanlik Donusumunu 1 Gun Takip Ettim"
 - Soru: "Neden Zenginler Daha Zengin Olur? (Cevap Sizi Sok Edecek)"
 
 KISALTMALAR:
-- TL rakamlarini hep buyuk goster: 25.000 TL, 100.000 TL
-- BIST, BTC, ETH gibi kisaltmalari ilk geciste acikla
-- Yuzde degerleri somut goster: "Her ay 7.500 TL ayirarak..."
+- Alan terimlerini ilk geciste kisa ve acik sekilde tanimla
+- Verileri konuya uygun ve dogrulanabilir bicimde aktar
+- Yuzde degerleri gerekiyorsa acik bir baglamla birlikte ver
 """
 
 CONTENT_SAFETY_BOUNDARY = """
@@ -600,7 +602,8 @@ class VideoContent:
         except Exception:
             has_monetization = False
 
-        first_line = f"{self.title} | Para Pusulasi"
+        channel_label = str(getattr(self, "channel_name", "") or "").strip()
+        first_line = f"{self.title} | {channel_label or DEFAULT_SEO_LABEL}"
         chapters = (
             "⏱️ BOLUMLER:\n"
             "00:00 Giris - Hook\n"
@@ -629,7 +632,7 @@ def _build_topic_prompt(
     used_titles: list[str],
     *,
     niche: str | None = None,
-    channel_name: str = "Para Pusulasi",
+    channel_name: str = DEFAULT_CHANNEL_NAME,
     channel_topics: list[str] | None = None,
     allow_market_language: bool | None = None,
 ) -> str:
@@ -721,11 +724,13 @@ def _build_content_prompt(
         "KARŞILAŞTIRMA: İki farklı stratejiyi yan yana koy, verilerle değerlendir",
         "ZAMAN YOLCULUĞU: 5 yıl önce yapılsaydı ne olurdu, şimdi ne olacak?",
         "UZMAN YANILIYOR: Yaygın tavsiyenin neden işe yaramadığını göster",
-        "VAKA ANALİZİ: Gerçek bir yatırımcının kararlarını adım adım incele",
+        "VAKA ANALİZİ: Gerçek bir kullanicinin kararlarını adım adım incele",
         "KARŞI GÖRÜŞ: En çok savunulan fikri sorgula, alternatif sun",
         "SAYILARLA KONUŞ: Her iddiayı somut TL rakamıyla destekle",
         "SENARYOLAR: 3 farklı karar, 10 yıl sonra üçünün de sonucunu göster",
     ]
+    if market_sensitive_niche:
+        narrative_styles.append("VAKA ANALİZİ: Gerçek bir yatırımcının kararlarını adım adım incele")
 
     evidence_types = [
         "Türkiye İstatistik Kurumu + BDDK verileri ağırlıklı",
@@ -788,6 +793,11 @@ FACT-CHECK SAFE MODE AKTIF:
 
     channel_prompt_identity = "Türk finans YouTube kanalı" if market_sensitive_niche else "Türk YouTube kanalı"
     creator_tone_label = "DOĞAL TÜRK FİNANS YOUTUBER'I TONU" if market_sensitive_niche else "DOĞAL TÜRK YOUTUBER TONU"
+    pexels_example = (
+        "'crypto trader phone night city' veya 'retirement couple beach sunset happy'"
+        if market_sensitive_niche
+        else "'teacher explaining whiteboard classroom' veya 'chef preparing healthy meal kitchen'"
+    )
 
     return f"""{channel_prompt_identity} için TAMAMEN ORİJİNAL, YAPAY HİSSETTİRMEYEN senaryo yaz.
 
@@ -837,7 +847,7 @@ Sadece JSON döndür:
   "script": "TAM SENARYO (2000+ kelime) — seçilen parametrelere göre ÖZGÜN yapı. Klişe bölüm başlıkları KULLANMA.",
   "next_video_teaser": "Bir cümle merak bırak: '{next_topic_hint}'",
     "thumbnail_prompt": "Konuya OZGUN Ingilizce gorsel promptu: tek ana fikir, yuksek kontrast, sinematik isik, 1 odak nesne veya yuz ifadesi. Keep all text inside the central-left safe area. Do not place text near the bottom 22% or right 20% of the frame. Use maximum 2 short lines. Large readable Turkish title only. 'business finance' gibi genel terimler KULLANMA",
-  "pexels_search": "Bu videonun KONUSUNA ÖZGÜ 3-5 kelimelik İngilizce Pexels arama terimi (örn: 'crypto trader phone night city' veya 'retirement couple beach sunset happy')",
+    "pexels_search": "Bu videonun KONUSUNA ÖZGÜ 3-5 kelimelik İngilizce Pexels arama terimi (örn: {pexels_example})",
     "chart_data": "Varsa bu videoda gösterilebilecek 1 veri seti (JSON formatında): {{'type': 'bar|line|pie', 'title': 'Grafik başlığı', 'data': {{'labels': [...], 'values': [...]}}}}, yoksa null",
   "category_id": "27"
 }}
@@ -863,7 +873,7 @@ class ContentGenerator:
             self._channel_name = channel_cfg.name
         else:
             self._persona = None
-            self._channel_name = "Para Pusulasi"
+            self._channel_name = DEFAULT_CHANNEL_NAME
 
         self._channel_topics = list(getattr(channel_cfg, "topics", []) or [])
         self._provenance_context = dict(provenance_context or {})
@@ -971,7 +981,7 @@ class ContentGenerator:
     def generate_topic_ideas(self, count: int = 10) -> list[str]:
         used = _load_used_titles()
         channel_topics = list(getattr(self, "_channel_topics", []) or [])
-        channel_name = getattr(self, "_channel_name", "Para Pusulasi")
+        channel_name = getattr(self, "_channel_name", DEFAULT_CHANNEL_NAME)
         normalized_niche = (self.niche or "").strip().lower()
 
         trace = {
@@ -1191,7 +1201,7 @@ class ContentGenerator:
     def _validate_explicit_topic_or_block(self, topic: str) -> tuple[str, bool]:
         """Validate an explicitly supplied topic (retry/resume/manual) before generation."""
         channel_topics = list(getattr(self, "_channel_topics", []) or [])
-        channel_name = getattr(self, "_channel_name", "Para Pusulasi")
+        channel_name = getattr(self, "_channel_name", DEFAULT_CHANNEL_NAME)
         approved, rejected = _filter_candidates_with_reasons(
             [topic],
             niche=self.niche,
@@ -1240,7 +1250,7 @@ class ContentGenerator:
         next_topic_hint: str | None = None,
     ) -> VideoContent:
         channel_topics = list(getattr(self, "_channel_topics", []) or [])
-        channel_name = getattr(self, "_channel_name", "Para Pusulasi")
+        channel_name = getattr(self, "_channel_name", DEFAULT_CHANNEL_NAME)
         channel_dna_overrides = getattr(self, "_channel_dna_overrides", {})
         if next_topic_hint:
             next_hint = next_topic_hint
@@ -1248,7 +1258,7 @@ class ContentGenerator:
             next_hint = "Bir sonraki videoda yaygin bir hatayi adim adim duzeltecegiz"
         else:
             # Compatibility path for tests constructing generator via __new__.
-            next_hint = "Yatirim hatalarından nasil kacinilir"
+            next_hint = "Bir sonraki videoda yaygin bir hatayi adim adim duzeltecegiz"
         allow_market_language = self._active_channel_allows_market_language(topic_hint=topic)
 
         logger.info("Icerik uretiliyor: " + topic)
@@ -1426,6 +1436,10 @@ class ContentGenerator:
             channel_dna_metadata=channel_dna_metadata,
             quality_score_metadata=quality_score_metadata,
         )
+        try:
+            setattr(content, "channel_name", str(channel_name or "").strip() or DEFAULT_CHANNEL_NAME)
+        except Exception:
+            pass
         logger.info("Icerik hazir: " + content.title)
         return content
 

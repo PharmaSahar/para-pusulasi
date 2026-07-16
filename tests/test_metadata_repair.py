@@ -38,6 +38,19 @@ def test_ensure_minimum_tags_backfills_when_missing():
     assert "borsa" in [t.lower() for t in tags]
 
 
+def test_generic_metadata_fallback_tags_are_neutral():
+    tags = ensure_minimum_tags(title="Veri okuryazarligi rehberi", tags=["veri"], niche="", min_tags=8)
+    lowered = [t.lower() for t in tags]
+    assert "finans" not in lowered
+    assert "yatirim" not in lowered
+
+
+def test_finance_metadata_tags_preserve_explicit_finance_niche():
+    tags = ensure_minimum_tags(title="Borsa trend analizi", tags=["borsa"], niche="finans", min_tags=8)
+    lowered = [t.lower() for t in tags]
+    assert "finans" in lowered
+
+
 def test_normalize_metadata_improves_chapter_and_seo_signals():
     original = """Kisa aciklama\n\nBOLUMLER:\n00:00 Giris\n00:05 Hizli gecis\n00:08 Son"""
     normalized = normalize_metadata(

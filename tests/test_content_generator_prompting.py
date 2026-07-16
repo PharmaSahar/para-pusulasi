@@ -49,6 +49,16 @@ def test_system_prompt_falls_back_to_default_persona(monkeypatch):
     assert "Dogrulanamayan fiyat hedefi" in prompt
 
 
+def test_global_fallback_persona_has_no_finance_branding():
+    lowered = content_generator.CHANNEL_PERSONA.lower()
+    assert "para pusulasi" not in lowered
+    assert "kisisel finans" not in lowered
+    assert "yatirim" not in lowered
+    assert "borsa" not in lowered
+    assert "crypto" not in lowered
+    assert "kripto" not in lowered
+
+
 def test_non_finance_topic_prompt_avoids_market_claims():
     prompt = content_generator._build_topic_prompt(
         3,
@@ -64,6 +74,17 @@ def test_non_finance_topic_prompt_avoids_market_claims():
     assert "Saglik Pusulasi" in prompt
 
 
+def test_generic_topic_prompt_uses_neutral_default_channel_name():
+    prompt = content_generator._build_topic_prompt(
+        2,
+        [],
+        niche="saglik",
+        channel_topics=["beslenme", "uyku"],
+    )
+
+    assert content_generator.DEFAULT_CHANNEL_NAME in prompt
+
+
 def test_non_finance_content_prompt_uses_non_market_real_world_rule():
     prompt = content_generator._build_content_prompt(
         topic="Saglikli uyku duzeni",
@@ -77,6 +98,73 @@ def test_non_finance_content_prompt_uses_non_market_real_world_rule():
     assert "Türk finans YouTube kanalı" not in prompt
     assert "DOĞAL TÜRK FİNANS YOUTUBER'I TONU" not in prompt
     assert "enflasyon, kira, maaş baskısı" not in prompt
+
+
+def test_generic_content_prompt_uses_neutral_schema_examples():
+    prompt = content_generator._build_content_prompt(
+        topic="Saglikli uyku duzeni",
+        prev_title=None,
+        next_topic_hint="Stres yonetimi",
+        content_type="semi_evergreen",
+        niche="saglik",
+    )
+
+    assert "crypto trader phone night city" not in prompt
+    assert "teacher explaining whiteboard classroom" in prompt
+
+
+def test_finance_content_prompt_keeps_finance_schema_examples():
+    prompt = content_generator._build_content_prompt(
+        topic="BIST 100 teknik analiz",
+        prev_title=None,
+        next_topic_hint="Portfoy dagilimi",
+        content_type="semi_evergreen",
+        niche="kisisel_finans",
+    )
+
+    assert "crypto trader phone night city" in prompt
+
+
+def test_generic_narrative_pool_excludes_finance_specific_style(monkeypatch):
+    captured = []
+
+    def _capture(seq):
+        captured.append(list(seq))
+        return seq[0]
+
+    monkeypatch.setattr(content_generator.random, "choice", _capture)
+
+    content_generator._build_content_prompt(
+        topic="Saglikli uyku duzeni",
+        prev_title=None,
+        next_topic_hint="Stres yonetimi",
+        content_type="semi_evergreen",
+        niche="saglik",
+    )
+
+    narrative_pool = captured[1]
+    assert "VAKA ANALİZİ: Gerçek bir yatırımcının kararlarını adım adım incele" not in narrative_pool
+
+
+def test_finance_narrative_pool_retains_finance_specific_style(monkeypatch):
+    captured = []
+
+    def _capture(seq):
+        captured.append(list(seq))
+        return seq[0]
+
+    monkeypatch.setattr(content_generator.random, "choice", _capture)
+
+    content_generator._build_content_prompt(
+        topic="BIST 100 teknik analiz",
+        prev_title=None,
+        next_topic_hint="Portfoy dagilimi",
+        content_type="semi_evergreen",
+        niche="kisisel_finans",
+    )
+
+    narrative_pool = captured[1]
+    assert "VAKA ANALİZİ: Gerçek bir yatırımcının kararlarını adım adım incele" in narrative_pool
 
 
 def test_market_content_prompt_keeps_finance_identity():
@@ -318,6 +406,23 @@ def test_generate_video_content_does_not_fetch_extra_topics(monkeypatch):
 
     assert content.title == "Title"
     assert generator.client.messages.calls == 1
+
+
+def test_generic_video_content_seo_description_is_neutral_branding():
+    content = content_generator.VideoContent(
+        title="Uyku rutini",
+        description="Aciklama",
+        tags=["uyku", "rehber"],
+        script="script",
+        thumbnail_prompt="thumb",
+        category_id="27",
+        niche="saglik",
+    )
+
+    seo = content.seo_description()
+    lowered = seo.lower()
+    assert "para pusulasi" not in lowered
+    assert "uyku rutini | video rehberi" in lowered
 
 
 def test_generate_video_content_uses_niche_retry_guidance_after_mismatch(monkeypatch):

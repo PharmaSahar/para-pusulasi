@@ -50,7 +50,7 @@ class ShortsCreator:
     def __init__(self, channel_cfg=None):
         from .config import config as _cfg
         self.cfg = channel_cfg if channel_cfg else _cfg
-        self.channel_name = getattr(channel_cfg, "name", "Para Pusulasi") if channel_cfg else "Para Pusulasi"
+        self.channel_name = getattr(channel_cfg, "name", "Genel Kanal") if channel_cfg else "Genel Kanal"
         self.primary = tuple(getattr(channel_cfg, "color_primary", [212, 175, 55])[:3]) if channel_cfg else (212, 175, 55)
         self.bg = tuple(getattr(channel_cfg, "color_bg", [15, 25, 60])[:3]) if channel_cfg else (15, 25, 60)
         self.textclip_font = self._resolve_textclip_font()

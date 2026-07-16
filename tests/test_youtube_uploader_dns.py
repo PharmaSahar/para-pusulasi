@@ -338,6 +338,41 @@ def test_build_upload_description_validator_exception_fail_open(monkeypatch, tmp
     assert artifact_result["auto_fix_actions"] == ["validator_fail_open"]
 
 
+def test_uploader_generic_fallback_tags_are_neutral():
+    uploader = youtube_uploader.YouTubeUploader()
+    content = VideoContent(
+        title="Veri odakli karar alma",
+        description="desc",
+        tags=[],
+        script="script",
+        thumbnail_prompt="prompt",
+        category_id="27",
+        niche="",
+    )
+
+    tags = uploader._fallback_tags_from_content(content)  # noqa: SLF001
+    lowered = [t.lower() for t in tags]
+    assert "finans" not in lowered
+    assert "yatirim" not in lowered
+
+
+def test_uploader_finance_tags_preserve_explicit_finance_niche():
+    uploader = youtube_uploader.YouTubeUploader()
+    content = VideoContent(
+        title="Piyasa yorumu",
+        description="desc",
+        tags=[],
+        script="script",
+        thumbnail_prompt="prompt",
+        category_id="27",
+        niche="finans",
+    )
+
+    tags = uploader._fallback_tags_from_content(content)  # noqa: SLF001
+    lowered = [t.lower() for t in tags]
+    assert "finans" in lowered
+
+
 def test_upload_no_network_smoke_captures_preflight_description(monkeypatch, tmp_path: Path):
     request = _FakeRequest([(None, {"id": "video123"})])
     uploader = youtube_uploader.YouTubeUploader()

@@ -11,6 +11,20 @@ import base64
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+NEUTRAL_PLATFORM_NAME = "Parapusulasi"
+NEUTRAL_DALLE_STYLE_PREFIX = "Professional YouTube educational channel thumbnail background. "
+NEUTRAL_DALLE_STYLE_SUFFIX = "Turkish educational YouTube aesthetic."
+FINANCE_DALLE_STYLE_PREFIX = "Professional YouTube finance channel thumbnail background. "
+FINANCE_DALLE_STYLE_SUFFIX = "Turkish finance YouTube aesthetic."
+FINANCE_NICHES = {"kisisel_finans", "borsa", "kripto", "gayrimenkul"}
+
+
+def _is_explicit_finance_thumbnail_context(*, niche: str | None = None, style_context: str | None = None) -> bool:
+    normalized_niche = str(niche or "").strip().lower()
+    if normalized_niche:
+        return normalized_niche in FINANCE_NICHES
+    normalized_style = str(style_context or "").strip().lower()
+    return normalized_style in {"finance", "market", "market_finance", "finance_channel"}
 
 # .env'den değerleri yükle (import zamanında değil, çağrı zamanında)
 def _get_env(key: str) -> str:
@@ -37,17 +51,28 @@ def _get_env(key: str) -> str:
 # DALL-E 3 — AI Thumbnail Görseli
 # ══════════════════════════════════════════════════════════════
 
-def generate_dalle_thumbnail(prompt: str, output_path: str) -> str | None:
+def generate_dalle_thumbnail(
+    prompt: str,
+    output_path: str,
+    *,
+    niche: str | None = None,
+    style_context: str | None = None,
+) -> str | None:
     api_key = _get_env("OPENAI_API_KEY")
     if not api_key or not has_dalle():
         return None
     try:
+        finance_style = _is_explicit_finance_thumbnail_context(niche=niche, style_context=style_context)
+        style_prefix = FINANCE_DALLE_STYLE_PREFIX if finance_style else NEUTRAL_DALLE_STYLE_PREFIX
+        style_suffix = FINANCE_DALLE_STYLE_SUFFIX if finance_style else NEUTRAL_DALLE_STYLE_SUFFIX
+        style_context_text = f" Style context: {style_context}." if style_context else ""
         enhanced_prompt = (
-            f"Professional YouTube finance channel thumbnail background. "
+            f"{style_prefix}"
             f"{prompt}. "
             f"Ultra HD, dramatic lighting, vibrant colors, cinematic quality. "
             f"NO TEXT, NO WORDS, NO LETTERS in the image. "
-            f"Turkish finance YouTube aesthetic."
+            f"{style_suffix}"
+            f"{style_context_text}"
         )
         resp = requests.post(
             "https://api.openai.com/v1/images/generations",
@@ -268,7 +293,7 @@ def generate_heygen_video(
                     }
                 }],
                 "dimension": {"width": 1920, "height": 1080},
-                "title": title or "Para Pusulası Video",
+                "title": title or f"{NEUTRAL_PLATFORM_NAME} Video",
             },
             timeout=30,
         )

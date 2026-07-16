@@ -70,7 +70,7 @@ class PlaylistManager:
             if any(kw in title_lower for kw in keywords):
                 return playlist_name
         # Hicbir esleme yoksa genel playlist
-        return "Genel Finans Rehberi 2026"
+        return "Genel Bilgi Rehberi 2026"
 
     def _create_playlist(self, name: str) -> str:
         response = self.svc.playlists().insert(

@@ -26,6 +26,7 @@ from dotenv import dotenv_values
 from .channel_manager import resolve_allow_market_language
 
 logger = logging.getLogger("SchedulerUtils")
+STARTUP_BANNER_NAME = "Parapusulasi"
 CHANNEL_REGISTRY_PATH = Path("channels/channel_registry.json")
 ACTIVE_QUEUE_STATUSES = {"active", "restored"}
 QUARANTINE_TRAIL_PATH = Path("logs/queue_quarantine_decisions.jsonl")
@@ -1253,7 +1254,7 @@ def run_anthropic_preflight(model: str = "claude-opus-4-5") -> tuple[bool, str]:
 
 def notify_startup(active_channels: int):
     send_telegram(
-        f"🚀 <b>Para Pusulası Scheduler Başladı</b>\n"
+        f"🚀 <b>{STARTUP_BANNER_NAME} Scheduler Basladi</b>\n"
         f"📡 {active_channels} aktif kanal\n"
         f"💾 Boş disk: {get_free_disk_gb():.1f} GB"
     )

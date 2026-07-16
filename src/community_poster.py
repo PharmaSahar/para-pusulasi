@@ -34,7 +34,7 @@ def post_video_announcement(
             creds.refresh(Request())
         session = AuthorizedSession(creds)
 
-        channel_name = getattr(channel_cfg, "name", "Para Pusulasi")
+        channel_name = getattr(channel_cfg, "name", "Genel Kanal")
 
         comment_lines = [
             f"📌 Bu videoda ne ogrendim? Asagiya yorumunuzu yazin!",

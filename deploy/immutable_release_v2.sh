@@ -1240,6 +1240,7 @@ wait_for_service_health() {
   local pybin="$release_dir/venv/bin/python"
   local attempts="${IMMUTABLE_V2_HEALTH_LOOP_ATTEMPTS:-12}"
   local sleep_seconds="${IMMUTABLE_V2_HEALTH_LOOP_SLEEP_SECONDS:-5}"
+  local state_root
   local i
 
   if [[ "$DRY_RUN" == "true" ]]; then
@@ -1252,16 +1253,38 @@ wait_for_service_health() {
     return 0
   fi
 
+  state_root="$(prepare_preprod_state_root)"
+  mkdir -p "$state_root/state" "$state_root/telemetry" "$state_root/logs"
+
   for ((i=1; i<=attempts; i++)); do
     if systemctl is-active "$SERVICE_NAME" >/dev/null 2>&1; then
       if (
         cd "$release_dir" &&
         PREPROD_ISOLATION_MODE=true \
+        PREPROD_STATE_ROOT="$state_root" \
+        RUNTIME_OUTPUT_ROOT="$state_root" \
         SCHEDULE_ENABLED=false \
         UPLOAD_ENABLED=false \
         SHORTS_UPLOAD_ENABLED=false \
         LIVE_COLLECTOR_ENABLED=false \
         YOUTUBE_ANALYTICS_API_GO=false \
+        SCHEDULER_LOG_FILE="$state_root/logs/scheduler.log" \
+        SCHEDULER_QUEUE_FILE="$state_root/state/channel_queue.json" \
+        SCHEDULER_PID_FILE="$state_root/state/production_scheduler.pid" \
+        SCHEDULER_SINGLETON_LOCK_FILE="$state_root/state/scheduler_singleton.lock" \
+        SCHEDULER_SINGLETON_META_FILE="$state_root/state/scheduler_singleton_meta.json" \
+        RUNTIME_EVIDENCE_LATEST_FILE="$state_root/state/runtime_optimization_evidence_latest.json" \
+        SAFETY_GATE_LATEST_FILE="$state_root/state/production_safety_gate_latest.json" \
+        ACTIVATION_CONTROLLER_REPORT_PATH="$state_root/state/activation_controller_report.json" \
+        ACTIVATION_CONTROLLER_REPORT_ARCHIVE_DIR="$state_root/state/activation_reports" \
+        ACTIVATION_FLAGS_PATH="$state_root/state/learning_activation_flags.json" \
+        GOVERNANCE_REFRESH_LATEST_PATH="$state_root/state/governance_refresh_run_latest.json" \
+        GOVERNANCE_READINESS_MD_PATH="$state_root/state/governance_readiness_latest.md" \
+        PRODUCTION_DASHBOARD_JSON_PATH="$state_root/state/production_dashboard_latest.json" \
+        PRODUCTION_DASHBOARD_MD_PATH="$state_root/state/production_dashboard_latest.md" \
+        PRODUCTION_EVENTS_PATH="$state_root/telemetry/production_events.jsonl" \
+        PRODUCTION_OBSERVABILITY_LATEST_PATH="$state_root/telemetry/production_observability_latest.json" \
+        JOB_STORE_DB_PATH="$state_root/state/jobs.db" \
         "$pybin" scheduler.py --health-check
       ) >/dev/null 2>&1; then
         return 0

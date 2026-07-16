@@ -40,6 +40,19 @@ def _init_repo(
             "import os\n"
             "import sys\n"
             "if '--health-check' in sys.argv or '--startup-preflight' in sys.argv:\n"
+            "    capture_path = os.environ.get('CAPTURE_HEALTH_ENV_FILE')\n"
+            "    if capture_path:\n"
+            "        payload = {\n"
+            "            'cwd': os.getcwd(),\n"
+            "            'argv': sys.argv[1:],\n"
+            "            'PREPROD_ISOLATION_MODE': os.environ.get('PREPROD_ISOLATION_MODE', ''),\n"
+            "            'PREPROD_STATE_ROOT': os.environ.get('PREPROD_STATE_ROOT', ''),\n"
+            "            'RUNTIME_OUTPUT_ROOT': os.environ.get('RUNTIME_OUTPUT_ROOT', ''),\n"
+            "            'PRODUCTION_DASHBOARD_MD_PATH': os.environ.get('PRODUCTION_DASHBOARD_MD_PATH', ''),\n"
+            "            'ACTIVATION_CONTROLLER_REPORT_ARCHIVE_DIR': os.environ.get('ACTIVATION_CONTROLLER_REPORT_ARCHIVE_DIR', ''),\n"
+            "        }\n"
+            "        with open(capture_path, 'w', encoding='utf-8') as fh:\n"
+            "            json.dump(payload, fh, ensure_ascii=False, indent=2)\n"
             "    expected = os.environ.get('EXPECT_SCHEDULER_CWD')\n"
             "    if expected and os.getcwd() != expected:\n"
             "        sys.exit(19)\n"
@@ -1579,6 +1592,32 @@ def test_empty_lock_directory_does_not_block_cutover(tmp_path: Path) -> None:
     cut = _invoke(repo, sha, "cutover", env)
 
     assert cut.returncode == 0
+
+
+def test_cutover_health_loop_uses_preprod_isolation_contract(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    fakebin, _ = _fake_bin(tmp_path, active_service=True)
+    env = _base_env(layout, fakebin)
+    env.pop("IMMUTABLE_V2_SKIP_HEALTHCHECK")
+    env.pop("IMMUTABLE_V2_SKIP_RUNTIME_HEALTH_LOOP")
+    capture_file = tmp_path / "health_env.json"
+    env["CAPTURE_HEALTH_ENV_FILE"] = str(capture_file)
+
+    prep = _invoke(repo, sha, "prepare", env)
+    assert prep.returncode == 0
+
+    cut = _invoke(repo, sha, "cutover", env)
+    assert cut.returncode == 0
+
+    payload = json.loads(capture_file.read_text(encoding="utf-8"))
+    expected_state_root = layout["deploy_state"] / "preprod-health" / sha
+    assert payload["PREPROD_ISOLATION_MODE"] == "true"
+    assert payload["PREPROD_STATE_ROOT"] == str(expected_state_root)
+    assert payload["RUNTIME_OUTPUT_ROOT"] == str(expected_state_root)
+    assert payload["PRODUCTION_DASHBOARD_MD_PATH"] == str(expected_state_root / "state" / "production_dashboard_latest.md")
+    assert payload["ACTIVATION_CONTROLLER_REPORT_ARCHIVE_DIR"] == str(expected_state_root / "state" / "activation_reports")
+    assert payload["argv"][-1] == "--health-check"
 
 
 def test_wrapper_never_executes_automatically(tmp_path: Path) -> None:

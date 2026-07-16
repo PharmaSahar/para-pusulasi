@@ -96,6 +96,7 @@ Repository-discovered contract (read-only evidence from docs/scripts):
    - rollback target capture
    - atomic symlink replacement
    - bounded post-switch health loop
+   - post-switch health loop uses the same isolated preprod state root contract as prepare preflight (`PREPROD_ISOLATION_MODE=true` plus `PREPROD_STATE_ROOT` and the mutable path redirects required by scheduler preprod isolation)
 10. Rollback contract:
     - explicit rollback SHA required
     - atomic symlink restoration

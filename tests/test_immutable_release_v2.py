@@ -1238,6 +1238,69 @@ def test_atomic_symlink_switch_command_present_in_dry_run(tmp_path: Path) -> Non
     assert "mv -Tf" in (res.stderr + res.stdout)
 
 
+def test_cutover_defaults_auto_rollback_false(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    fakebin, _ = _fake_bin(tmp_path)
+    env = _base_env(layout, fakebin)
+
+    prep = _invoke(repo, sha, "prepare", env)
+    assert prep.returncode == 0
+
+    res = _invoke(repo, sha, "cutover", env, ["--dry-run"])
+
+    assert res.returncode == 0
+    assert "Cutover policy: AUTO_ROLLBACK=false" in (res.stderr + res.stdout)
+
+
+def test_usage_documents_auto_rollback_flag(tmp_path: Path) -> None:
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert "--auto-rollback" in text
+
+
+def test_cutover_dry_run_without_flag_only_prints_rollback_metadata(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    fakebin, _ = _fake_bin(tmp_path)
+    env = _base_env(layout, fakebin)
+
+    prep = _invoke(repo, sha, "prepare", env)
+    assert prep.returncode == 0
+
+    metadata_file = layout["deploy_state"] / "last_rollback_target.json"
+    assert not metadata_file.exists()
+
+    res = _invoke(repo, sha, "cutover", env, ["--dry-run"])
+
+    output = res.stderr + res.stdout
+    assert res.returncode == 0
+    assert "DRY-RUN: write rollback metadata" in output
+    assert "attempting automatic rollback" not in output
+    assert not metadata_file.exists()
+
+
+def test_cutover_dry_run_with_flag_still_performs_no_real_rollback(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    fakebin, _ = _fake_bin(tmp_path)
+    env = _base_env(layout, fakebin)
+
+    prep = _invoke(repo, sha, "prepare", env)
+    assert prep.returncode == 0
+
+    before = layout["current"].readlink()
+    metadata_file = layout["deploy_state"] / "last_rollback_target.json"
+
+    res = _invoke(repo, sha, "cutover", env, ["--auto-rollback", "--dry-run"])
+
+    output = res.stderr + res.stdout
+    assert res.returncode == 0
+    assert "Cutover policy: AUTO_ROLLBACK=true" in output
+    assert "attempting automatic rollback" not in output
+    assert layout["current"].readlink() == before
+    assert not metadata_file.exists()
+
+
 def test_service_restart_only_in_cutover_or_rollback(tmp_path: Path) -> None:
     repo, sha = _init_repo(tmp_path)
     layout = _runtime_layout(tmp_path)
@@ -1250,7 +1313,7 @@ def test_service_restart_only_in_cutover_or_rollback(tmp_path: Path) -> None:
     assert not log.exists() or "restart parapusulasi" not in log.read_text(encoding="utf-8")
 
 
-def test_post_cutover_failure_triggers_rollback(tmp_path: Path) -> None:
+def test_post_cutover_failure_without_flag_does_not_trigger_rollback(tmp_path: Path) -> None:
     repo, sha = _init_repo(tmp_path, health_ok=False)
     layout = _runtime_layout(tmp_path)
     fakebin, _ = _fake_bin(tmp_path, active_service=True)
@@ -1266,6 +1329,29 @@ def test_post_cutover_failure_triggers_rollback(tmp_path: Path) -> None:
     assert prep.returncode == 0
 
     cut = _invoke(repo, sha, "cutover", env)
+
+    assert cut.returncode != 0
+    assert layout["current"].resolve() == (layout["releases"] / sha).resolve()
+    assert not layout["lock_dir"].exists()
+    assert "Automatic rollback disabled; explicit rollback authorization required" in (cut.stderr + cut.stdout)
+
+
+def test_post_cutover_failure_with_auto_rollback_restores_previous_release(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path, health_ok=False)
+    layout = _runtime_layout(tmp_path)
+    fakebin, _ = _fake_bin(tmp_path, active_service=True)
+    env = _base_env(layout, fakebin)
+    env.pop("IMMUTABLE_V2_SKIP_HEALTHCHECK")
+    env["IMMUTABLE_V2_SKIP_HEALTHCHECK"] = "1"
+    env.pop("IMMUTABLE_V2_SKIP_RUNTIME_HEALTH_LOOP")
+    env["IMMUTABLE_V2_HEALTH_LOOP_ATTEMPTS"] = "1"
+    env["IMMUTABLE_V2_HEALTH_LOOP_SLEEP_SECONDS"] = "0"
+
+    before = layout["current"].readlink()
+    prep = _invoke(repo, sha, "prepare", env)
+    assert prep.returncode == 0
+
+    cut = _invoke(repo, sha, "cutover", env, ["--auto-rollback"])
 
     assert cut.returncode != 0
     assert layout["current"].readlink() == before
@@ -1289,6 +1375,131 @@ def test_rollback_restores_previous_release(tmp_path: Path) -> None:
 
     assert res.returncode == 0
     assert layout["current"].resolve() == layout["active"].resolve()
+
+
+def test_cutover_target_mismatch_without_flag_does_not_trigger_rollback(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    fakebin, _ = _fake_bin(tmp_path, active_service=True)
+    env = _base_env(layout, fakebin)
+
+    unexpected = tmp_path / "unexpected-target"
+    unexpected.mkdir(parents=True, exist_ok=True)
+    mv_count = tmp_path / "mv.count"
+    _write(
+        fakebin / "mv",
+        (
+            "#!/usr/bin/env bash\n"
+            "args=()\n"
+            "for a in \"$@\"; do\n"
+            "  [[ \"$a\" == \"-T\" || \"$a\" == \"-f\" || \"$a\" == \"-Tf\" ]] && continue\n"
+            "  args+=(\"$a\")\n"
+            "done\n"
+            "src=\"${args[0]}\"\n"
+            "dst=\"${args[1]}\"\n"
+            f"count_file='{mv_count}'\n"
+            "n=0\n"
+            "if [[ -f \"$count_file\" ]]; then n=$(cat \"$count_file\"); fi\n"
+            "n=$((n+1))\n"
+            "printf '%s' \"$n\" > \"$count_file\"\n"
+            f"if [[ \"$dst\" == \"{layout['current']}\" ]]; then\n"
+            "  if [[ \"$n\" -eq 1 ]]; then\n"
+            "    rm -f \"$dst\"\n"
+            f"    ln -s \"{unexpected}\" \"$dst\"\n"
+            "    rm -f \"$src\"\n"
+            "    exit 0\n"
+            "  fi\n"
+            "fi\n"
+            "python3 - \"$src\" \"$dst\" <<'PY'\n"
+            "import os, sys\n"
+            "os.replace(sys.argv[1], sys.argv[2])\n"
+            "PY\n"
+        ),
+    )
+    (fakebin / "mv").chmod(0o755)
+
+    prep = _invoke(repo, sha, "prepare", env)
+    assert prep.returncode == 0
+    if mv_count.exists():
+        mv_count.unlink()
+
+    cut = _invoke(repo, sha, "cutover", env)
+
+    assert cut.returncode != 0
+    assert layout["current"].resolve() == unexpected.resolve()
+    assert "Automatic rollback disabled; explicit rollback authorization required" in (cut.stderr + cut.stdout)
+
+
+def test_cutover_target_mismatch_with_auto_rollback_restores_previous_release(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    fakebin, _ = _fake_bin(tmp_path, active_service=True)
+    env = _base_env(layout, fakebin)
+
+    unexpected = tmp_path / "unexpected-target"
+    unexpected.mkdir(parents=True, exist_ok=True)
+    mv_count = tmp_path / "mv.count"
+    _write(
+        fakebin / "mv",
+        (
+            "#!/usr/bin/env bash\n"
+            "args=()\n"
+            "for a in \"$@\"; do\n"
+            "  [[ \"$a\" == \"-T\" || \"$a\" == \"-f\" || \"$a\" == \"-Tf\" ]] && continue\n"
+            "  args+=(\"$a\")\n"
+            "done\n"
+            "src=\"${args[0]}\"\n"
+            "dst=\"${args[1]}\"\n"
+            f"count_file='{mv_count}'\n"
+            "n=0\n"
+            "if [[ -f \"$count_file\" ]]; then n=$(cat \"$count_file\"); fi\n"
+            "n=$((n+1))\n"
+            "printf '%s' \"$n\" > \"$count_file\"\n"
+            f"if [[ \"$dst\" == \"{layout['current']}\" ]]; then\n"
+            "  if [[ \"$n\" -eq 1 ]]; then\n"
+            "    rm -f \"$dst\"\n"
+            f"    ln -s \"{unexpected}\" \"$dst\"\n"
+            "    rm -f \"$src\"\n"
+            "    exit 0\n"
+            "  fi\n"
+            "fi\n"
+            "python3 - \"$src\" \"$dst\" <<'PY'\n"
+            "import os, sys\n"
+            "os.replace(sys.argv[1], sys.argv[2])\n"
+            "PY\n"
+        ),
+    )
+    (fakebin / "mv").chmod(0o755)
+
+    before = layout["current"].readlink()
+    prep = _invoke(repo, sha, "prepare", env)
+    assert prep.returncode == 0
+    if mv_count.exists():
+        mv_count.unlink()
+
+    cut = _invoke(repo, sha, "cutover", env, ["--auto-rollback"])
+
+    assert cut.returncode != 0
+    assert layout["current"].readlink() == before
+
+
+def test_cutover_writes_rollback_metadata_file(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    fakebin, _ = _fake_bin(tmp_path)
+    env = _base_env(layout, fakebin)
+
+    prep = _invoke(repo, sha, "prepare", env)
+    assert prep.returncode == 0
+
+    cut = _invoke(repo, sha, "cutover", env)
+    assert cut.returncode == 0
+
+    metadata_file = layout["deploy_state"] / "last_rollback_target.json"
+    assert metadata_file.exists()
+    payload = json.loads(metadata_file.read_text(encoding="utf-8"))
+    assert payload["previous_target"].endswith(layout["active"].name)
+    assert payload["new_target"].endswith(sha)
 
 
 def test_rollback_failure_reported_clearly(tmp_path: Path) -> None:

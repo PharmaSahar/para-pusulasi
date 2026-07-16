@@ -1,6 +1,6 @@
 # IMMUTABLE RELEASE V2 RUNBOOK
 
-Status: IMPLEMENTED_NOT_DEPLOYED
+Status: IMPLEMENTED_NOT_EXECUTED
 
 ## 1) Architecture
 
@@ -10,6 +10,12 @@ Status: IMPLEMENTED_NOT_DEPLOYED
 - `prepare`: build immutable release directory for exact Git SHA
 - `cutover`: atomically switch `/opt/parapusulasi-current` and restart `parapusulasi`
 - `rollback`: atomically switch back to an explicit prior release SHA and restart `parapusulasi`
+
+Automatic rollback policy:
+
+- Default is disabled for cutover (`AUTO_ROLLBACK=false`).
+- Automatic rollback is enabled only with explicit `--auto-rollback`.
+- Rollback metadata capture remains standard cutover bookkeeping.
 
 The stable runtime contract is preserved:
 
@@ -143,6 +149,7 @@ deploy/immutable_release_v2.sh \
   --target-sha <full-sha> \
   --mode plan|prepare|cutover|rollback \
   [--rollback-sha <full-sha>] \
+   [--auto-rollback] \
   [--dry-run]
 ```
 
@@ -167,6 +174,13 @@ bash deploy/immutable_release_v2.sh \
   --target-sha 849fc57265395889fc23dde2986b21428ef03c6c \
   --mode cutover \
   --dry-run
+
+# Optional: enable automatic rollback for cutover
+bash deploy/immutable_release_v2.sh \
+   --target-ref origin/release/analytics-readonly-smoke-68529058 \
+   --target-sha 849fc57265395889fc23dde2986b21428ef03c6c \
+   --mode cutover \
+   --auto-rollback
 
 # Rollback to explicit SHA
 bash deploy/immutable_release_v2.sh \
@@ -248,7 +262,8 @@ If lock exists, cutover/rollback abort.
 
 ## 8) Auto-Rollback Behavior
 
-If cutover fails after switch attempt, V2 restores previous symlink target and restarts service.
+If cutover fails after switch attempt and `--auto-rollback` is enabled, V2 restores previous symlink target and restarts service.
+If cutover fails after switch attempt and `--auto-rollback` is not enabled, V2 does not perform automatic rollback and exits non-zero for explicit operator diagnosis.
 Failure remains non-zero and rollback metadata is preserved under deploy-state.
 
 ## 9) Failure Classes
@@ -315,6 +330,10 @@ bash deploy/immutable_release_v2.sh \
   --mode rollback \
   --rollback-sha 68529058e386661d19eaa2dfe510523d7c6cd47a
 ```
+
+Operational warning for no-auto-rollback cutover failures:
+
+- When cutover fails after symlink switch and `--auto-rollback` is not set, inspect active target and service state before deciding and authorizing a separate rollback command.
 
 ## 12) Explicit Non-Claims
 

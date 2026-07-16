@@ -23,6 +23,7 @@ TARGET_SHA=""
 ROLLBACK_SHA=""
 MODE=""
 DRY_RUN="false"
+AUTO_ROLLBACK="false"
 
 PREPARED_RELEASE=""
 ROLLBACK_TARGET_BEFORE_SWITCH=""
@@ -50,12 +51,14 @@ Usage:
     --target-sha <full-sha> \
     --mode plan|prepare|cutover|rollback \
     [--rollback-sha <full-sha>] \
+    [--auto-rollback] \
     [--dry-run]
 
 Notes:
 - This workflow never edits systemd unit/drop-in files.
 - This workflow never appends or edits .env content.
 - Service restart is allowed only in cutover and rollback modes.
+- Automatic rollback in cutover mode is disabled by default and requires --auto-rollback.
 EOF
 }
 
@@ -1099,9 +1102,11 @@ on_prepare_exit() {
 
 on_error_rollback() {
   local code="$1"
-  if [[ "$MODE" == "cutover" && -n "$ROLLBACK_TARGET_BEFORE_SWITCH" ]]; then
+  if [[ "$MODE" == "cutover" && "$AUTO_ROLLBACK" == "true" && -n "$ROLLBACK_TARGET_BEFORE_SWITCH" ]]; then
     log "Cutover failed, attempting automatic rollback to $ROLLBACK_TARGET_BEFORE_SWITCH"
     rollback_to_target "$ROLLBACK_TARGET_BEFORE_SWITCH" || true
+  elif [[ "$MODE" == "cutover" ]]; then
+    log "Automatic rollback disabled; explicit rollback authorization required"
   fi
   release_lock
   exit "$code"
@@ -1321,6 +1326,8 @@ mode_cutover() {
   active_target="$(capture_active_target)"
   ROLLBACK_TARGET_BEFORE_SWITCH="$active_target"
 
+  log "Cutover policy: AUTO_ROLLBACK=$AUTO_ROLLBACK"
+
   acquire_lock
   trap 'on_error_rollback $?' ERR
 
@@ -1329,7 +1336,13 @@ mode_cutover() {
   atomic_switch_symlink "$release_dir"
   restart_service_if_allowed "cutover"
   if ! wait_for_service_health "$release_dir"; then
-    rollback_to_target "$ROLLBACK_TARGET_BEFORE_SWITCH" || true
+    if [[ "$AUTO_ROLLBACK" == "true" ]]; then
+      rollback_to_target "$ROLLBACK_TARGET_BEFORE_SWITCH" || true
+    else
+      log "Automatic rollback disabled; explicit rollback authorization required"
+    fi
+    release_lock
+    trap - ERR
     die "Post-cutover health check failed"
   fi
 
@@ -1339,7 +1352,13 @@ mode_cutover() {
     now_target="$(canon_path "$release_dir")"
   fi
   if [[ "$now_target" != "$(canon_path "$release_dir")" ]]; then
-    rollback_to_target "$ROLLBACK_TARGET_BEFORE_SWITCH" || true
+    if [[ "$AUTO_ROLLBACK" == "true" ]]; then
+      rollback_to_target "$ROLLBACK_TARGET_BEFORE_SWITCH" || true
+    else
+      log "Automatic rollback disabled; explicit rollback authorization required"
+    fi
+    release_lock
+    trap - ERR
     die "Cutover target mismatch after switch"
   fi
 
@@ -1387,6 +1406,10 @@ parse_args() {
         ;;
       --dry-run)
         DRY_RUN="true"
+        shift
+        ;;
+      --auto-rollback)
+        AUTO_ROLLBACK="true"
         shift
         ;;
       --help|-h)

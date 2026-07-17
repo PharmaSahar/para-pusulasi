@@ -24,6 +24,7 @@ from .runtime_storage import (
     env_or_runtime_path,
     validate_runtime_write_path,
 )
+from .retry_policy import EXHAUSTED_RETRY, classify_retry_decision, compute_backoff_delay
 from .visual_diversity import topic_similarity
 
 
@@ -569,10 +570,24 @@ def run_stage_with_recovery(
             }
         except Exception as exc:
             last_error = exc
+            decision = classify_retry_decision(error_text=str(exc), exc=exc, stage=stage)
             if on_retry is not None:
                 on_retry(attempt, exc)
-            if attempt < max_attempts:
-                delay = float(base_backoff_seconds) * float(2 ** (attempt - 1))
+            if attempt < max_attempts and decision.retryable:
+                delay = compute_backoff_delay(base_delay_seconds=base_backoff_seconds, attempt=attempt, stage=stage)
+                record_production_event(
+                    {
+                        "event_type": "retry_scheduled",
+                        "timestamp": _now_iso(),
+                        "severity": "WARNING",
+                        "status": "scheduled",
+                        "reason": decision.reason_code,
+                        "operation": stage,
+                        "attempt": attempt,
+                        "source_component": "run_stage_with_recovery",
+                        "evidence": {"classification": decision.classification, "delay_seconds": delay},
+                    }
+                )
                 time.sleep(delay)
             else:
                 break
@@ -585,6 +600,19 @@ def run_stage_with_recovery(
         "ok": False,
         "error": str(last_error) if last_error else "unknown_error",
     }
+    record_production_event(
+        {
+            "event_type": "retry_exhausted",
+            "timestamp": _now_iso(),
+            "severity": "ERROR",
+            "status": "blocked",
+            "reason": EXHAUSTED_RETRY,
+            "operation": stage,
+            "attempt": max_attempts,
+            "source_component": "run_stage_with_recovery",
+            "evidence": failure,
+        }
+    )
     record_dead_letter(failure)
     if last_error is not None:
         raise last_error

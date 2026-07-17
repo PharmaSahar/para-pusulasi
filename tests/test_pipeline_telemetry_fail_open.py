@@ -7,7 +7,9 @@ from pathlib import Path
 import pytest
 
 import src.pipeline as pipeline
+import src.youtube_uploader as youtube_uploader
 import src.content_quality_guard as content_quality_guard
+from src.production_safety_gate import ProductionSafetyCheckResult, ProductionSafetyGateBlocked, ProductionSafetyGateResult
 
 
 @pytest.fixture(autouse=True)
@@ -152,6 +154,43 @@ class _FakeUploaderMissingId:
 
     def upload_video(self, video_path, content, thumbnail_path=None, privacy="public", publish_at=None):
         return ""
+
+    def get_channel_stats(self):
+        return {"subscribers": 0}
+
+
+class _FakeUploaderSafetyBlocked:
+    def __init__(self, channel_cfg=None):
+        pass
+
+    def upload_video(self, *args, **kwargs):
+        raise ProductionSafetyGateBlocked(
+            ProductionSafetyGateResult(
+                operation="upload",
+                channel_id="test_channel",
+                job_id="run_1",
+                allowed=False,
+                status="blocked",
+                blocking_reason="active_deployment_lock",
+                timestamp="2026-07-18T00:00:00+00:00",
+                release_sha="a" * 40,
+                checks=(
+                    ProductionSafetyCheckResult(
+                        check_name="active_deployment_lock",
+                        status="fail",
+                        severity="critical",
+                        reason_code="active_deployment_lock",
+                        message="blocked",
+                        timestamp="2026-07-18T00:00:00+00:00",
+                        release_sha="a" * 40,
+                        channel_id="test_channel",
+                        job_id="run_1",
+                        evidence={},
+                    ),
+                ),
+                evidence={},
+            )
+        )
 
     def get_channel_stats(self):
         return {"subscribers": 0}
@@ -837,3 +876,122 @@ def test_pipeline_telemetry_payload_contains_observability_metadata(monkeypatch,
     assert "audio_warning" in payload
     assert "analytics_warning" in payload
     assert payload.get("analytics_live_status") == "no_go_api_not_enabled"
+
+
+def test_pipeline_render_gate_blocks_before_artifacts(monkeypatch, tmp_path):
+    cfg = _FakeConfig(tmp_path)
+    marker = {"generated": 0}
+
+    def _block(**_kwargs):
+        raise ProductionSafetyGateBlocked(
+            ProductionSafetyGateResult(
+                operation="render",
+                channel_id="test_channel",
+                job_id="run_1",
+                allowed=False,
+                status="blocked",
+                blocking_reason="active_deployment_lock",
+                timestamp="2026-07-18T00:00:00+00:00",
+                release_sha="a" * 40,
+                checks=(),
+                evidence={},
+            )
+        )
+
+    class _NeverGenerator:
+        def __init__(self, channel_cfg=None):
+            self.model = "fake"
+
+        def generate_and_save(self, topic=None, additional_guidance=None):
+            marker["generated"] += 1
+            return _FakeContent()
+
+    monkeypatch.setattr(pipeline, "ensure_production_safety_gate", _block)
+    monkeypatch.setattr(pipeline, "ContentGenerator", _NeverGenerator)
+
+    with pytest.raises(ProductionSafetyGateBlocked):
+        pipeline.run_full_pipeline(topic="x", generate_only=False, channel_cfg=cfg)
+
+    assert marker["generated"] == 0
+
+
+def test_pipeline_upload_safety_block_emits_one_authoritative_event(monkeypatch, tmp_path):
+    cfg = _FakeConfig(tmp_path)
+
+    class _LargeVideoCreator(_FakeCreator):
+        def create_video(self, audio_path, title, image_paths=None, script=""):
+            video_path = Path(self.channel_cfg.videos_dir) / "fake_video.mp4"
+            video_path.parent.mkdir(parents=True, exist_ok=True)
+            video_path.write_bytes(b"0" * 100_001)
+            return str(video_path)
+
+    monkeypatch.setattr(pipeline, "ContentGenerator", _FakeGenerator)
+    monkeypatch.setattr(pipeline, "TTSEngine", _FakeTTS)
+    monkeypatch.setattr(pipeline, "ImageFetcher", _FakeFetcher)
+    monkeypatch.setattr(pipeline, "VideoCreator", _LargeVideoCreator)
+    monkeypatch.setattr(pipeline, "YouTubeUploader", youtube_uploader.YouTubeUploader)
+    monkeypatch.setattr(pipeline, "build_default_fact_provider", lambda: object())
+    monkeypatch.setattr(pipeline, "validate_script_factual_freshness", _fact_check_ok)
+    stage_events = []
+    prod_events = []
+    monkeypatch.setattr(pipeline, "emit_event", lambda envelope, logger=None: stage_events.append(envelope))
+    monkeypatch.setattr(pipeline, "record_production_event", lambda payload: prod_events.append(payload))
+    import src.production_safety_gate as production_safety_gate
+    monkeypatch.setattr(production_safety_gate, "record_production_event", lambda payload: prod_events.append(payload))
+    monkeypatch.setattr(pipeline, "evaluate_upload_precheck", lambda **_kwargs: {"status": "allow", "guard_reason_codes": [], "details": {}})
+    def _raise_upload_gate(**_kwargs):
+        prod_events.append(
+            {
+                "event_type": "production_safety_gate",
+                "status": "blocked",
+                "reason": "active_deployment_lock",
+            }
+        )
+        raise ProductionSafetyGateBlocked(
+            ProductionSafetyGateResult(
+                operation="upload",
+                channel_id="test_channel",
+                job_id="run_1",
+                allowed=False,
+                status="blocked",
+                blocking_reason="active_deployment_lock",
+                timestamp="2026-07-18T00:00:00+00:00",
+                release_sha="a" * 40,
+                checks=(
+                    ProductionSafetyCheckResult(
+                        check_name="active_deployment_lock",
+                        status="fail",
+                        severity="critical",
+                        reason_code="active_deployment_lock",
+                        message="blocked",
+                        timestamp="2026-07-18T00:00:00+00:00",
+                        release_sha="a" * 40,
+                        channel_id="test_channel",
+                        job_id="run_1",
+                        evidence={},
+                    ),
+                ),
+                evidence={},
+            )
+        )
+
+    monkeypatch.setattr(youtube_uploader, "ensure_production_safety_gate", _raise_upload_gate)
+    monkeypatch.setattr(pipeline, "append_performance_snapshot", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(pipeline, "update_production_observability_latest", lambda: {})
+    monkeypatch.setattr(pipeline, "write_production_evidence", lambda *_args, **_kwargs: Path(tmp_path / "evidence.json"))
+    monkeypatch.setattr(pipeline, "update_production_dashboard", lambda **_kwargs: None)
+
+    import src.shorts_creator as shorts_creator_module
+
+    monkeypatch.setattr(shorts_creator_module, "ShortsCreator", _FakeShortsCreator)
+
+    result = pipeline.run_full_pipeline(topic="x", generate_only=False, channel_cfg=cfg)
+
+    blocked_events = [event for event in prod_events if event.get("event_type") == "production_safety_gate"]
+    upload_quality_blocks = [event for event in prod_events if event.get("event_type") == "upload_quality_block"]
+    upload_stage_failed = [event for event in stage_events if event.get("event_type") == "stage_failed" and event.get("stage") == "upload"]
+
+    assert result["final_status"] == "blocked"
+    assert len(blocked_events) == 1
+    assert len(upload_quality_blocks) == 0
+    assert len(upload_stage_failed) == 0

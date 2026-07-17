@@ -41,6 +41,8 @@ from src.production_quality_platform import (
     record_dead_letter,
     update_production_dashboard,
 )
+from src.production_safety_gate import evaluate_production_safety_gate
+from src.retry_policy import classify_retry_decision
 from src.runtime_storage import runtime_path
 try:
     import fcntl
@@ -995,7 +997,8 @@ def render_and_schedule(channel_id: str):
                         setattr(e, "_scheduler_notify_sent", True)
                     raise
 
-                if getattr(e, "_skip_scheduler_pipeline_retry", False):
+                retry_decision = classify_retry_decision(error_text=error_text, exc=e, stage="scheduler_render")
+                if getattr(e, "_skip_scheduler_pipeline_retry", False) or not retry_decision.retryable:
                     raise
                 if attempt < 3:
                     wait = 30 * attempt
@@ -2204,14 +2207,43 @@ def _run_startup_preflight(*, skip_provider_preflight: bool):
     return startup_health, True, str(provider_detail or ""), ready, []
 
 
+def _evaluate_scheduler_startup_production_safety_gate(*, startup_health, ready_channels: list[str]) -> dict[str, Any]:
+    return evaluate_production_safety_gate(
+        operation="scheduler_startup",
+        startup_health=startup_health,
+        ready_channels=list(ready_channels or []),
+        queue_path=Path(QUEUE_FILE),
+        writable_paths=list(_collect_preprod_mutable_paths().values()),
+    ).to_dict()
+
+
+def _production_safety_gate_errors(payload: dict[str, Any] | None) -> list[str]:
+    if not payload or bool(payload.get("ok", True)):
+        return []
+
+    errors: list[str] = []
+    for item in list(payload.get("checks") or []):
+        if str(item.get("status") or "") != "fail":
+            continue
+        errors.append(
+            f"Production safety gate failed: {str(item.get('reason') or 'production_safety_gate_failed')}"
+        )
+    return errors or [
+        f"Production safety gate failed: {str(payload.get('blocking_reason') or 'unknown')}"
+    ]
+
+
 def _record_safety_gate_result(
     *,
     mode: str,
     startup_health,
     provider_preflight_ok: bool,
     provider_preflight_detail: str,
+    production_safety_gate_payload: dict[str, Any] | None = None,
 ) -> dict:
     health_errors = [str(item) for item in getattr(startup_health, "errors", ())]
+    gate_payload = dict(production_safety_gate_payload or {})
+    gate_ok = bool(gate_payload.get("ok", True))
     payload = {
         "generated_at": datetime.now(TZ).isoformat(),
         "mode": str(mode or "unknown"),
@@ -2219,7 +2251,10 @@ def _record_safety_gate_result(
         "health_check_errors": health_errors,
         "provider_preflight_ok": bool(provider_preflight_ok),
         "provider_preflight_detail": str(provider_preflight_detail or ""),
-        "overall_ok": bool(getattr(startup_health, "ok", False)) and bool(provider_preflight_ok),
+        "production_safety_gate_ok": gate_ok,
+        "production_safety_gate_blocking_reason": str(gate_payload.get("blocking_reason") or ""),
+        "production_safety_gate": gate_payload,
+        "overall_ok": bool(getattr(startup_health, "ok", False)) and bool(provider_preflight_ok) and gate_ok,
         "git_sha": _resolve_git_head_short(),
     }
     _write_json_atomic(SAFETY_GATE_LATEST_FILE, payload)
@@ -2248,11 +2283,19 @@ def run_safety_check_once(*, skip_provider_preflight: bool = False) -> int:
             skip_preflight=skip_provider_preflight,
         )
 
+    gate_payload = {"ok": False, "blocking_reason": "not_run_due_to_health_check_fail", "checks": []}
+    if startup_health.ok and provider_ok:
+        gate_payload = _evaluate_scheduler_startup_production_safety_gate(
+            startup_health=startup_health,
+            ready_channels=get_ready_channels(),
+        )
+
     payload = _record_safety_gate_result(
         mode="manual",
         startup_health=startup_health,
         provider_preflight_ok=provider_ok,
         provider_preflight_detail=provider_detail,
+        production_safety_gate_payload=gate_payload,
     )
 
     print(
@@ -2262,6 +2305,8 @@ def run_safety_check_once(*, skip_provider_preflight: bool = False) -> int:
                 "health_check_ok": payload["health_check_ok"],
                 "provider_preflight_ok": payload["provider_preflight_ok"],
                 "provider_preflight_detail": payload["provider_preflight_detail"],
+                "production_safety_gate_ok": payload["production_safety_gate_ok"],
+                "production_safety_gate_blocking_reason": payload["production_safety_gate_blocking_reason"],
                 "latest": str(SAFETY_GATE_LATEST_FILE),
             },
             ensure_ascii=False,
@@ -3376,13 +3421,21 @@ def main():
         startup_health, provider_ok, provider_detail, ready, errors = _run_startup_preflight(
             skip_provider_preflight=skip_provider_preflight,
         )
+        gate_payload = {"ok": False, "blocking_reason": "not_run_due_to_health_check_fail", "checks": []}
         if startup_health.ok and provider_ok and ready:
+            gate_payload = _evaluate_scheduler_startup_production_safety_gate(
+                startup_health=startup_health,
+                ready_channels=ready,
+            )
+        if startup_health.ok and provider_ok and ready and bool(gate_payload.get("ok", True)):
             print("Startup preflight: PASS")
             print(f"- ready_channels={len(ready)}")
             print(f"- provider_preflight={provider_detail}")
             return
         print("Startup preflight: FAIL")
         for error in errors:
+            print(f"- {error}")
+        for error in _production_safety_gate_errors(gate_payload):
             print(f"- {error}")
         sys.exit(1)
 
@@ -3464,14 +3517,24 @@ def main():
     startup_health, provider_ok, provider_detail, ready, errors = _run_startup_preflight(
         skip_provider_preflight=skip_provider_preflight,
     )
-    if not startup_health.ok or not provider_ok or not ready:
+    gate_payload = {"ok": False, "blocking_reason": "not_run_due_to_health_check_fail", "checks": []}
+    if startup_health.ok and provider_ok and ready:
+        gate_payload = _evaluate_scheduler_startup_production_safety_gate(
+            startup_health=startup_health,
+            ready_channels=ready,
+        )
+    if not startup_health.ok or not provider_ok or not ready or not bool(gate_payload.get("ok", True)):
         _record_safety_gate_result(
             mode="startup",
             startup_health=startup_health,
             provider_preflight_ok=provider_ok,
             provider_preflight_detail=provider_detail,
+            production_safety_gate_payload=gate_payload,
         )
         for error in errors:
+            logger.error("Startup validation failed: %s", error)
+            print(f"ERROR: {error}")
+        for error in _production_safety_gate_errors(gate_payload):
             logger.error("Startup validation failed: %s", error)
             print(f"ERROR: {error}")
         sys.exit(1)
@@ -3481,6 +3544,7 @@ def main():
         startup_health=startup_health,
         provider_preflight_ok=True,
         provider_preflight_detail=provider_detail,
+        production_safety_gate_payload=gate_payload,
     )
     logger.info("Startup provider preflight result: %s", provider_detail)
 

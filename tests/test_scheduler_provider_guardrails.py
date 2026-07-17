@@ -258,8 +258,44 @@ def test_render_and_schedule_skips_when_global_overload_pause_open(monkeypatch):
 
     scheduler.render_and_schedule("demo_channel")
 
-    assert called["pipeline"] == 0
-    assert called["notify"] == 1
+
+def test_render_and_schedule_skips_when_production_safety_gate_blocks(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_FAIL_OPEN_LOCAL_CONTENT", "0")
+    import src.channel_manager as channel_manager
+    import src.scheduler_utils as scheduler_utils
+    import src.pipeline as pipeline
+    from src.production_safety_gate import ProductionSafetyGateBlocked, ProductionSafetyGateResult
+
+    channel_cfg = SimpleNamespace(name="Demo Channel", upload_times=["10:00"])
+
+    monkeypatch.setattr(channel_manager, "get_channel", lambda _cid: channel_cfg)
+    monkeypatch.setattr(scheduler_utils, "notify_error", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(scheduler_utils, "force_cleanup", lambda: None)
+
+    called = {"pipeline": 0}
+
+    def _blocked_pipeline(**_kwargs):
+        called["pipeline"] += 1
+        raise ProductionSafetyGateBlocked(
+            ProductionSafetyGateResult(
+                operation="render",
+                channel_id="demo_channel",
+                job_id="run_1",
+                allowed=False,
+                status="blocked",
+                blocking_reason="active_deployment_lock",
+                timestamp="2026-07-18T00:00:00+00:00",
+                release_sha="a" * 40,
+                checks=(),
+                evidence={},
+            )
+        )
+
+    monkeypatch.setattr(pipeline, "run_full_pipeline", _blocked_pipeline)
+
+    scheduler.render_and_schedule("demo_channel")
+
+    assert called["pipeline"] == 1
 
 
 def test_render_and_schedule_quarantines_when_upload_precheck_blocked(monkeypatch, tmp_path):

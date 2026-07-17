@@ -157,10 +157,15 @@ def evaluate_upload_precheck(
     title: str,
     topic: str,
     script: str,
+    description: str | None = None,
+    tags: list[str] | None = None,
     script_path: str,
     video_path: str,
     thumbnail_path: str | None,
     manifest_path: str | Path,
+    duplicate_upload_detected: bool = False,
+    quarantine_state: str = "",
+    dry_run: bool = False,
     enabled: bool | None = None,
 ) -> dict[str, Any]:
     gate_enabled = _is_enabled(os.getenv("UPLOAD_PRECHECK_ENABLED", "true")) if enabled is None else bool(enabled)
@@ -204,6 +209,16 @@ def evaluate_upload_precheck(
     if tuple_mismatches:
         reason_codes.append("upload_precheck_tuple_mismatch")
         details["tuple_mismatches"] = tuple_mismatches
+
+    if dry_run:
+        details["dry_run"] = True
+
+    if duplicate_upload_detected:
+        reason_codes.append("upload_precheck_duplicate_upload_prevented")
+
+    if quarantine_state and quarantine_state not in {"", "allow", "clear"}:
+        reason_codes.append("upload_precheck_quarantine_state_blocked")
+        details["quarantine_state"] = quarantine_state
 
     if not _is_channel_scoped_path(channel_id=channel_id, path=video_path):
         reason_codes.append("upload_precheck_video_path_channel_scope_violation")
@@ -253,6 +268,30 @@ def evaluate_upload_precheck(
     _validate_artifact("video", video_path, required=True)
     _validate_artifact("thumbnail", thumbnail_path, required=True)
 
+    try:
+        video_size = Path(video_path).stat().st_size
+    except Exception:
+        video_size = 0
+    if video_size <= 0:
+        reason_codes.append("upload_precheck_video_empty")
+        details["video_size"] = video_size
+
+    if not str(title or "").strip():
+        reason_codes.append("upload_precheck_title_missing")
+    if description is not None and not str(description or "").strip():
+        reason_codes.append("upload_precheck_description_missing")
+    if tags is not None and not list(tags or []):
+        reason_codes.append("upload_precheck_tags_missing")
+
+    tag_tokens = [
+        str(tag).strip().lower().replace("#", "")
+        for tag in list(tags or [])
+        if str(tag).strip() and len(str(tag).strip().replace("#", "")) >= 3
+    ]
+    combined_text = " ".join([str(title or ""), str(topic or ""), str(script or ""), str(description or "")]).lower()
+    if tag_tokens and not any(token and token in combined_text for token in tag_tokens[:5]):
+        reason_codes.append("upload_precheck_metadata_consistency_failed")
+
     fit, fit_reasons = check_channel_topic_fit(
         topic=str(topic or ""),
         script=str(script or ""),
@@ -266,7 +305,7 @@ def evaluate_upload_precheck(
 
     policy = _load_policy()
     forbidden_hits = _forbidden_keyword_matches(
-        text=f"{title} {topic} {script}",
+        text=f"{title} {topic} {script} {description} {' '.join(list(tags or []))}",
         niche=str(niche or ""),
         policy=policy,
     )

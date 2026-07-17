@@ -9,6 +9,8 @@ from pathlib import Path
 from statistics import mean
 from typing import Any
 
+from .analytics_quality_guard import validate_performance_snapshot
+
 
 PERFORMANCE_SCHEMA_VERSION = "v1"
 DEFAULT_PERFORMANCE_PATH = Path("logs/channel_performance.jsonl")
@@ -113,6 +115,13 @@ def append_performance_snapshot(
 
     payload = dict(snapshot)
     payload.setdefault("created_at", datetime.now(timezone.utc).isoformat())
+
+    existing_rows = load_recent_performance_snapshots(history_path=path, lookback_days=60, max_items=5000)
+    validation = validate_performance_snapshot(payload, existing_rows=existing_rows)
+    if not validation.accepted:
+        raise ValueError(validation.reason_code)
+    if validation.duplicate:
+        return
 
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")

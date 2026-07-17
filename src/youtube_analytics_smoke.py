@@ -24,6 +24,11 @@ from google_auth_httplib2 import AuthorizedHttp
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+from .analytics_token_policy import (
+    TOKEN_SOURCE_ANALYTICS_PRIMARY,
+    TOKEN_SOURCE_NONE,
+    resolve_analytics_token_path,
+)
 from .channel_manager import get_channel
 
 
@@ -43,10 +48,6 @@ ALLOWED_METRICS = (
     "subscribersGained",
     "subscribersLost",
 )
-
-TOKEN_SOURCE_ANALYTICS_PRIMARY = "ANALYTICS_TOKEN_PRIMARY"
-TOKEN_SOURCE_NONE = "NONE"
-
 
 @dataclass(frozen=True, slots=True)
 class SmokeContext:
@@ -126,7 +127,13 @@ def _resolve_channel_context(channel_slug: str) -> SmokeContext:
     if not channel_id:
         raise ValueError("channel_mapping_error:missing_youtube_channel_id")
 
-    primary_token_path = Path(str(getattr(cfg, "youtube_analytics_token_path", "") or "").strip())
+    try:
+        primary_token_path = resolve_analytics_token_path(
+            channel_slug=channel_slug,
+            configured_path=str(getattr(cfg, "youtube_analytics_token_path", "") or "").strip() or None,
+        )
+    except RuntimeError as exc:
+        raise ValueError(f"channel_mapping_error:{exc}") from exc
     secrets_path = Path(str(getattr(cfg, "client_secrets_path", "") or "").strip())
     selected_token_path: Path | None = None
     selected_token_source = TOKEN_SOURCE_NONE

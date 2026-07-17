@@ -13,6 +13,7 @@ from googleapiclient.discovery import build
 import google.auth.transport.requests
 import requests as req_lib
 
+from .analytics_token_policy import NONCANONICAL_ANALYTICS_TOKEN_PATH, resolve_analytics_token_path
 from .config import config
 
 UPLOAD_SCOPES = [
@@ -42,9 +43,10 @@ def get_authenticated_service(channel_cfg=None):
 
 def get_authenticated_analytics_service(channel_cfg=None):
     """YouTube Analytics servisi döndür."""
+    token_path = _resolve_analytics_token_path(channel_cfg)
     credentials = _get_credentials(
         scopes=ANALYTICS_SCOPES,
-        token_path=_resolve_token_path(channel_cfg, ANALYTICS_TOKEN_PATH, "youtube_analytics_token_path"),
+        token_path=str(token_path),
         secrets_path=_resolve_secrets_path(channel_cfg),
         channel_cfg=channel_cfg,
         allow_oauth_flow=False,
@@ -59,6 +61,14 @@ def _resolve_token_path(channel_cfg, default_path: str, attr_name: str) -> str:
         if value:
             return value
     return default_path
+
+
+def _resolve_analytics_token_path(channel_cfg) -> Path:
+    channel_slug = str(getattr(channel_cfg, "channel_id", "") or "").strip()
+    configured_path = str(getattr(channel_cfg, "youtube_analytics_token_path", "") or "").strip()
+    if not channel_slug:
+        raise RuntimeError(NONCANONICAL_ANALYTICS_TOKEN_PATH)
+    return resolve_analytics_token_path(channel_slug=channel_slug, configured_path=configured_path or None)
 
 
 def _resolve_secrets_path(channel_cfg) -> str:

@@ -148,6 +148,24 @@ def test_missing_primary_token_does_not_use_uploader_fallback(monkeypatch, tmp_p
     assert loaded_paths == []
 
 
+def test_noncanonical_analytics_token_path_is_rejected_outside_isolation(monkeypatch, tmp_path):
+    cfg = _channel_config(tmp_path)
+    _patch_channel(monkeypatch, cfg)
+    monkeypatch.setenv("YOUTUBE_ANALYTICS_TOKEN_PATH", str(tmp_path / "release-local" / "youtube_analytics_token.pickle"))
+    monkeypatch.setenv("PYTEST_CURRENT_TEST", "")
+    monkeypatch.delenv("PREPROD_ISOLATION_MODE", raising=False)
+
+    report = smoke.run_read_only_smoke(
+        channel_slugs=["para_pusulasi"],
+        start_date="2026-07-01",
+        end_date="2026-07-07",
+        output_path=tmp_path / "smoke.json",
+    )
+
+    assert report["result_state"] == "CHANNEL_MAPPING_ERROR"
+    assert report["redacted_error"] == "channel_mapping_error:NONCANONICAL_ANALYTICS_TOKEN_PATH"
+
+
 def test_primary_token_selected_when_present(monkeypatch, tmp_path):
     cfg = _channel_config(tmp_path, analytics_token_exists=True, uploader_token_exists=True)
     _patch_channel(monkeypatch, cfg)

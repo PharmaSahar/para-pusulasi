@@ -8,16 +8,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .analytics_token_policy import canonical_analytics_token_root, resolve_analytics_token_path
+
 REGISTRY_PATH = "channels/channel_registry.json"
 CHANNELS_DIR = "channels"
-PERSISTENT_TOKEN_ROOT_ENV = "CHANNEL_TOKENS_ROOT"
-DEFAULT_PERSISTENT_TOKEN_ROOT = "/opt/parapusulasi-shared/tokens/channels"
 MARKET_LANGUAGE_NICHES = frozenset({"kisisel_finans", "borsa", "kripto", "gayrimenkul"})
-
-
-def _persistent_token_root() -> str:
-    root = str(os.getenv(PERSISTENT_TOKEN_ROOT_ENV, DEFAULT_PERSISTENT_TOKEN_ROOT) or "").strip()
-    return root.rstrip("/") or DEFAULT_PERSISTENT_TOKEN_ROOT
 
 
 def _normalize_bool(value: object) -> bool | None:
@@ -88,14 +83,14 @@ class ChannelConfig:
     client_secrets_path: str = ""
 
     def __post_init__(self):
-        token_root = _persistent_token_root()
         self.base_dir = f"{CHANNELS_DIR}/{self.channel_id}"
         self.output_dir = f"{self.base_dir}/output"
         self.scripts_dir = f"{self.base_dir}/output/scripts"
         self.audio_dir = f"{self.base_dir}/output/audio"
         self.videos_dir = f"{self.base_dir}/output/videos"
+        token_root = canonical_analytics_token_root()
         self.token_path = f"{token_root}/{self.channel_id}/youtube_token.pickle"
-        self.youtube_analytics_token_path = f"{token_root}/{self.channel_id}/youtube_analytics_token.pickle"
+        self.youtube_analytics_token_path = str(resolve_analytics_token_path(channel_slug=self.channel_id))
         self.client_secrets_path = f"{self.base_dir}/client_secrets.json"
 
         # .env dosyasindan API anahtarlarini yukle

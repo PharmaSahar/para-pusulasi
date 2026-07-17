@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from src import channel_manager
 
 
@@ -208,5 +210,29 @@ def test_get_channel_respects_channel_tokens_root_override(tmp_path, monkeypatch
 
     cfg = channel_manager.get_channel("saglik_pusulasi")
 
-    assert cfg.token_path == "/mnt/shared/tokens/saglik_pusulasi/youtube_token.pickle"
+    assert cfg.token_path == "/opt/parapusulasi-shared/tokens/channels/saglik_pusulasi/youtube_token.pickle"
     assert cfg.youtube_analytics_token_path == "/mnt/shared/tokens/saglik_pusulasi/youtube_analytics_token.pickle"
+
+
+def test_get_channel_rejects_noncanonical_channel_tokens_root_outside_isolation(tmp_path, monkeypatch):
+    registry = {
+        "channels": {
+            "saglik_pusulasi": {
+                "name": "Saglik Pusulasi",
+                "niche": "saglik",
+                "language": "tr",
+                "upload_times": ["10:30"],
+                "color_primary": [1, 2, 3],
+                "color_bg": [4, 5, 6],
+            }
+        }
+    }
+    registry_path = tmp_path / "channel_registry.json"
+    registry_path.write_text(json.dumps(registry, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr(channel_manager, "REGISTRY_PATH", str(registry_path))
+    monkeypatch.setenv("CHANNEL_TOKENS_ROOT", "/mnt/shared/tokens")
+    monkeypatch.setenv("PYTEST_CURRENT_TEST", "")
+    monkeypatch.delenv("PREPROD_ISOLATION_MODE", raising=False)
+
+    with pytest.raises(RuntimeError, match="NONCANONICAL_ANALYTICS_TOKEN_PATH"):
+        channel_manager.get_channel("saglik_pusulasi")

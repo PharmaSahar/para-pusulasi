@@ -24,6 +24,7 @@ PID_FILE = ROOT / "logs" / "production_scheduler.pid"
 LOG_FILE = ROOT / "logs" / "production_scheduler.out"
 SCHEDULER_LOG_FILE = ROOT / "logs" / "scheduler.log"
 EQUIVALENCE_ARTIFACT = ROOT / "logs" / "approved_governance_equivalence_latest.json"
+RELEASE_META_FILE = ROOT / ".immutable_release_metadata.json"
 APPROVED_COMMITS = (
     "f184062a5f33b8e2ab11257716e7c7215de5a622",
     "dbe543d8cf70beba2b07198c3fa9f371bf1a3305",
@@ -45,6 +46,26 @@ def _run(cmd: list[str]) -> tuple[int, str]:
 def _head_sha() -> str:
     rc, out = _run(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"])
     return out if rc == 0 and out else "unknown"
+
+
+def _release_basename() -> str:
+    try:
+        return ROOT.resolve().name
+    except Exception:
+        return "unknown"
+
+
+def _release_meta_sha() -> str:
+    if not RELEASE_META_FILE.exists():
+        return "unknown"
+    try:
+        payload = json.loads(RELEASE_META_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return "unknown"
+    value = str(payload.get("release_sha") or "").strip().lower()
+    if re.fullmatch(r"[0-9a-f]{40}", value):
+        return value
+    return "unknown"
 
 
 def _read_pid() -> int | None:
@@ -288,12 +309,17 @@ def main() -> int:
     pid = _read_pid()
     discovered_pids = _discover_scheduler_pids()
     head = _head_sha()
+    release_basename = _release_basename()
+    release_meta_sha = _release_meta_sha()
     build = _last_build_info()
     equivalence = _evaluate_governance_equivalence(head)
 
     result = {
         "canonical_root": str(ROOT),
         "head_sha": head,
+        "release_basename": release_basename,
+        "release_metadata_sha": release_meta_sha,
+        "release_metadata_path": str(RELEASE_META_FILE),
         "pid_file": str(PID_FILE),
         "pid": pid,
         "discovered_scheduler_pids": discovered_pids,
@@ -306,6 +332,9 @@ def main() -> int:
             "build_info_present": bool(build["line"]),
             "build_sha_matches_head": False,
             "governance_equivalence_proven": bool(equivalence.get("ok")),
+            "release_basename_matches_head": False,
+            "release_metadata_sha_matches_head": False,
+            "release_metadata_sha_matches_basename": False,
         },
         "build_info": build,
         "governance_equivalence": equivalence,
@@ -341,6 +370,15 @@ def main() -> int:
     if build.get("sha") and head != "unknown":
         result["checks"]["build_sha_matches_head"] = build["sha"] == head
 
+    if head != "unknown" and release_basename != "unknown":
+        result["checks"]["release_basename_matches_head"] = release_basename == head
+
+    if head != "unknown" and release_meta_sha != "unknown":
+        result["checks"]["release_metadata_sha_matches_head"] = release_meta_sha.startswith(head.lower())
+
+    if release_basename != "unknown" and release_meta_sha != "unknown":
+        result["checks"]["release_metadata_sha_matches_basename"] = release_meta_sha == release_basename
+
     required_checks = (
         "pid_present",
         "command_contains_scheduler",
@@ -348,6 +386,9 @@ def main() -> int:
         "build_info_present",
         "build_sha_matches_head",
         "governance_equivalence_proven",
+        "release_basename_matches_head",
+        "release_metadata_sha_matches_head",
+        "release_metadata_sha_matches_basename",
     )
     result["ok"] = all(bool(result["checks"].get(name)) for name in required_checks)
 

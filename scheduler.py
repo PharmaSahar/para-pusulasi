@@ -2147,6 +2147,7 @@ def _print_help() -> None:
     print("  python scheduler.py --governance-shadow-output-consistency-now # Governance shadow cikti tutarlilik kontrolunu calistir")
     print("  python scheduler.py --governance-shadow-diagnostic-summary-now # Governance shadow tanisal ozetini calistir")
     print("  python scheduler.py --governance-shadow-surface-parity-now # Governance shadow operator parity denetimini calistir")
+    print("  python scheduler.py --governance-shadow-coverage-audit-now # Governance shadow operator coverage denetimini calistir")
     print("  python scheduler.py --help   # Bu yardim metnini goster")
 
 
@@ -2363,6 +2364,7 @@ def run_governance_shadow_report_once() -> int:
 def _get_governance_shadow_operator_surfaces(
     *,
     include_surface_parity: bool = False,
+    include_coverage_audit: bool = False,
 ) -> tuple[tuple[str, Any, str | None, str | None, bool], ...]:
     surfaces: tuple[tuple[str, Any, str | None, str | None, bool], ...] = (
         ("report_builder_callable", _build_governance_shadow_readiness_report, None, None, False),
@@ -2409,6 +2411,16 @@ def _get_governance_shadow_operator_surfaces(
                 run_governance_shadow_surface_parity_once,
                 "--governance-shadow-surface-parity-now",
                 "Governance shadow surface parity:",
+                False,
+            ),
+        )
+    if include_coverage_audit:
+        surfaces += (
+            (
+                "coverage_audit_entrypoint_callable",
+                run_governance_shadow_coverage_audit_once,
+                "--governance-shadow-coverage-audit-now",
+                "Governance shadow coverage audit:",
                 False,
             ),
         )
@@ -2711,6 +2723,89 @@ def run_governance_shadow_surface_parity_once() -> int:
         print(f"- {name}={'PASS' if passed else 'FAIL'}")
     return 0 if ok else 1
 
+
+def _evaluate_governance_shadow_coverage_audit_checks(*, report: Any) -> list[tuple[str, bool]]:
+    checks: list[tuple[str, bool]] = []
+    all_surfaces = _get_governance_shadow_operator_surfaces(
+        include_surface_parity=True,
+        include_coverage_audit=True,
+    )
+    parity_surfaces = _get_governance_shadow_operator_surfaces(include_surface_parity=True)
+    expected_surface_names = (
+        "report_builder_callable",
+        "report_entrypoint_callable",
+        "selfcheck_entrypoint_callable",
+        "contract_validation_entrypoint_callable",
+        "output_consistency_entrypoint_callable",
+        "diagnostic_summary_entrypoint_callable",
+        "surface_parity_entrypoint_callable",
+        "coverage_audit_entrypoint_callable",
+    )
+    surface_names = tuple(name for name, _target, _flag, _prefix, _execute in all_surfaces)
+    parity_surface_names = tuple(name for name, _target, _flag, _prefix, _execute in parity_surfaces)
+
+    checks.extend(
+        _evaluate_governance_shadow_contract_checks(
+            report=report,
+            entrypoints={name: target for name, target, _flag, _prefix, _execute in all_surfaces},
+            include_field_types=True,
+        )
+    )
+    checks.append(("expected_surface_registry", surface_names == expected_surface_names))
+    checks.append(("duplicate_registration_absent", len(surface_names) == len(set(surface_names))))
+    checks.append(
+        (
+            "surface_registry_deterministic",
+            surface_names
+            == tuple(
+                name
+                for name, _target, _flag, _prefix, _execute in _get_governance_shadow_operator_surfaces(
+                    include_surface_parity=True,
+                    include_coverage_audit=True,
+                )
+            ),
+        )
+    )
+
+    help_buffer = io.StringIO()
+    with redirect_stdout(help_buffer):
+        _print_help()
+    help_output = help_buffer.getvalue()
+    for name, _target, flag, _prefix, _execute in all_surfaces:
+        if flag is None:
+            continue
+        checks.append((f"{name}_discoverable", help_output.count(flag) == 1))
+
+    parity_rc, parity_output = _run_governance_shadow_operator_surface(run_governance_shadow_surface_parity_once)
+    checks.append(("surface_parity_pass", parity_rc == 0))
+    checks.append(("surface_parity_summary_prefix_consistent", parity_output.startswith("Governance shadow surface parity:")))
+    checks.append(
+        (
+            "parity_covers_registered_surfaces",
+            all(f"- {name}=" in parity_output for name in parity_surface_names),
+        )
+    )
+
+    return checks
+
+
+def run_governance_shadow_coverage_audit_once() -> int:
+    """Run a deterministic operator coverage audit across governance shadow surfaces."""
+    checks: list[tuple[str, bool]] = []
+
+    try:
+        lookback_rows = max(1, int(os.getenv("GOVERNANCE_REFRESH_LOOKBACK_ROWS", "500") or "500"))
+        report = _build_governance_shadow_readiness_report(lookback_rows=lookback_rows)
+        checks.extend(_evaluate_governance_shadow_coverage_audit_checks(report=report))
+    except Exception as e:
+        checks.append((f"coverage_audit_exception:{e}", False))
+
+    ok = all(passed for _name, passed in checks)
+    print(f"Governance shadow coverage audit: {'PASS' if ok else 'FAIL'}")
+    for name, passed in checks:
+        print(f"- {name}={'PASS' if passed else 'FAIL'}")
+    return 0 if ok else 1
+
 def main():
     args = sys.argv[1:]
     skip_provider_preflight = "--skip-provider-preflight" in args
@@ -2779,6 +2874,9 @@ def main():
 
     if "--governance-shadow-surface-parity-now" in args:
         sys.exit(run_governance_shadow_surface_parity_once())
+
+    if "--governance-shadow-coverage-audit-now" in args:
+        sys.exit(run_governance_shadow_coverage_audit_once())
 
     if "--list" in args or "--status" in args:
         show_status()

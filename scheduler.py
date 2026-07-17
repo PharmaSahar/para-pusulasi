@@ -2353,8 +2353,12 @@ def run_governance_shadow_report_once() -> int:
     return 0
 
 
-def run_governance_shadow_selfcheck_once() -> int:
-    """Run a deterministic self-check for the governance shadow operator interface."""
+def _evaluate_governance_shadow_contract_checks(
+    *,
+    report: Any,
+    entrypoints: dict[str, Any] | None = None,
+    include_field_types: bool = False,
+) -> list[tuple[str, bool]]:
     expected_fields = {
         "report_version",
         "activation_state",
@@ -2364,30 +2368,87 @@ def run_governance_shadow_selfcheck_once() -> int:
         "warnings",
         "advisory_only",
     }
+    expected_field_types: dict[str, type] = {
+        "report_version": str,
+        "activation_state": str,
+        "diagnostics": dict,
+        "rollout_readiness": dict,
+        "summary": dict,
+        "warnings": list,
+        "advisory_only": bool,
+    }
+    checks: list[tuple[str, bool]] = []
+
+    for name, target in (entrypoints or {}).items():
+        checks.append((name, callable(target)))
+
+    report_is_dict = isinstance(report, dict)
+    checks.append(("report_is_dict", report_is_dict))
+
+    report_fields_ok = report_is_dict and expected_fields.issubset(report.keys())
+    checks.append(("expected_fields_present", report_fields_ok))
+
+    if include_field_types:
+        field_types_ok = report_is_dict and all(
+            isinstance(report.get(field), expected_type)
+            for field, expected_type in expected_field_types.items()
+        )
+        checks.append(("field_types_stable", field_types_ok))
+
+    advisory_only_ok = report_is_dict and report.get("advisory_only") is True
+    checks.append(("advisory_only_true", advisory_only_ok))
+
+    first_serialized = json.dumps(report, ensure_ascii=True, sort_keys=True)
+    second_serialized = json.dumps(report, ensure_ascii=True, sort_keys=True)
+    checks.append(("deterministic_serialization", first_serialized == second_serialized))
+    return checks
+
+
+def run_governance_shadow_selfcheck_once() -> int:
+    """Run a deterministic self-check for the governance shadow operator interface."""
     checks: list[tuple[str, bool]] = []
 
     try:
         lookback_rows = max(1, int(os.getenv("GOVERNANCE_REFRESH_LOOKBACK_ROWS", "500") or "500"))
-        checks.append(("report_entrypoint_callable", callable(run_governance_shadow_report_once)))
-        checks.append(("report_builder_callable", callable(_build_governance_shadow_readiness_report)))
-
         report = _build_governance_shadow_readiness_report(lookback_rows=lookback_rows)
-        checks.append(("report_is_dict", isinstance(report, dict)))
-
-        report_fields_ok = isinstance(report, dict) and expected_fields.issubset(report.keys())
-        checks.append(("expected_fields_present", report_fields_ok))
-
-        advisory_only_ok = bool((report or {}).get("advisory_only", False)) is True
-        checks.append(("advisory_only_true", advisory_only_ok))
-
-        first_serialized = json.dumps(report, ensure_ascii=True, sort_keys=True)
-        second_serialized = json.dumps(report, ensure_ascii=True, sort_keys=True)
-        checks.append(("deterministic_serialization", first_serialized == second_serialized))
+        checks = _evaluate_governance_shadow_contract_checks(
+            report=report,
+            entrypoints={
+                "report_entrypoint_callable": run_governance_shadow_report_once,
+                "report_builder_callable": _build_governance_shadow_readiness_report,
+            },
+        )
     except Exception as e:
         checks.append((f"selfcheck_exception:{e}", False))
 
     ok = all(passed for _name, passed in checks)
     print(f"Governance shadow self-check: {'PASS' if ok else 'FAIL'}")
+    for name, passed in checks:
+        print(f"- {name}={'PASS' if passed else 'FAIL'}")
+    return 0 if ok else 1
+
+
+def run_governance_shadow_contract_validation_once() -> int:
+    """Run a deterministic contract validation for the governance shadow operator interface."""
+    checks: list[tuple[str, bool]] = []
+
+    try:
+        lookback_rows = max(1, int(os.getenv("GOVERNANCE_REFRESH_LOOKBACK_ROWS", "500") or "500"))
+        report = _build_governance_shadow_readiness_report(lookback_rows=lookback_rows)
+        checks = _evaluate_governance_shadow_contract_checks(
+            report=report,
+            entrypoints={
+                "report_entrypoint_callable": run_governance_shadow_report_once,
+                "selfcheck_entrypoint_callable": run_governance_shadow_selfcheck_once,
+                "report_builder_callable": _build_governance_shadow_readiness_report,
+            },
+            include_field_types=True,
+        )
+    except Exception as e:
+        checks.append((f"contract_validation_exception:{e}", False))
+
+    ok = all(passed for _name, passed in checks)
+    print(f"Governance shadow contract validation: {'PASS' if ok else 'FAIL'}")
     for name, passed in checks:
         print(f"- {name}={'PASS' if passed else 'FAIL'}")
     return 0 if ok else 1
@@ -2448,6 +2509,9 @@ def main():
 
     if "--governance-shadow-selfcheck-now" in args:
         sys.exit(run_governance_shadow_selfcheck_once())
+
+    if "--governance-shadow-contract-validate-now" in args:
+        sys.exit(run_governance_shadow_contract_validation_once())
 
     if "--list" in args or "--status" in args:
         show_status()

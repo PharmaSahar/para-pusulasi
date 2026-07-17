@@ -1735,6 +1735,54 @@ def _run_governance_refresh_shadow(
         result["duration_ms"] = max(0, int((time.monotonic() - started) * 1000))
 
 
+def _evaluate_governance_shadow_diagnostics(
+    *,
+    lookback_rows: int,
+    activation: dict[str, Any] | None = None,
+    shadow_runner=None,
+) -> dict[str, Any]:
+    """Build deterministic informational diagnostics for governance shadow path."""
+    state = str((activation or {}).get("state") or "disabled")
+    enabled = bool((activation or {}).get("enabled", False))
+    diagnostics: dict[str, Any] = {
+        "activation_state": state,
+        "invoked": False,
+        "shadow_mode": True,
+        "wrapper_executed": False,
+        "success": False,
+        "fail_open": True,
+        "warning": "",
+        "duration_ms": 0,
+        "skipped_reason": "",
+    }
+
+    if not enabled:
+        if state in {"invalid_flag", "fail_open"}:
+            diagnostics["warning"] = state
+            diagnostics["skipped_reason"] = state
+        else:
+            diagnostics["skipped_reason"] = "disabled"
+        return diagnostics
+
+    diagnostics["wrapper_executed"] = True
+    try:
+        runner = shadow_runner or _run_governance_refresh_shadow
+        raw = runner(lookback_rows=lookback_rows)
+        if not isinstance(raw, dict):
+            diagnostics["warning"] = "shadow_malformed_result"
+            return diagnostics
+
+        diagnostics["invoked"] = bool(raw.get("invoked", False))
+        diagnostics["success"] = bool(raw.get("success", False))
+        diagnostics["fail_open"] = bool(raw.get("fail_open", True))
+        diagnostics["warning"] = str(raw.get("warning") or "")
+        diagnostics["duration_ms"] = max(0, int(raw.get("duration_ms", 0) or 0))
+        return diagnostics
+    except Exception as e:
+        diagnostics["warning"] = f"shadow_diagnostics_fail_open:{e}"
+        return diagnostics
+
+
 def governance_refresh_job():
     """Refresh governance artifacts and readiness markdown in one run."""
     if not GOVERNANCE_REFRESH_SCRIPT.exists():
@@ -1760,26 +1808,32 @@ def governance_refresh_job():
         )
 
     activation = _resolve_governance_shadow_activation()
-    activation_state = str(activation.get("state") or "disabled")
+    diagnostics = _evaluate_governance_shadow_diagnostics(
+        lookback_rows=lookback_rows,
+        activation=activation,
+    )
+    logger.info(
+        "Governance refresh shadow diagnostics: %s",
+        json.dumps(diagnostics, ensure_ascii=True, sort_keys=True),
+    )
 
-    if bool(activation.get("enabled", False)):
-        shadow = _run_governance_refresh_shadow(lookback_rows=lookback_rows)
-        if shadow.get("success"):
+    if diagnostics.get("wrapper_executed"):
+        if diagnostics.get("success"):
             logger.info(
                 "Governance refresh shadow completed: invoked=%s duration_ms=%s",
-                shadow.get("invoked"),
-                shadow.get("duration_ms"),
+                diagnostics.get("invoked"),
+                diagnostics.get("duration_ms"),
             )
         else:
             logger.warning(
                 "Governance refresh shadow fail-open: invoked=%s warning=%s duration_ms=%s",
-                shadow.get("invoked"),
-                shadow.get("warning"),
-                shadow.get("duration_ms"),
+                diagnostics.get("invoked"),
+                diagnostics.get("warning"),
+                diagnostics.get("duration_ms"),
             )
-    elif activation_state == "invalid_flag":
+    elif diagnostics.get("activation_state") == "invalid_flag":
         logger.warning("Governance refresh shadow disabled: invalid_flag")
-    elif activation_state == "fail_open":
+    elif diagnostics.get("activation_state") == "fail_open":
         logger.warning("Governance refresh shadow disabled: fail_open")
 
 

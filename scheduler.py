@@ -2151,6 +2151,7 @@ def _print_help() -> None:
     print("  python scheduler.py --governance-shadow-stability-audit-now # Governance shadow operator stabilite denetimini calistir")
     print("  python scheduler.py --governance-shadow-reproducibility-audit-now # Governance shadow operator yeniden-uretilebilirlik denetimini calistir")
     print("  python scheduler.py --governance-shadow-isolation-audit-now # Governance shadow operator izolasyon denetimini calistir")
+    print("  python scheduler.py --governance-shadow-determinism-audit-now # Governance shadow operator determinizm denetimini calistir")
     print("  python scheduler.py --help   # Bu yardim metnini goster")
 
 
@@ -2371,6 +2372,7 @@ def _get_governance_shadow_operator_surfaces(
     include_stability_audit: bool = False,
     include_reproducibility_audit: bool = False,
     include_isolation_audit: bool = False,
+    include_determinism_audit: bool = False,
 ) -> tuple[tuple[str, Any, str | None, str | None, bool], ...]:
     surfaces: tuple[tuple[str, Any, str | None, str | None, bool], ...] = (
         ("report_builder_callable", _build_governance_shadow_readiness_report, None, None, False),
@@ -2457,6 +2459,16 @@ def _get_governance_shadow_operator_surfaces(
                 run_governance_shadow_isolation_audit_once,
                 "--governance-shadow-isolation-audit-now",
                 "Governance shadow isolation audit:",
+                False,
+            ),
+        )
+    if include_determinism_audit:
+        surfaces += (
+            (
+                "determinism_audit_entrypoint_callable",
+                run_governance_shadow_determinism_audit_once,
+                "--governance-shadow-determinism-audit-now",
+                "Governance shadow determinism audit:",
                 False,
             ),
         )
@@ -3180,6 +3192,161 @@ def run_governance_shadow_isolation_audit_once() -> int:
         print(f"- {name}={'PASS' if passed else 'FAIL'}")
     return 0 if ok else 1
 
+
+def _evaluate_governance_shadow_determinism_audit_checks(*, report: Any) -> list[tuple[str, bool]]:
+    checks: list[tuple[str, bool]] = []
+    all_surfaces = _get_governance_shadow_operator_surfaces(
+        include_surface_parity=True,
+        include_coverage_audit=True,
+        include_stability_audit=True,
+        include_reproducibility_audit=True,
+        include_isolation_audit=True,
+        include_determinism_audit=True,
+    )
+    expected_surface_names = (
+        "report_builder_callable",
+        "report_entrypoint_callable",
+        "selfcheck_entrypoint_callable",
+        "contract_validation_entrypoint_callable",
+        "output_consistency_entrypoint_callable",
+        "diagnostic_summary_entrypoint_callable",
+        "surface_parity_entrypoint_callable",
+        "coverage_audit_entrypoint_callable",
+        "stability_audit_entrypoint_callable",
+        "reproducibility_audit_entrypoint_callable",
+        "isolation_audit_entrypoint_callable",
+        "determinism_audit_entrypoint_callable",
+    )
+    surface_names = tuple(name for name, _target, _flag, _prefix, _execute in all_surfaces)
+
+    checks.extend(
+        _evaluate_governance_shadow_contract_checks(
+            report=report,
+            entrypoints={name: target for name, target, _flag, _prefix, _execute in all_surfaces},
+            include_field_types=True,
+        )
+    )
+    checks.append(("expected_surface_registry", surface_names == expected_surface_names))
+    checks.append(("duplicate_registration_absent", len(surface_names) == len(set(surface_names))))
+    checks.append(
+        (
+            "surface_registry_deterministic",
+            surface_names
+            == tuple(
+                name
+                for name, _target, _flag, _prefix, _execute in _get_governance_shadow_operator_surfaces(
+                    include_surface_parity=True,
+                    include_coverage_audit=True,
+                    include_stability_audit=True,
+                    include_reproducibility_audit=True,
+                    include_isolation_audit=True,
+                    include_determinism_audit=True,
+                )
+            ),
+        )
+    )
+
+    help_buffer = io.StringIO()
+    with redirect_stdout(help_buffer):
+        _print_help()
+    help_output = help_buffer.getvalue()
+    for name, _target, flag, _prefix, _execute in all_surfaces:
+        if flag is None:
+            continue
+        checks.append((f"{name}_discoverable", help_output.count(flag) == 1))
+
+    parity_first_rc, parity_first_output = _run_governance_shadow_operator_surface(run_governance_shadow_surface_parity_once)
+    coverage_first_rc, coverage_first_output = _run_governance_shadow_operator_surface(run_governance_shadow_coverage_audit_once)
+    stability_first_rc, stability_first_output = _run_governance_shadow_operator_surface(run_governance_shadow_stability_audit_once)
+    reproducibility_first_rc, reproducibility_first_output = _run_governance_shadow_operator_surface(
+        run_governance_shadow_reproducibility_audit_once,
+    )
+    isolation_first_rc, isolation_first_output = _run_governance_shadow_operator_surface(
+        run_governance_shadow_isolation_audit_once,
+    )
+
+    parity_second_rc, parity_second_output = _run_governance_shadow_operator_surface(run_governance_shadow_surface_parity_once)
+    coverage_second_rc, coverage_second_output = _run_governance_shadow_operator_surface(run_governance_shadow_coverage_audit_once)
+    stability_second_rc, stability_second_output = _run_governance_shadow_operator_surface(run_governance_shadow_stability_audit_once)
+    reproducibility_second_rc, reproducibility_second_output = _run_governance_shadow_operator_surface(
+        run_governance_shadow_reproducibility_audit_once,
+    )
+    isolation_second_rc, isolation_second_output = _run_governance_shadow_operator_surface(
+        run_governance_shadow_isolation_audit_once,
+    )
+
+    checks.append(("surface_parity_first_pass", parity_first_rc == 0))
+    checks.append(("surface_parity_second_pass", parity_second_rc == 0))
+    checks.append(("coverage_audit_first_pass", coverage_first_rc == 0))
+    checks.append(("coverage_audit_second_pass", coverage_second_rc == 0))
+    checks.append(("stability_audit_first_pass", stability_first_rc == 0))
+    checks.append(("stability_audit_second_pass", stability_second_rc == 0))
+    checks.append(("reproducibility_audit_first_pass", reproducibility_first_rc == 0))
+    checks.append(("reproducibility_audit_second_pass", reproducibility_second_rc == 0))
+    checks.append(("isolation_audit_first_pass", isolation_first_rc == 0))
+    checks.append(("isolation_audit_second_pass", isolation_second_rc == 0))
+
+    checks.append(("surface_parity_output_deterministic", parity_first_output == parity_second_output))
+    checks.append(("coverage_audit_output_deterministic", coverage_first_output == coverage_second_output))
+    checks.append(("stability_audit_output_deterministic", stability_first_output == stability_second_output))
+    checks.append(
+        (
+            "reproducibility_audit_output_deterministic",
+            reproducibility_first_output == reproducibility_second_output,
+        )
+    )
+    checks.append(("isolation_audit_output_deterministic", isolation_first_output == isolation_second_output))
+    checks.append(
+        (
+            "structured_chain_output_deterministic",
+            (
+                parity_first_output,
+                coverage_first_output,
+                stability_first_output,
+                reproducibility_first_output,
+                isolation_first_output,
+            )
+            == (
+                parity_second_output,
+                coverage_second_output,
+                stability_second_output,
+                reproducibility_second_output,
+                isolation_second_output,
+            ),
+        )
+    )
+
+    checks.append(("surface_parity_registry_stable", "- surface_registry_deterministic=PASS" in parity_first_output))
+    checks.append(("coverage_audit_registry_stable", "- surface_registry_deterministic=PASS" in coverage_first_output))
+    checks.append(("stability_audit_registry_stable", "- surface_registry_deterministic=PASS" in stability_first_output))
+    checks.append(
+        (
+            "reproducibility_audit_registry_stable",
+            "- surface_registry_deterministic=PASS" in reproducibility_first_output,
+        )
+    )
+    checks.append(("isolation_audit_registry_stable", "- surface_registry_deterministic=PASS" in isolation_first_output))
+
+    return checks
+
+
+def run_governance_shadow_determinism_audit_once() -> int:
+    """Run a deterministic audit across the full governance shadow operator chain."""
+    checks: list[tuple[str, bool]] = []
+
+    try:
+        lookback_rows = max(1, int(os.getenv("GOVERNANCE_REFRESH_LOOKBACK_ROWS", "500") or "500"))
+        report = _build_governance_shadow_readiness_report(lookback_rows=lookback_rows)
+        checks.extend(_evaluate_governance_shadow_determinism_audit_checks(report=report))
+    except Exception as e:
+        checks.append((f"determinism_audit_exception:{e}", False))
+
+    ok = all(passed for _name, passed in checks)
+    print(f"Governance shadow determinism audit: {'PASS' if ok else 'FAIL'}")
+    for name, passed in checks:
+        print(f"- {name}={'PASS' if passed else 'FAIL'}")
+    return 0 if ok else 1
+
 def main():
     args = sys.argv[1:]
     skip_provider_preflight = "--skip-provider-preflight" in args
@@ -3260,6 +3427,9 @@ def main():
 
     if "--governance-shadow-isolation-audit-now" in args:
         sys.exit(run_governance_shadow_isolation_audit_once())
+
+    if "--governance-shadow-determinism-audit-now" in args:
+        sys.exit(run_governance_shadow_determinism_audit_once())
 
     if "--list" in args or "--status" in args:
         show_status()

@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 from .analytics_quality_guard import validate_performance_snapshot
 from .channel_manager import get_channel
+from .config import config as default_config
 from .pipeline import run_full_pipeline
 from .production_quality_platform import record_production_event
 from .production_readiness import run_production_health_check
@@ -47,15 +48,15 @@ def _build_runtime_health_config(cfg: Any) -> Any:
         scripts_dir=str(getattr(cfg, "scripts_dir", f"{base_dir}/output/scripts")),
         audio_dir=str(getattr(cfg, "audio_dir", f"{base_dir}/output/audio")),
         videos_dir=str(getattr(cfg, "videos_dir", f"{base_dir}/output/videos")),
-        assets_dir=str(getattr(cfg, "assets_dir", f"{base_dir}/assets")),
-        logs_dir=str(getattr(cfg, "logs_dir", "logs")),
+        assets_dir=str(getattr(cfg, "assets_dir", getattr(default_config, "assets_dir", "assets"))),
+        logs_dir=str(getattr(cfg, "logs_dir", getattr(default_config, "logs_dir", "logs"))),
         anthropic_api_key=str(getattr(cfg, "anthropic_api_key", "")),
         youtube_client_id=str(getattr(cfg, "youtube_client_id", "")),
         youtube_client_secret=str(getattr(cfg, "youtube_client_secret", "")),
         niche=str(getattr(cfg, "niche", "")),
         channel_language=str(getattr(cfg, "channel_language", getattr(cfg, "language", ""))),
         timezone="UTC",
-        ensure_directories=lambda: cfg.ensure_directories(),
+        ensure_directories=lambda: (default_config.ensure_directories(), cfg.ensure_directories()),
         validate=lambda: [
             key
             for key, value in {

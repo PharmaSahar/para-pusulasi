@@ -1144,7 +1144,7 @@ def recommend_operational_action(*, category: str, recoverability: Counter[str])
         return "preserve run/session lineage prospectively"
     if category == TaxonomyCategory.MISSING_OWNERSHIP_RECORD.value:
         return "retain ownership manifests for every uploaded content item"
-    if category == TaxonomyCategory.PERMANENTLY_UNRECOVERABLE.value:
+    if recoverability.get(RecoverabilityState.PERMANENTLY_UNRECOVERABLE.value):
         return "no action; proof is irretrievably absent"
     return "no automatic action; retain unresolved classification"
 

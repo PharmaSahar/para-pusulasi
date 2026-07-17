@@ -405,7 +405,7 @@ def test_existing_mismatched_release_rejected(tmp_path: Path) -> None:
     res = _invoke(repo, sha, "prepare", env)
 
     assert res.returncode != 0
-    assert "mismatch" in (res.stderr + res.stdout)
+    assert "FAIL_RELEASE_INTEGRITY" in (res.stderr + res.stdout)
 
 
 def test_staging_collision_rejected(tmp_path: Path) -> None:
@@ -997,6 +997,103 @@ def test_existing_prepared_release_is_left_untouched(tmp_path: Path) -> None:
     assert res.returncode == 0
     assert (release / "logs" / "release-sentinel.log").read_text(encoding="utf-8") == "keep\n"
     assert (release / "output" / "state" / "release-sentinel.json").read_text(encoding="utf-8") == "{}\n"
+
+
+def test_existing_release_without_git_identity_is_rejected(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    env["IMMUTABLE_V2_ENFORCE_GIT_RELEASE_IDENTITY"] = "1"
+
+    release = layout["releases"] / sha
+    release.mkdir(parents=True, exist_ok=True)
+    _write(release / ".immutable_release_metadata.json", json.dumps({"release_sha": sha}, ensure_ascii=False))
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode != 0
+    assert "FAIL_RELEASE_INTEGRITY" in (res.stderr + res.stdout)
+
+
+def test_existing_release_basename_sha_mismatch_is_rejected(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+
+    wrong_sha = "f" * 40
+    release = layout["releases"] / wrong_sha
+    release.mkdir(parents=True, exist_ok=True)
+    _write(release / ".immutable_release_metadata.json", json.dumps({"release_sha": sha}, ensure_ascii=False))
+
+    res = _invoke(repo, sha, "cutover", env)
+
+    assert res.returncode != 0
+    assert "Prepared release not found" in (res.stderr + res.stdout)
+
+
+def test_existing_git_release_head_mismatch_rejected(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    env["IMMUTABLE_V2_ENFORCE_GIT_RELEASE_IDENTITY"] = "1"
+
+    release = layout["releases"] / sha
+    release.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "clone", str(repo), str(release)], check=True, capture_output=True, text=True)
+    subprocess.run(["git", "checkout", "-b", "mutate-head"], cwd=release, check=True, capture_output=True, text=True)
+    _write(release / "head_mismatch.txt", "x\n")
+    subprocess.run(["git", "add", "head_mismatch.txt"], cwd=release, check=True)
+    subprocess.run(["git", "commit", "-m", "mutate head"], cwd=release, check=True, capture_output=True, text=True)
+    _write(release / ".immutable_release_metadata.json", json.dumps({"release_sha": sha}, ensure_ascii=False))
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode != 0
+    assert "FAIL_RELEASE_INTEGRITY" in (res.stderr + res.stdout)
+    assert "git HEAD" in (res.stderr + res.stdout)
+
+
+def test_existing_git_release_dirty_tree_rejected(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    env["IMMUTABLE_V2_ENFORCE_GIT_RELEASE_IDENTITY"] = "1"
+
+    release = layout["releases"] / sha
+    release.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "clone", str(repo), str(release)], check=True, capture_output=True, text=True)
+    subprocess.run(["git", "checkout", sha], cwd=release, check=True, capture_output=True, text=True)
+    _write(release / ".immutable_release_metadata.json", json.dumps({"release_sha": sha}, ensure_ascii=False))
+    _write(release / "dirty.txt", "dirty\n")
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode != 0
+    assert "FAIL_RELEASE_INTEGRITY" in (res.stderr + res.stdout)
+    assert "worktree dirty" in (res.stderr + res.stdout)
+
+
+def test_existing_git_release_missing_expected_commit_rejected(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    env["IMMUTABLE_V2_ENFORCE_GIT_RELEASE_IDENTITY"] = "1"
+
+    release = layout["releases"] / sha
+    release.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "-b", "master"], cwd=release, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.email", "tester@example.com"], cwd=release, check=True)
+    subprocess.run(["git", "config", "user.name", "Tester"], cwd=release, check=True)
+    _write(release / "README.md", "foreign\n")
+    subprocess.run(["git", "add", "README.md"], cwd=release, check=True)
+    subprocess.run(["git", "commit", "-m", "foreign"], cwd=release, check=True, capture_output=True, text=True)
+    _write(release / ".immutable_release_metadata.json", json.dumps({"release_sha": sha}, ensure_ascii=False))
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode != 0
+    assert "FAIL_RELEASE_INTEGRITY" in (res.stderr + res.stdout)
+    assert "git HEAD" in (res.stderr + res.stdout) or "expected commit object missing" in (res.stderr + res.stdout)
 
 
 def test_prepare_failure_cleans_invocation_owned_staging(tmp_path: Path) -> None:

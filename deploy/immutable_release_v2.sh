@@ -11,6 +11,7 @@ DEFAULT_DEPLOY_STATE_ROOT="/opt/parapusulasi/deploy-state"
 DEFAULT_SHARED_ROOT="/opt/parapusulasi-shared"
 DEFAULT_OPERATOR_ROOT="/opt/parapusulasi"
 DEFAULT_LOCK_DIR="/opt/parapusulasi/deploy.lock"
+DEFAULT_ENFORCE_GIT_RELEASE_IDENTITY="0"
 
 RELEASES_ROOT="${IMMUTABLE_V2_RELEASES_ROOT:-$DEFAULT_RELEASES_ROOT}"
 CURRENT_LINK="${IMMUTABLE_V2_CURRENT_LINK:-$DEFAULT_CURRENT_LINK}"
@@ -18,6 +19,7 @@ DEPLOY_STATE_ROOT="${IMMUTABLE_V2_DEPLOY_STATE_ROOT:-$DEFAULT_DEPLOY_STATE_ROOT}
 SHARED_ROOT="${IMMUTABLE_V2_SHARED_ROOT:-$DEFAULT_SHARED_ROOT}"
 OPERATOR_ROOT="${IMMUTABLE_V2_OPERATOR_ROOT:-$DEFAULT_OPERATOR_ROOT}"
 LOCK_DIR="${IMMUTABLE_V2_LOCK_DIR:-$DEFAULT_LOCK_DIR}"
+ENFORCE_GIT_RELEASE_IDENTITY="${IMMUTABLE_V2_ENFORCE_GIT_RELEASE_IDENTITY:-$DEFAULT_ENFORCE_GIT_RELEASE_IDENTITY}"
 MIN_FREE_KB="${IMMUTABLE_V2_MIN_FREE_KB:-1048576}"
 LOCK_DIR_PREEXISTED="false"
 
@@ -229,6 +231,59 @@ write_release_metadata() {
   "status": "prepared"
 }
 EOF
+}
+
+is_truthy() {
+  local raw
+  raw="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  [[ "$raw" == "1" || "$raw" == "true" || "$raw" == "yes" || "$raw" == "on" ]]
+}
+
+release_metadata_sha() {
+  local release_dir="$1"
+  local meta
+  meta="$(release_meta_path "$release_dir")"
+  [[ -f "$meta" ]] || return 1
+  python3 - <<PY
+import json
+from pathlib import Path
+p = Path('$meta')
+print(json.loads(p.read_text(encoding='utf-8')).get('release_sha', ''))
+PY
+}
+
+assert_release_integrity_contract() {
+  local release_dir="$1"
+  local expected_sha="$2"
+  local basename meta_sha
+  local head_sha status
+
+  [[ -d "$release_dir" ]] || die "FAIL_RELEASE_INTEGRITY: release directory missing: $release_dir"
+
+  basename="$(basename "$release_dir")"
+  [[ "$basename" == "$expected_sha" ]] || die "FAIL_RELEASE_INTEGRITY: release basename ($basename) != expected sha ($expected_sha)"
+
+  meta_sha="$(release_metadata_sha "$release_dir" || true)"
+  [[ -n "$meta_sha" ]] || die "FAIL_RELEASE_INTEGRITY: deployment manifest missing release_sha: $(release_meta_path "$release_dir")"
+  [[ "$meta_sha" == "$expected_sha" ]] || die "FAIL_RELEASE_INTEGRITY: deployment manifest sha ($meta_sha) != expected sha ($expected_sha)"
+
+  if git -C "$release_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    head_sha="$(git -C "$release_dir" rev-parse HEAD)"
+    [[ "$head_sha" == "$expected_sha" ]] || die "FAIL_RELEASE_INTEGRITY: release git HEAD ($head_sha) != expected sha ($expected_sha)"
+    [[ "$basename" == "$head_sha" ]] || die "FAIL_RELEASE_INTEGRITY: release basename ($basename) != release git HEAD ($head_sha)"
+
+    status="$(git -C "$release_dir" status --short)"
+    [[ -z "$status" ]] || die "FAIL_RELEASE_INTEGRITY: release git worktree dirty"
+
+    git -C "$release_dir" diff-index --quiet HEAD -- || die "FAIL_RELEASE_INTEGRITY: release has tracked modifications"
+    git -C "$release_dir" cat-file -e "$expected_sha^{commit}" >/dev/null 2>&1 || die "FAIL_RELEASE_INTEGRITY: expected commit object missing in release git object store"
+    git -C "$release_dir" merge-base --is-ancestor "$expected_sha" HEAD || die "FAIL_RELEASE_INTEGRITY: expected sha is not ancestor of release HEAD"
+    return 0
+  fi
+
+  if is_truthy "$ENFORCE_GIT_RELEASE_IDENTITY"; then
+    die "FAIL_RELEASE_INTEGRITY: release git identity missing for $release_dir"
+  fi
 }
 
 write_preflight_json() {
@@ -1001,26 +1056,14 @@ assert_prepared_release() {
   local release_dir
   release_dir="$(release_dir_for_sha "$TARGET_SHA")"
   [[ -d "$release_dir" ]] || die "Prepared release not found: $release_dir"
+  assert_release_integrity_contract "$release_dir" "$TARGET_SHA"
   [[ -f "$(preflight_json_path "$release_dir")" ]] || die "Prepared release missing preflight report"
 }
 
 verify_existing_release_identity_or_fail() {
   local release_dir="$1"
-  local meta
-  meta="$(release_meta_path "$release_dir")"
   if [[ -d "$release_dir" ]]; then
-    if [[ ! -f "$meta" ]]; then
-      die "Release exists but identity metadata is missing: $meta"
-    fi
-    local existing_sha
-    existing_sha="$(python3 - <<PY
-import json
-from pathlib import Path
-p=Path('$meta')
-print(json.loads(p.read_text(encoding='utf-8')).get('release_sha',''))
-PY
-)"
-    [[ "$existing_sha" == "$TARGET_SHA" ]] || die "Existing release mismatch: expected $TARGET_SHA got ${existing_sha:-<empty>}"
+    assert_release_integrity_contract "$release_dir" "$TARGET_SHA"
     PREPARED_RELEASE="$release_dir"
     return 0
   fi
@@ -1408,6 +1451,8 @@ mode_prepare() {
   else
     mv "$staging_dir" "$release_dir"
   fi
+  set_prepare_failure_phase "release_integrity_contract"
+  assert_release_integrity_contract "$release_dir" "$TARGET_SHA"
   PREPARE_FINALIZED="true"
   trap - EXIT
 
@@ -1418,6 +1463,7 @@ mode_cutover() {
   local release_dir active_target
   release_dir="$(release_dir_for_sha "$TARGET_SHA")"
   assert_prepared_release
+  assert_release_integrity_contract "$release_dir" "$TARGET_SHA"
   active_target="$(capture_active_target)"
   ROLLBACK_TARGET_BEFORE_SWITCH="$active_target"
 
@@ -1446,6 +1492,7 @@ mode_cutover() {
   if [[ "$DRY_RUN" == "true" ]]; then
     now_target="$(canon_path "$release_dir")"
   fi
+  assert_release_integrity_contract "$now_target" "$TARGET_SHA"
   if [[ "$now_target" != "$(canon_path "$release_dir")" ]]; then
     if [[ "$AUTO_ROLLBACK" == "true" ]]; then
       rollback_to_target "$ROLLBACK_TARGET_BEFORE_SWITCH" || true

@@ -39,6 +39,8 @@ def _write_payload(path: Path, payload: dict):
 def test_cutover_returns_nonzero_when_build_sha_mismatch(monkeypatch, capsys):
     _configure_common_mocks(monkeypatch)
     monkeypatch.setattr(cutover, "_head_sha", lambda: "fb518e9")
+    monkeypatch.setattr(cutover, "_release_basename", lambda: "fb518e9")
+    monkeypatch.setattr(cutover, "_release_meta_sha", lambda: "fb518e9aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
     monkeypatch.setattr(cutover, "_last_build_info", lambda: {
         "line": "BUILD_INFO scheduler git_sha=bc9e1c2",
         "sha": "bc9e1c2",
@@ -56,6 +58,8 @@ def test_cutover_returns_nonzero_when_build_sha_mismatch(monkeypatch, capsys):
 def test_cutover_returns_zero_when_required_checks_pass(monkeypatch, capsys):
     _configure_common_mocks(monkeypatch)
     monkeypatch.setattr(cutover, "_head_sha", lambda: "fb518e9")
+    monkeypatch.setattr(cutover, "_release_basename", lambda: "fb518e9")
+    monkeypatch.setattr(cutover, "_release_meta_sha", lambda: "fb518e9")
     monkeypatch.setattr(cutover, "_last_build_info", lambda: {
         "line": "BUILD_INFO scheduler git_sha=fb518e9",
         "sha": "fb518e9",
@@ -68,6 +72,45 @@ def test_cutover_returns_zero_when_required_checks_pass(monkeypatch, capsys):
     assert rc == 0
     assert payload["checks"]["build_sha_matches_head"] is True
     assert payload["ok"] is True
+
+
+def test_cutover_fails_when_release_basename_mismatch(monkeypatch, capsys):
+    _configure_common_mocks(monkeypatch)
+    monkeypatch.setattr(cutover, "_head_sha", lambda: "fb518e9")
+    monkeypatch.setattr(cutover, "_release_basename", lambda: "9de598f")
+    monkeypatch.setattr(cutover, "_release_meta_sha", lambda: "fb518e9aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    monkeypatch.setattr(cutover, "_last_build_info", lambda: {
+        "line": "BUILD_INFO scheduler git_sha=fb518e9",
+        "sha": "fb518e9",
+    })
+    monkeypatch.setattr(cutover, "_evaluate_governance_equivalence", lambda _head: {"ok": True})
+
+    rc = cutover.main()
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 1
+    assert payload["checks"]["release_basename_matches_head"] is False
+    assert payload["ok"] is False
+
+
+def test_cutover_fails_when_release_metadata_sha_missing(monkeypatch, capsys):
+    _configure_common_mocks(monkeypatch)
+    monkeypatch.setattr(cutover, "_head_sha", lambda: "fb518e9")
+    monkeypatch.setattr(cutover, "_release_basename", lambda: "fb518e9")
+    monkeypatch.setattr(cutover, "_release_meta_sha", lambda: "unknown")
+    monkeypatch.setattr(cutover, "_last_build_info", lambda: {
+        "line": "BUILD_INFO scheduler git_sha=fb518e9",
+        "sha": "fb518e9",
+    })
+    monkeypatch.setattr(cutover, "_evaluate_governance_equivalence", lambda _head: {"ok": True})
+
+    rc = cutover.main()
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 1
+    assert payload["checks"]["release_metadata_sha_matches_head"] is False
+    assert payload["checks"]["release_metadata_sha_matches_basename"] is False
+    assert payload["ok"] is False
 
 
 def test_exact_ancestry_passes_without_artifact(monkeypatch):

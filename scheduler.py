@@ -1838,6 +1838,128 @@ def _evaluate_governance_shadow_rollout_readiness(
     return readiness
 
 
+def _build_governance_shadow_readiness_report(
+    *,
+    lookback_rows: int,
+    activation: dict[str, Any] | None = None,
+    diagnostics: dict[str, Any] | None = None,
+    rollout_readiness: dict[str, Any] | None = None,
+    activation_resolver=None,
+    diagnostics_evaluator=None,
+    rollout_evaluator=None,
+) -> dict[str, Any]:
+    """Build an informational, deterministic shadow readiness report."""
+    warnings: list[str] = []
+
+    resolved_activation = activation
+    if not isinstance(resolved_activation, dict):
+        try:
+            resolver = activation_resolver or _resolve_governance_shadow_activation
+            resolved_activation = resolver()
+        except Exception as e:
+            resolved_activation = {"enabled": False, "state": "fail_open"}
+            warnings.append(f"activation_resolution_fail_open:{e}")
+    if not isinstance(resolved_activation, dict):
+        resolved_activation = {"enabled": False, "state": "fail_open"}
+        warnings.append("activation_malformed")
+
+    resolved_diagnostics = diagnostics
+    if not isinstance(resolved_diagnostics, dict):
+        try:
+            diag_eval = diagnostics_evaluator or _evaluate_governance_shadow_diagnostics
+            resolved_diagnostics = diag_eval(
+                lookback_rows=max(1, int(lookback_rows)),
+                activation=resolved_activation,
+            )
+        except Exception as e:
+            resolved_diagnostics = {
+                "activation_state": str((resolved_activation or {}).get("state") or "fail_open"),
+                "invoked": False,
+                "shadow_mode": True,
+                "wrapper_executed": False,
+                "success": False,
+                "fail_open": True,
+                "warning": f"shadow_diagnostics_fail_open:{e}",
+                "duration_ms": 0,
+                "skipped_reason": "fail_open",
+            }
+            warnings.append(f"diagnostics_evaluation_fail_open:{e}")
+    if not isinstance(resolved_diagnostics, dict):
+        resolved_diagnostics = {
+            "activation_state": str((resolved_activation or {}).get("state") or "fail_open"),
+            "invoked": False,
+            "shadow_mode": True,
+            "wrapper_executed": False,
+            "success": False,
+            "fail_open": True,
+            "warning": "diagnostics_malformed",
+            "duration_ms": 0,
+            "skipped_reason": "fail_open",
+        }
+        warnings.append("diagnostics_malformed")
+
+    resolved_rollout = rollout_readiness
+    if not isinstance(resolved_rollout, dict):
+        try:
+            rollout_eval = rollout_evaluator or _evaluate_governance_shadow_rollout_readiness
+            resolved_rollout = rollout_eval(
+                activation=resolved_activation,
+                diagnostics=resolved_diagnostics,
+            )
+        except Exception as e:
+            resolved_rollout = {
+                "readiness_state": "not_ready",
+                "activation_state": str((resolved_activation or {}).get("state") or "fail_open"),
+                "diagnostics_available": False,
+                "wrapper_available": False,
+                "policy_version": "a4.7.v1",
+                "ready": False,
+                "warning": f"rollout_readiness_fail_open:{e}",
+                "fail_open": True,
+            }
+            warnings.append(f"rollout_evaluation_fail_open:{e}")
+    if not isinstance(resolved_rollout, dict):
+        resolved_rollout = {
+            "readiness_state": "not_ready",
+            "activation_state": str((resolved_activation or {}).get("state") or "fail_open"),
+            "diagnostics_available": False,
+            "wrapper_available": False,
+            "policy_version": "a4.7.v1",
+            "ready": False,
+            "warning": "rollout_readiness_malformed",
+            "fail_open": True,
+        }
+        warnings.append("rollout_readiness_malformed")
+
+    diagnostics_warning = str((resolved_diagnostics or {}).get("warning") or "")
+    rollout_warning = str((resolved_rollout or {}).get("warning") or "")
+    warning_set = {item for item in warnings if item}
+    if diagnostics_warning:
+        warning_set.add(diagnostics_warning)
+    if rollout_warning:
+        warning_set.add(rollout_warning)
+    ordered_warnings = sorted(warning_set)
+
+    activation_state = str((resolved_activation or {}).get("state") or "disabled")
+    report: dict[str, Any] = {
+        "report_version": "a4.8.v1",
+        "activation_state": activation_state,
+        "diagnostics": resolved_diagnostics,
+        "rollout_readiness": resolved_rollout,
+        "summary": {
+            "activation_state": activation_state,
+            "ready": bool((resolved_rollout or {}).get("ready", False)),
+            "readiness_state": str((resolved_rollout or {}).get("readiness_state") or "not_ready"),
+            "fail_open": bool((resolved_diagnostics or {}).get("fail_open", True))
+            or bool((resolved_rollout or {}).get("fail_open", True)),
+            "warning_count": len(ordered_warnings),
+        },
+        "warnings": ordered_warnings,
+        "advisory_only": True,
+    }
+    return report
+
+
 def governance_refresh_job():
     """Refresh governance artifacts and readiness markdown in one run."""
     if not GOVERNANCE_REFRESH_SCRIPT.exists():
@@ -1878,6 +2000,16 @@ def governance_refresh_job():
     logger.info(
         "Governance refresh shadow rollout readiness: %s",
         json.dumps(rollout_readiness, ensure_ascii=True, sort_keys=True),
+    )
+    shadow_report = _build_governance_shadow_readiness_report(
+        lookback_rows=lookback_rows,
+        activation=activation,
+        diagnostics=diagnostics,
+        rollout_readiness=rollout_readiness,
+    )
+    logger.info(
+        "Governance refresh shadow readiness report: %s",
+        json.dumps(shadow_report, ensure_ascii=True, sort_keys=True),
     )
 
     if diagnostics.get("wrapper_executed"):

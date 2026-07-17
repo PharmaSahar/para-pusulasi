@@ -1648,6 +1648,76 @@ def optimization_runtime_cycle_job():
         logger.warning("Runtime optimization cycle failed: %s", e)
 
 
+def _run_governance_refresh_shadow(
+    *,
+    lookback_rows: int,
+    refresh_invoker=None,
+    timeout_seconds: int = 60,
+) -> dict[str, Any]:
+    """Run governance refresh in explicit shadow mode.
+
+    This wrapper is integration-local and always fail-open relative to scheduler flow.
+    """
+    started = time.monotonic()
+    result: dict[str, Any] = {
+        "invoked": False,
+        "shadow_mode": True,
+        "success": False,
+        "fail_open": True,
+        "warning": "shadow_not_run",
+        "duration_ms": 0,
+    }
+
+    try:
+        invoker = refresh_invoker
+        if invoker is None:
+            python_bin = sys.executable
+            command = [
+                python_bin,
+                str(GOVERNANCE_REFRESH_SCRIPT),
+                "--lookback-rows",
+                str(max(1, int(lookback_rows))),
+            ]
+
+            def _default_invoker(*, cmd: list[str], timeout: int) -> dict[str, Any]:
+                return _run_json_script(cmd, timeout_seconds=timeout)
+
+            invoker = _default_invoker
+        else:
+            command = [
+                sys.executable,
+                str(GOVERNANCE_REFRESH_SCRIPT),
+                "--lookback-rows",
+                str(max(1, int(lookback_rows))),
+            ]
+
+        result["invoked"] = True
+        raw = invoker(cmd=command, timeout=max(10, int(timeout_seconds)))
+        if not isinstance(raw, dict):
+            result["warning"] = "shadow_malformed_result"
+            return result
+
+        if bool(raw.get("timed_out", False)):
+            result["warning"] = "shadow_timeout"
+            return result
+
+        ok = bool(raw.get("ok", False))
+        result["success"] = ok
+        if ok:
+            result["warning"] = ""
+        else:
+            result["warning"] = str(raw.get("error") or raw.get("stderr_tail") or "shadow_refresh_failed")
+        return result
+    except ImportError as e:
+        result["warning"] = f"shadow_import_failure:{e}"
+        return result
+    except Exception as e:
+        result["warning"] = f"shadow_exception:{e}"
+        return result
+    finally:
+        result["duration_ms"] = max(0, int((time.monotonic() - started) * 1000))
+
+
 def governance_refresh_job():
     """Refresh governance artifacts and readiness markdown in one run."""
     if not GOVERNANCE_REFRESH_SCRIPT.exists():
@@ -1671,6 +1741,22 @@ def governance_refresh_job():
             result.get("return_code"),
             result.get("stderr_tail"),
         )
+
+    if _is_enabled(os.getenv("GOVERNANCE_REFRESH_SHADOW_MODE", "false")):
+        shadow = _run_governance_refresh_shadow(lookback_rows=lookback_rows)
+        if shadow.get("success"):
+            logger.info(
+                "Governance refresh shadow completed: invoked=%s duration_ms=%s",
+                shadow.get("invoked"),
+                shadow.get("duration_ms"),
+            )
+        else:
+            logger.warning(
+                "Governance refresh shadow fail-open: invoked=%s warning=%s duration_ms=%s",
+                shadow.get("invoked"),
+                shadow.get("warning"),
+                shadow.get("duration_ms"),
+            )
 
 
 def process_likes_job():

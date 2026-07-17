@@ -1783,6 +1783,61 @@ def _evaluate_governance_shadow_diagnostics(
         return diagnostics
 
 
+def _evaluate_governance_shadow_rollout_readiness(
+    *,
+    activation: dict[str, Any] | None = None,
+    diagnostics: dict[str, Any] | None = None,
+    wrapper_runner=None,
+    diagnostics_evaluator=None,
+) -> dict[str, Any]:
+    """Evaluate deterministic, advisory rollout readiness for governance shadow path."""
+    activation_state = str((activation or {}).get("state") or "disabled")
+    wrapper_callable = wrapper_runner if wrapper_runner is not None else _run_governance_refresh_shadow
+    diagnostics_callable = (
+        diagnostics_evaluator if diagnostics_evaluator is not None else _evaluate_governance_shadow_diagnostics
+    )
+    wrapper_available = callable(wrapper_callable)
+    diagnostics_available = callable(diagnostics_callable) and isinstance(diagnostics, dict)
+
+    readiness: dict[str, Any] = {
+        "readiness_state": "not_ready",
+        "activation_state": activation_state,
+        "diagnostics_available": diagnostics_available,
+        "wrapper_available": wrapper_available,
+        "policy_version": "a4.7.v1",
+        "ready": False,
+        "warning": "",
+        "fail_open": True,
+    }
+
+    if not wrapper_available:
+        readiness["warning"] = "wrapper_unavailable"
+        return readiness
+    if not diagnostics_available:
+        readiness["warning"] = "diagnostics_unavailable"
+        return readiness
+
+    if activation_state == "enabled":
+        wrapper_executed = bool((diagnostics or {}).get("wrapper_executed", False))
+        shadow_mode = bool((diagnostics or {}).get("shadow_mode", False))
+        ready = wrapper_executed and shadow_mode
+        readiness["ready"] = ready
+        readiness["readiness_state"] = "ready" if ready else "not_ready"
+        if not ready:
+            readiness["warning"] = str((diagnostics or {}).get("warning") or "enabled_without_wrapper_execution")
+        return readiness
+
+    if activation_state == "invalid_flag":
+        readiness["warning"] = "invalid_flag"
+    elif activation_state == "fail_open":
+        readiness["warning"] = "fail_open"
+    elif activation_state == "disabled":
+        readiness["warning"] = "activation_disabled"
+    else:
+        readiness["warning"] = "unknown_activation_state"
+    return readiness
+
+
 def governance_refresh_job():
     """Refresh governance artifacts and readiness markdown in one run."""
     if not GOVERNANCE_REFRESH_SCRIPT.exists():
@@ -1815,6 +1870,14 @@ def governance_refresh_job():
     logger.info(
         "Governance refresh shadow diagnostics: %s",
         json.dumps(diagnostics, ensure_ascii=True, sort_keys=True),
+    )
+    rollout_readiness = _evaluate_governance_shadow_rollout_readiness(
+        activation=activation,
+        diagnostics=diagnostics,
+    )
+    logger.info(
+        "Governance refresh shadow rollout readiness: %s",
+        json.dumps(rollout_readiness, ensure_ascii=True, sort_keys=True),
     )
 
     if diagnostics.get("wrapper_executed"):

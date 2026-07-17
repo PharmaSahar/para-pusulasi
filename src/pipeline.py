@@ -2857,5 +2857,21 @@ def run_full_pipeline(
     except Exception:
         pass
 
+    try:
+        from .canonical_runtime_analytics_shadow import run_pipeline_runtime_canonical_shadow
+
+        result["canonical_runtime_analytics_shadow"] = run_pipeline_runtime_canonical_shadow(
+            channel_id=str(result.get("channel") or ""),
+            content_id=str(result.get("content_id") or ""),
+            run_id=str(result.get("run_id") or ""),
+            video_id=str(result.get("video_id") or ""),
+        )
+    except Exception as exc:
+        logger.warning(
+            "Canonical runtime analytics shadow fail-open: run_id=%s error_type=%s",
+            result.get("run_id"),
+            exc.__class__.__name__,
+        )
+
     _refresh_observability_fields()
     return result

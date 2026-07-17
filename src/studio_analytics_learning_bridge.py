@@ -487,6 +487,29 @@ def _build_record_id(
     return "car_" + _sha("|".join(parts))[:24]
 
 
+def build_canonical_record_id(
+    *,
+    provider: str,
+    source_file_hash: str | None,
+    source_row_number: int,
+    youtube_video_id: str | None,
+    snapshot_start: str | None,
+    snapshot_end: str | None,
+    metrics_version: str,
+) -> str:
+    """Public stable seam for canonical analytics record id generation."""
+    resolved_provider = ProviderName(_safe_text(provider))
+    return _build_record_id(
+        provider=resolved_provider,
+        source_file_hash=source_file_hash,
+        source_row_number=source_row_number,
+        youtube_video_id=youtube_video_id,
+        snapshot_start=snapshot_start,
+        snapshot_end=snapshot_end,
+        metrics_version=metrics_version,
+    )
+
+
 def _build_metric_map(raw: dict[str, Any], mapping: dict[str, str]) -> dict[str, dict[str, Any]]:
     metrics: dict[str, dict[str, Any]] = {}
 
@@ -1001,6 +1024,12 @@ def _append_jsonl(path: Path, row: dict[str, Any]) -> None:
     payload = json.dumps(row, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
     with path.open("a", encoding="utf-8") as handle:
         handle.write(payload + "\n")
+
+
+def append_canonical_record_row(*, output_path: Path | str, row: dict[str, Any]) -> None:
+    """Public stable seam for deterministic canonical row append."""
+    normalized = validate_canonical_record(dict(row or {}))
+    _append_jsonl(Path(output_path), normalized)
 
 
 def import_records_append_only(

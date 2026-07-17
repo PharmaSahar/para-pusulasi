@@ -2456,6 +2456,13 @@ def run_governance_shadow_contract_validation_once() -> int:
     return 0 if ok else 1
 
 
+def _run_governance_shadow_operator_surface(target) -> tuple[int, str]:
+    buffer = io.StringIO()
+    with redirect_stdout(buffer):
+        rc = int(target())
+    return rc, buffer.getvalue()
+
+
 def run_governance_shadow_output_consistency_once() -> int:
     """Run a deterministic consistency verification across governance shadow operator interfaces."""
     checks: list[tuple[str, bool]] = []
@@ -2498,6 +2505,55 @@ def run_governance_shadow_output_consistency_once() -> int:
 
     ok = all(passed for _name, passed in checks)
     print(f"Governance shadow output consistency: {'PASS' if ok else 'FAIL'}")
+    for name, passed in checks:
+        print(f"- {name}={'PASS' if passed else 'FAIL'}")
+    return 0 if ok else 1
+
+
+def run_governance_shadow_diagnostic_summary_once() -> int:
+    """Run a deterministic diagnostic summary across governance shadow operator surfaces."""
+    checks: list[tuple[str, bool]] = []
+
+    try:
+        lookback_rows = max(1, int(os.getenv("GOVERNANCE_REFRESH_LOOKBACK_ROWS", "500") or "500"))
+        report = _build_governance_shadow_readiness_report(lookback_rows=lookback_rows)
+        checks.extend(
+            _evaluate_governance_shadow_contract_checks(
+                report=report,
+                entrypoints={
+                    "report_entrypoint_callable": run_governance_shadow_report_once,
+                    "selfcheck_entrypoint_callable": run_governance_shadow_selfcheck_once,
+                    "contract_validation_entrypoint_callable": run_governance_shadow_contract_validation_once,
+                    "output_consistency_entrypoint_callable": run_governance_shadow_output_consistency_once,
+                    "report_builder_callable": _build_governance_shadow_readiness_report,
+                },
+                include_field_types=True,
+            )
+        )
+
+        expected_report_output = json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
+        report_rc, report_output = _run_governance_shadow_operator_surface(run_governance_shadow_report_once)
+        selfcheck_rc, selfcheck_output = _run_governance_shadow_operator_surface(run_governance_shadow_selfcheck_once)
+        contract_rc, contract_output = _run_governance_shadow_operator_surface(run_governance_shadow_contract_validation_once)
+        consistency_rc, consistency_output = _run_governance_shadow_operator_surface(run_governance_shadow_output_consistency_once)
+
+        checks.append(("report_output_consistent", report_rc == 0 and report_output == expected_report_output))
+        checks.append(("selfcheck_pass", selfcheck_rc == 0))
+        checks.append(("contract_validation_pass", contract_rc == 0))
+        checks.append(("output_consistency_pass", consistency_rc == 0))
+        checks.append(
+            (
+                "summary_ordering_consistent",
+                selfcheck_output.startswith("Governance shadow self-check:")
+                and contract_output.startswith("Governance shadow contract validation:")
+                and consistency_output.startswith("Governance shadow output consistency:"),
+            )
+        )
+    except Exception as e:
+        checks.append((f"diagnostic_summary_exception:{e}", False))
+
+    ok = all(passed for _name, passed in checks)
+    print(f"Governance shadow diagnostic summary: {'PASS' if ok else 'FAIL'}")
     for name, passed in checks:
         print(f"- {name}={'PASS' if passed else 'FAIL'}")
     return 0 if ok else 1
@@ -2564,6 +2620,9 @@ def main():
 
     if "--governance-shadow-output-consistency-now" in args:
         sys.exit(run_governance_shadow_output_consistency_once())
+
+    if "--governance-shadow-diagnostic-summary-now" in args:
+        sys.exit(run_governance_shadow_diagnostic_summary_once())
 
     if "--list" in args or "--status" in args:
         show_status()

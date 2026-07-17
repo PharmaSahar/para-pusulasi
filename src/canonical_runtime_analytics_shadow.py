@@ -11,11 +11,13 @@ The path is explicitly fail-open and does not alter legacy runtime outputs.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
 from typing import Any
+
+from googleapiclient.errors import HttpError
 
 from .studio_analytics_learning_bridge import (
     CANONICAL_ANALYTICS_PATH,
@@ -29,7 +31,6 @@ from .studio_analytics_learning_bridge import (
     validate_canonical_record,
 )
 from .youtube_analytics_smoke import (
-    ALLOWED_METRICS,
     _build_service,
     _credentials_scope_ok,
     _load_credentials_read_only,
@@ -44,6 +45,18 @@ RUNTIME_COLLECTOR_SOURCE = "RuntimeShadowCollector"
 RUNTIME_SHADOW_FLAG = "CANONICAL_RUNTIME_ANALYTICS_SHADOW_ENABLED"
 RUNTIME_SHADOW_PATH_ENV = "CANONICAL_RUNTIME_ANALYTICS_PATH"
 RUNTIME_SHADOW_LOOKBACK_DAYS_ENV = "CANONICAL_RUNTIME_ANALYTICS_LOOKBACK_DAYS"
+RUNTIME_UPLOAD_REGISTRY_PATH_ENV = "UPLOAD_REGISTRY_PATH"
+
+# Keep runtime collector metrics limited to combinations proven compatible
+# for the video-filtered query path.
+RUNTIME_COLLECTOR_ALLOWED_METRICS = (
+    "views",
+    "estimatedMinutesWatched",
+    "averageViewDuration",
+    "averageViewPercentage",
+    "subscribersGained",
+    "subscribersLost",
+)
 
 
 @dataclass(frozen=True)
@@ -71,6 +84,107 @@ def _sha(text: str) -> str:
     import hashlib
 
     return hashlib.sha256(str(text or "").encode("utf-8")).hexdigest()
+
+
+def _parse_iso_date(value: str) -> date:
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError("invalid_date:empty")
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    return datetime.fromisoformat(text).date()
+
+
+def _resolve_upload_registry_path() -> Path | None:
+    explicit = str(os.getenv(RUNTIME_UPLOAD_REGISTRY_PATH_ENV, "")).strip()
+    candidates = [
+        explicit,
+        "output/runtime/state/production_upload_registry.json",
+        "state/production_upload_registry.json",
+        "/opt/parapusulasi-current/output/runtime/state/production_upload_registry.json",
+    ]
+    for raw in candidates:
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        path = Path(text)
+        if path.exists():
+            return path
+    return None
+
+
+def _resolve_earliest_valid_date(*, channel_id: str, video_id: str) -> str | None:
+    path = _resolve_upload_registry_path()
+    if path is None:
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+    entries = data.get("entries") if isinstance(data, dict) else {}
+    if not isinstance(entries, dict):
+        return None
+
+    candidates: list[date] = []
+    for payload in entries.values():
+        if not isinstance(payload, dict):
+            continue
+        if _safe_text(payload.get("channel")) != _safe_text(channel_id):
+            continue
+        if _safe_text(payload.get("video_id")) != _safe_text(video_id):
+            continue
+
+        for key in ("published_at", "publish_at", "registered_at"):
+            raw = _safe_text(payload.get(key))
+            if not raw:
+                continue
+            try:
+                candidates.append(_parse_iso_date(raw))
+            except Exception:
+                continue
+
+    if not candidates:
+        return None
+    return min(candidates).isoformat()
+
+
+def _resolve_effective_window(
+    *,
+    now_date: date,
+    requested_days: int,
+    earliest_valid_date: str | None,
+) -> tuple[str, str, int]:
+    clamped_days = max(1, min(7, int(requested_days)))
+    floor_start = now_date - timedelta(days=clamped_days - 1)
+
+    if _safe_text(earliest_valid_date):
+        try:
+            earliest = _parse_iso_date(_safe_text(earliest_valid_date))
+        except Exception:
+            earliest = floor_start
+    else:
+        earliest = floor_start
+
+    if earliest > now_date:
+        earliest = now_date
+
+    start = max(floor_start, earliest)
+    end = now_date
+    day_count = (end - start).days + 1
+    return start.isoformat(), end.isoformat(), day_count
+
+
+def _is_invalid_metric_combination_error(exc: Exception) -> bool:
+    text = str(exc or "")
+    if isinstance(exc, HttpError):
+        content = getattr(exc, "content", b"")
+        if isinstance(content, bytes):
+            text = f"{text} {content.decode('utf-8', errors='ignore')}"
+        else:
+            text = f"{text} {content}"
+    low = text.lower()
+    return ("unknown identifier" in low and "metrics" in low) or "parameters.metrics" in low
 
 
 def canonical_runtime_shadow_enabled() -> bool:
@@ -189,12 +303,15 @@ def collect_runtime_video_analytics(
     start_date: str,
     end_date: str,
     timeout_seconds: int = 15,
+    metrics: tuple[str, ...] | None = None,
 ) -> RuntimeCollectorResult:
     payload = {
         "channel_id": _safe_text(channel_id),
         "video_id": _safe_text(video_id),
         "start_date": None,
         "end_date": None,
+        "day_count": 0,
+        "requested_metrics": [],
         "returned_columns": [],
         "rows": [],
         "api_call_attempted": False,
@@ -206,6 +323,10 @@ def collect_runtime_video_analytics(
         start_iso, end_iso = _validate_date_window(start_date, end_date)
         payload["start_date"] = start_iso
         payload["end_date"] = end_iso
+        payload["day_count"] = (_parse_iso_date(end_iso) - _parse_iso_date(start_iso)).days + 1
+
+        requested_metrics = tuple(metrics or RUNTIME_COLLECTOR_ALLOWED_METRICS)
+        payload["requested_metrics"] = list(requested_metrics)
 
         if not _resolve_gate_enabled():
             return RuntimeCollectorResult(
@@ -259,7 +380,7 @@ def collect_runtime_video_analytics(
             ids="channel==MINE",
             startDate=start_iso,
             endDate=end_iso,
-            metrics=",".join(ALLOWED_METRICS),
+            metrics=",".join(requested_metrics),
             dimensions="video",
             filters=f"video=={_safe_text(video_id)}",
             maxResults=1,
@@ -279,7 +400,7 @@ def collect_runtime_video_analytics(
                 payload=payload,
             )
         for name in returned_columns[1:]:
-            if name not in ALLOWED_METRICS:
+            if name not in requested_metrics:
                 return RuntimeCollectorResult(
                     ok=False,
                     result_state="UNSUPPORTED_METRIC",
@@ -303,8 +424,17 @@ def collect_runtime_video_analytics(
         if not normalized_rows:
             return RuntimeCollectorResult(
                 ok=False,
-                result_state="EMPTY_RESPONSE",
-                error_class="EMPTY_RESPONSE",
+                result_state="TRUE_EMPTY_RESPONSE",
+                error_class="TRUE_EMPTY_RESPONSE",
+                redacted_error=None,
+                payload=payload,
+            )
+
+        if int(payload.get("day_count") or 0) < 7:
+            return RuntimeCollectorResult(
+                ok=True,
+                result_state="VALID_PARTIAL_WINDOW",
+                error_class=None,
                 redacted_error=None,
                 payload=payload,
             )
@@ -314,6 +444,22 @@ def collect_runtime_video_analytics(
             result_state="SUCCESS",
             error_class=None,
             redacted_error=None,
+            payload=payload,
+        )
+    except HttpError as exc:
+        if _is_invalid_metric_combination_error(exc):
+            return RuntimeCollectorResult(
+                ok=False,
+                result_state="INVALID_METRIC_COMBINATION",
+                error_class=exc.__class__.__name__,
+                redacted_error=_redact_error(exc),
+                payload=payload,
+            )
+        return RuntimeCollectorResult(
+            ok=False,
+            result_state="API_REQUEST_FAILED",
+            error_class=exc.__class__.__name__,
+            redacted_error=_redact_error(exc),
             payload=payload,
         )
     except Exception as exc:
@@ -477,6 +623,7 @@ def run_pipeline_runtime_canonical_shadow(
     video_id: str,
     now_utc: datetime | None = None,
     lookback_days: int | None = None,
+    earliest_valid_date: str | None = None,
     output_path: Path | str | None = None,
 ) -> dict[str, Any]:
     if not canonical_runtime_shadow_enabled():
@@ -498,15 +645,22 @@ def run_pipeline_runtime_canonical_shadow(
         }
 
     now = now_utc or datetime.now(timezone.utc)
-    days = lookback_days
-    if days is None:
+    requested_days = lookback_days
+    if requested_days is None:
         try:
-            days = max(1, int(os.getenv(RUNTIME_SHADOW_LOOKBACK_DAYS_ENV, "7")))
+            requested_days = int(os.getenv(RUNTIME_SHADOW_LOOKBACK_DAYS_ENV, "7"))
         except ValueError:
-            days = 7
+            requested_days = 7
 
-    end_date = now.date().isoformat()
-    start_date = (now - timedelta(days=max(1, int(days)) - 1)).date().isoformat()
+    resolved_earliest = _safe_text(earliest_valid_date) or _resolve_earliest_valid_date(
+        channel_id=channel,
+        video_id=video,
+    )
+    start_date, end_date, day_count = _resolve_effective_window(
+        now_date=now.date(),
+        requested_days=max(1, min(7, int(requested_days))),
+        earliest_valid_date=resolved_earliest or None,
+    )
 
     collection = collect_runtime_video_analytics(
         channel_id=channel,
@@ -520,6 +674,10 @@ def run_pipeline_runtime_canonical_shadow(
             "result_state": collection.result_state,
             "error_class": collection.error_class,
             "redacted_error": collection.redacted_error,
+            "start_date": start_date,
+            "end_date": end_date,
+            "day_count": day_count,
+            "api_row_count": len(list(collection.payload.get("rows") or [])),
             "advisory_only": True,
             "pipeline_output_changed": False,
         }
@@ -539,6 +697,10 @@ def run_pipeline_runtime_canonical_shadow(
             "result_state": collection.result_state,
             "api_call_attempted": bool(collection.payload.get("api_call_attempted")),
             "api_call_succeeded": bool(collection.payload.get("api_call_succeeded")),
+            "start_date": start_date,
+            "end_date": end_date,
+            "day_count": day_count,
+            "api_row_count": len(list(collection.payload.get("rows") or [])),
         },
         "writer": write_report,
         "record_id": record.get("analytics_record_id"),

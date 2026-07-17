@@ -20,30 +20,35 @@ class _FakeCreds:
 
 
 class _FakeQuery:
-    def __init__(self, response: dict):
+    def __init__(self, response: dict, error: Exception | None = None):
         self._response = response
+        self._error = error
 
     def execute(self, num_retries=0):
         assert num_retries == 0
+        if self._error is not None:
+            raise self._error
         return self._response
 
 
 class _FakeReports:
-    def __init__(self, response: dict):
+    def __init__(self, response: dict, error: Exception | None = None):
         self._response = response
+        self._error = error
 
     def query(self, **kwargs):
         assert kwargs["ids"] == "channel==MINE"
         assert kwargs["dimensions"] == "video"
-        return _FakeQuery(self._response)
+        return _FakeQuery(self._response, self._error)
 
 
 class _FakeService:
-    def __init__(self, response: dict):
+    def __init__(self, response: dict, error: Exception | None = None):
         self._response = response
+        self._error = error
 
     def reports(self):
-        return _FakeReports(self._response)
+        return _FakeReports(self._response, self._error)
 
 
 def _mock_success_collection(monkeypatch, tmp_path: Path) -> None:
@@ -62,12 +67,10 @@ def _mock_success_collection(monkeypatch, tmp_path: Path) -> None:
             {"name": "estimatedMinutesWatched"},
             {"name": "averageViewDuration"},
             {"name": "averageViewPercentage"},
-            {"name": "impressions"},
-            {"name": "impressionClickThroughRate"},
             {"name": "subscribersGained"},
             {"name": "subscribersLost"},
         ],
-        "rows": [["vid_1", 1000, 600.0, 120.0, 62.5, 9000, 0.08, 12, 2]],
+        "rows": [["vid_1", 1000, 600.0, 120.0, 62.5, 12, 2]],
     }
     monkeypatch.setattr(shadow, "_build_service", lambda credentials, timeout_seconds: _FakeService(response))
 
@@ -112,6 +115,59 @@ def test_collect_runtime_video_analytics_rejects_unsupported_metric(monkeypatch,
 
     assert result.ok is False
     assert result.result_state == "UNSUPPORTED_METRIC"
+
+
+def test_collect_runtime_video_analytics_valid_partial_window(monkeypatch, tmp_path: Path):
+    _mock_success_collection(monkeypatch, tmp_path)
+
+    result = shadow.collect_runtime_video_analytics(
+        channel_id="para_pusulasi",
+        video_id="vid_1",
+        start_date="2026-07-16",
+        end_date="2026-07-16",
+    )
+
+    assert result.ok is True
+    assert result.result_state == "VALID_PARTIAL_WINDOW"
+    assert result.payload["day_count"] == 1
+
+
+def test_collect_runtime_video_analytics_true_empty_response(monkeypatch, tmp_path: Path):
+    token = tmp_path / "youtube_analytics_token.pickle"
+    token.write_bytes(b"x")
+
+    monkeypatch.setattr(shadow, "_resolve_gate_enabled", lambda: True)
+    monkeypatch.setattr(shadow, "_resolve_channel_context", lambda channel_slug: _FakeContext(token))
+    monkeypatch.setattr(shadow, "_load_credentials_read_only", lambda token_path: _FakeCreds())
+    monkeypatch.setattr(shadow, "_credentials_scope_ok", lambda credentials: True)
+    monkeypatch.setattr(
+        shadow,
+        "_build_service",
+        lambda credentials, timeout_seconds: _FakeService(
+            {
+                "columnHeaders": [
+                    {"name": "video"},
+                    {"name": "views"},
+                    {"name": "estimatedMinutesWatched"},
+                    {"name": "averageViewDuration"},
+                    {"name": "averageViewPercentage"},
+                    {"name": "subscribersGained"},
+                    {"name": "subscribersLost"},
+                ],
+                "rows": [],
+            }
+        ),
+    )
+
+    result = shadow.collect_runtime_video_analytics(
+        channel_id="para_pusulasi",
+        video_id="vid_1",
+        start_date="2026-07-10",
+        end_date="2026-07-16",
+    )
+
+    assert result.ok is False
+    assert result.result_state == "TRUE_EMPTY_RESPONSE"
 
 
 def test_deterministic_record_id(monkeypatch, tmp_path: Path):
@@ -253,6 +309,20 @@ def test_shadow_execution_runtime_compatibility(monkeypatch, tmp_path: Path):
 
     assert report["status"] == "shadow_collect_failed"
     assert report["result_state"] == "API_NOT_ENABLED"
+
+
+def test_resolve_effective_window_uses_available_days(monkeypatch):
+    now = datetime.fromisoformat("2026-07-17T12:00:00+00:00")
+
+    start, end, day_count = shadow._resolve_effective_window(
+        now_date=now.date(),
+        requested_days=7,
+        earliest_valid_date="2026-07-16",
+    )
+
+    assert start == "2026-07-16"
+    assert end == "2026-07-17"
+    assert day_count == 2
 
 
 def test_bridge_public_record_id_seam_is_deterministic() -> None:

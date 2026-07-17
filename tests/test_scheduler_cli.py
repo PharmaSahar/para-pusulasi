@@ -47,7 +47,18 @@ def test_scheduler_help_exits_successfully(monkeypatch, capsys):
 
     out = capsys.readouterr().out
     assert "Kullanim:" in out
+    assert "python scheduler.py --governance-shadow-report-now" in out
+    assert "Governance shadow readiness raporunu goster" in out
     assert "python scheduler.py --help" in out
+
+
+def test_scheduler_help_lists_shadow_report_flag_before_help(monkeypatch, capsys):
+    monkeypatch.setattr(scheduler.sys, "argv", ["scheduler.py", "--help"])
+
+    scheduler.main()
+
+    out = capsys.readouterr().out
+    assert out.index("python scheduler.py --governance-shadow-report-now") < out.index("python scheduler.py --help")
 
 
 def test_scheduler_help_does_not_start_scheduler(monkeypatch):

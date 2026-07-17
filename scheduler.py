@@ -2139,6 +2139,7 @@ def _print_help() -> None:
     print("  python scheduler.py --sync-analytics-now # Canli YouTube Analytics sync ve optimizasyonu calistir")
     print("  python scheduler.py --run-optimization-cycle-now # Controller+Fleet+Backlog+Memory runtime kanit dongusu")
     print("  python scheduler.py --refresh-governance-now # P0/P1 metrics+bundle+readiness raporunu yenile")
+    print("  python scheduler.py --governance-shadow-report-now # Governance shadow readiness raporunu goster")
     print("  python scheduler.py --help   # Bu yardim metnini goster")
 
 

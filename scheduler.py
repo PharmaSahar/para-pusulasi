@@ -2339,6 +2339,18 @@ def run_governance_refresh_once() -> int:
     )
     return 0 if latest.exists() else 1
 
+
+def run_governance_shadow_report_once() -> int:
+    """Print the deterministic governance shadow readiness report once."""
+    lookback_rows = max(1, int(os.getenv("GOVERNANCE_REFRESH_LOOKBACK_ROWS", "500") or "500"))
+    report = _build_governance_shadow_readiness_report(lookback_rows=lookback_rows)
+    logger.info(
+        "Governance shadow report requested: %s",
+        json.dumps(report, ensure_ascii=True, sort_keys=True),
+    )
+    print(json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2))
+    return 0
+
 def main():
     args = sys.argv[1:]
     skip_provider_preflight = "--skip-provider-preflight" in args
@@ -2389,6 +2401,9 @@ def main():
 
     if "--refresh-governance-now" in args:
         sys.exit(run_governance_refresh_once())
+
+    if "--governance-shadow-report-now" in args:
+        sys.exit(run_governance_shadow_report_once())
 
     if "--list" in args or "--status" in args:
         show_status()

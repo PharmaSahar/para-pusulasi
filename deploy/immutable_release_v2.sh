@@ -538,6 +538,12 @@ ensure_parent_dir() {
   run_cmd mkdir -p "$(dirname "$path")"
 }
 
+is_target_tree_tracked_path() {
+  local rel="$1"
+
+  git ls-tree -r --name-only "$TARGET_SHA" -- "$rel" >/dev/null 2>&1
+}
+
 json_string_from_file() {
   local file="$1"
   python3 -c 'import json, pathlib, sys; print(json.dumps(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"), ensure_ascii=False))' "$file"
@@ -724,6 +730,10 @@ link_persistent_assets() {
 
     is_within_root "$src" "$active_root" || is_within_root "$src" "$SHARED_ROOT" || die "Persistent asset source escapes approved roots: $src"
     ensure_parent_dir "$dest"
+
+    if [[ "$class" == EXTERNAL_PERSISTENT* ]] && is_target_tree_tracked_path "$rel"; then
+      continue
+    fi
 
     case "$rel" in
       output|logs)

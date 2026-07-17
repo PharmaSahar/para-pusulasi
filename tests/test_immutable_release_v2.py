@@ -1410,6 +1410,30 @@ def test_missing_persistent_asset_rejected(tmp_path: Path) -> None:
     assert "Missing persistent asset source" in (res.stderr + res.stdout) or "Mandatory shared asset" in (res.stderr + res.stdout)
 
 
+def test_prepare_keeps_tracked_external_persistent_files_clean(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    _write(repo / "youtube_playlists.json", "{}\n")
+    _write(repo / "channels" / "channel_registry.json", "{}\n")
+    _write(repo / "channels" / "channels_tracker.csv", "channel\n")
+    subprocess.run(["git", "add", "youtube_playlists.json", "channels/channel_registry.json", "channels/channels_tracker.csv"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-m", "add tracked external persistent files"], cwd=repo, check=True, capture_output=True, text=True)
+    sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+    subprocess.run(["git", "update-ref", "refs/remotes/origin/release/test", sha], cwd=repo, check=True)
+
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    env["IMMUTABLE_V2_TEST_HOOK_AFTER_EXPORT"] = f"cp -a {repo / '.git'} .git"
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode == 0
+    release = layout["releases"] / sha
+    assert not (release / "youtube_playlists.json").is_symlink()
+    assert not (release / "channels" / "channel_registry.json").is_symlink()
+    assert not (release / "channels" / "channels_tracker.csv").is_symlink()
+    assert (release / "client_secrets.json").is_symlink()
+
+
 def test_unknown_asset_classification_rejected(tmp_path: Path) -> None:
     repo, sha = _init_repo(tmp_path)
     layout = _runtime_layout(tmp_path)

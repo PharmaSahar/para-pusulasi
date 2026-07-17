@@ -21,6 +21,7 @@ KULLANIM:
 """
 import json
 import atexit
+import io
 import logging
 import os
 import subprocess
@@ -28,6 +29,7 @@ import sys
 import threading
 import time
 import uuid
+from contextlib import redirect_stdout
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -2453,6 +2455,53 @@ def run_governance_shadow_contract_validation_once() -> int:
         print(f"- {name}={'PASS' if passed else 'FAIL'}")
     return 0 if ok else 1
 
+
+def run_governance_shadow_output_consistency_once() -> int:
+    """Run a deterministic consistency verification across governance shadow operator interfaces."""
+    checks: list[tuple[str, bool]] = []
+
+    try:
+        lookback_rows = max(1, int(os.getenv("GOVERNANCE_REFRESH_LOOKBACK_ROWS", "500") or "500"))
+        report = _build_governance_shadow_readiness_report(lookback_rows=lookback_rows)
+        checks.extend(
+            _evaluate_governance_shadow_contract_checks(
+                report=report,
+                entrypoints={
+                    "report_entrypoint_callable": run_governance_shadow_report_once,
+                    "selfcheck_entrypoint_callable": run_governance_shadow_selfcheck_once,
+                    "contract_validation_entrypoint_callable": run_governance_shadow_contract_validation_once,
+                    "report_builder_callable": _build_governance_shadow_readiness_report,
+                },
+                include_field_types=True,
+            )
+        )
+
+        selfcheck_buffer = io.StringIO()
+        with redirect_stdout(selfcheck_buffer):
+            selfcheck_rc = run_governance_shadow_selfcheck_once()
+
+        contract_buffer = io.StringIO()
+        with redirect_stdout(contract_buffer):
+            contract_rc = run_governance_shadow_contract_validation_once()
+
+        checks.append(("selfcheck_pass_consistent", selfcheck_rc == 0))
+        checks.append(("contract_validation_pass_consistent", contract_rc == 0))
+        checks.append(
+            (
+                "summary_prefixes_consistent",
+                selfcheck_buffer.getvalue().startswith("Governance shadow self-check:")
+                and contract_buffer.getvalue().startswith("Governance shadow contract validation:"),
+            )
+        )
+    except Exception as e:
+        checks.append((f"output_consistency_exception:{e}", False))
+
+    ok = all(passed for _name, passed in checks)
+    print(f"Governance shadow output consistency: {'PASS' if ok else 'FAIL'}")
+    for name, passed in checks:
+        print(f"- {name}={'PASS' if passed else 'FAIL'}")
+    return 0 if ok else 1
+
 def main():
     args = sys.argv[1:]
     skip_provider_preflight = "--skip-provider-preflight" in args
@@ -2512,6 +2561,9 @@ def main():
 
     if "--governance-shadow-contract-validate-now" in args:
         sys.exit(run_governance_shadow_contract_validation_once())
+
+    if "--governance-shadow-output-consistency-now" in args:
+        sys.exit(run_governance_shadow_output_consistency_once())
 
     if "--list" in args or "--status" in args:
         show_status()

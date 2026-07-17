@@ -167,6 +167,30 @@ def _dedupe_recommendation_rows(recommendation_rows: list[dict[str, Any]]) -> tu
     return kept, skipped
 
 
+def _ordering_signature(recommendation_rows: list[dict[str, Any]]) -> str:
+    ordered_keys: list[str] = []
+    for row in recommendation_rows:
+        recommendation_id = str(row.get("recommendation_record_id") or "").strip()
+        ordered_keys.append(recommendation_id or _dedupe_fingerprint(row))
+    digest = hashlib.sha256(_stable_json(ordered_keys).encode("utf-8")).hexdigest()[:24]
+    return f"ordsig_{digest}"
+
+
+def _count_missing_lineage(results: list[Any] | tuple[Any, ...]) -> int:
+    missing = 0
+    for item in results:
+        evaluation_record = getattr(item, "evaluation_record", None)
+        if evaluation_record is None:
+            continue
+        try:
+            record_map = dict(evaluation_record)
+        except Exception:
+            continue
+        if not bool(record_map.get("lineage_complete", False)):
+            missing += 1
+    return missing
+
+
 def _run_recommendation_governance_bridge_step(
     *,
     recommendation_path: Path,
@@ -180,7 +204,8 @@ def _run_recommendation_governance_bridge_step(
 
     This step is offline-only and does not mutate scheduler, uploader, or deployment state.
     """
-    started = _utc_now().isoformat()
+    started_dt = _utc_now()
+    started = started_dt.isoformat()
     result: dict[str, Any] = {
         "name": "recommendation_governance_bridge",
         "command": ["internal", "recommendation_governance_bridge"],
@@ -188,7 +213,15 @@ def _run_recommendation_governance_bridge_step(
         "fail_open": True,
         "started_at_utc": started,
         "bridge_invoked": False,
+        "bridge_invocations": 0,
+        "bridge_failures": 0,
         "evaluated_records": 0,
+        "input_records": 0,
+        "dedupe_skipped_records": 0,
+        "duplicate_attempts": 0,
+        "missing_lineage_records": 0,
+        "ordering_signature": _ordering_signature([]),
+        "evaluation_duration_ms": 0,
         "recommendation_path": str(recommendation_path.resolve()),
         "evaluation_path": str(evaluation_path.resolve()),
     }
@@ -225,6 +258,10 @@ def _run_recommendation_governance_bridge_step(
             return result
 
         deduped_rows, skipped_duplicates = _dedupe_recommendation_rows(recommendation_rows)
+        result["input_records"] = len(recommendation_rows)
+        result["dedupe_skipped_records"] = skipped_duplicates
+        result["duplicate_attempts"] = skipped_duplicates
+        result["ordering_signature"] = _ordering_signature(deduped_rows)
 
         confidence_store = StatisticalConfidenceStore()
         attribution_store = CausalAttributionStore()
@@ -258,18 +295,22 @@ def _run_recommendation_governance_bridge_step(
         )
 
         bridge = bridge_factory(evaluator=evaluator) if bridge_factory else RecommendationGovernanceBridge(evaluator=evaluator)
+        evaluation_started = _utc_now()
         batch = bridge.evaluate_records(
             deduped_rows,
             created_at=created_at_utc,
             final_status="REPORTED",
         )
+        evaluation_finished = _utc_now()
+        evaluation_duration_ms = max(0, int((evaluation_finished - evaluation_started).total_seconds() * 1000))
         result.update(
             {
                 "exit_code": 0,
                 "bridge_invoked": True,
+                "bridge_invocations": 1,
                 "evaluated_records": len(batch.results),
-                "input_records": len(recommendation_rows),
-                "dedupe_skipped_records": skipped_duplicates,
+                "missing_lineage_records": _count_missing_lineage(batch.results),
+                "evaluation_duration_ms": evaluation_duration_ms,
                 "batch_fingerprint": str(batch.batch_fingerprint),
                 "offline_only": bool(batch.offline_only),
                 "advisory_only": bool(batch.advisory_only),
@@ -282,6 +323,8 @@ def _run_recommendation_governance_bridge_step(
             {
                 "exit_code": 0,
                 "warning": "bridge_fail_open",
+                "bridge_invocations": 1,
+                "bridge_failures": 1,
                 "stderr_tail": str(exc),
                 "finished_at_utc": _utc_now().isoformat(),
             }

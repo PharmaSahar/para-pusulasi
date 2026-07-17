@@ -113,6 +113,23 @@ def _is_enabled(value: object) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _resolve_governance_shadow_activation() -> dict[str, Any]:
+    """Resolve governance shadow activation in deterministic fail-open mode."""
+    try:
+        raw = os.getenv("GOVERNANCE_REFRESH_SHADOW_MODE")
+        token = str(raw or "").strip().lower()
+
+        if not token:
+            return {"enabled": False, "state": "disabled"}
+        if token in {"1", "true", "yes", "on", "enabled"}:
+            return {"enabled": True, "state": "enabled"}
+        if token in {"0", "false", "no", "off", "disabled"}:
+            return {"enabled": False, "state": "disabled"}
+        return {"enabled": False, "state": "invalid_flag"}
+    except Exception:
+        return {"enabled": False, "state": "fail_open"}
+
+
 def _resolve_live_collector_runtime() -> tuple[bool, str]:
     requested = _is_enabled(os.getenv("LIVE_COLLECTOR_ENABLED", "false"))
     api_go = _is_enabled(os.getenv("YOUTUBE_ANALYTICS_API_GO", "false"))
@@ -1742,7 +1759,10 @@ def governance_refresh_job():
             result.get("stderr_tail"),
         )
 
-    if _is_enabled(os.getenv("GOVERNANCE_REFRESH_SHADOW_MODE", "false")):
+    activation = _resolve_governance_shadow_activation()
+    activation_state = str(activation.get("state") or "disabled")
+
+    if bool(activation.get("enabled", False)):
         shadow = _run_governance_refresh_shadow(lookback_rows=lookback_rows)
         if shadow.get("success"):
             logger.info(
@@ -1757,6 +1777,10 @@ def governance_refresh_job():
                 shadow.get("warning"),
                 shadow.get("duration_ms"),
             )
+    elif activation_state == "invalid_flag":
+        logger.warning("Governance refresh shadow disabled: invalid_flag")
+    elif activation_state == "fail_open":
+        logger.warning("Governance refresh shadow disabled: fail_open")
 
 
 def process_likes_job():

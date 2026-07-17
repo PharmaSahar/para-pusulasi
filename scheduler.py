@@ -2352,6 +2352,46 @@ def run_governance_shadow_report_once() -> int:
     print(json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2))
     return 0
 
+
+def run_governance_shadow_selfcheck_once() -> int:
+    """Run a deterministic self-check for the governance shadow operator interface."""
+    expected_fields = {
+        "report_version",
+        "activation_state",
+        "diagnostics",
+        "rollout_readiness",
+        "summary",
+        "warnings",
+        "advisory_only",
+    }
+    checks: list[tuple[str, bool]] = []
+
+    try:
+        lookback_rows = max(1, int(os.getenv("GOVERNANCE_REFRESH_LOOKBACK_ROWS", "500") or "500"))
+        checks.append(("report_entrypoint_callable", callable(run_governance_shadow_report_once)))
+        checks.append(("report_builder_callable", callable(_build_governance_shadow_readiness_report)))
+
+        report = _build_governance_shadow_readiness_report(lookback_rows=lookback_rows)
+        checks.append(("report_is_dict", isinstance(report, dict)))
+
+        report_fields_ok = isinstance(report, dict) and expected_fields.issubset(report.keys())
+        checks.append(("expected_fields_present", report_fields_ok))
+
+        advisory_only_ok = bool((report or {}).get("advisory_only", False)) is True
+        checks.append(("advisory_only_true", advisory_only_ok))
+
+        first_serialized = json.dumps(report, ensure_ascii=True, sort_keys=True)
+        second_serialized = json.dumps(report, ensure_ascii=True, sort_keys=True)
+        checks.append(("deterministic_serialization", first_serialized == second_serialized))
+    except Exception as e:
+        checks.append((f"selfcheck_exception:{e}", False))
+
+    ok = all(passed for _name, passed in checks)
+    print(f"Governance shadow self-check: {'PASS' if ok else 'FAIL'}")
+    for name, passed in checks:
+        print(f"- {name}={'PASS' if passed else 'FAIL'}")
+    return 0 if ok else 1
+
 def main():
     args = sys.argv[1:]
     skip_provider_preflight = "--skip-provider-preflight" in args
@@ -2405,6 +2445,9 @@ def main():
 
     if "--governance-shadow-report-now" in args:
         sys.exit(run_governance_shadow_report_once())
+
+    if "--governance-shadow-selfcheck-now" in args:
+        sys.exit(run_governance_shadow_selfcheck_once())
 
     if "--list" in args or "--status" in args:
         show_status()

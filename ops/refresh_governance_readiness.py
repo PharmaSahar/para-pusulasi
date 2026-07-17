@@ -8,6 +8,7 @@ where some reporting scripts may be absent.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -132,6 +133,40 @@ def _run_step(command: list[str], *, required: bool, fail_open: bool, fallback_a
     }
 
 
+def _stable_json(payload: Any) -> str:
+    return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+
+
+def _dedupe_fingerprint(recommendation_row: dict[str, Any]) -> str:
+    # Prefer governance-native identity/hash; fall back to deterministic content hash.
+    recommendation_id = str(recommendation_row.get("recommendation_record_id") or "").strip()
+    record_hash = str(recommendation_row.get("record_hash") or "").strip()
+    event_hash = str(recommendation_row.get("recommendation_event_id") or "").strip()
+
+    if recommendation_id and record_hash:
+        return f"{recommendation_id}:{record_hash}"
+    if recommendation_id and event_hash:
+        return f"{recommendation_id}:{event_hash}"
+
+    payload = dict(recommendation_row)
+    digest = hashlib.sha256(_stable_json(payload).encode("utf-8")).hexdigest()[:24]
+    return f"{recommendation_id or 'missing'}:{digest}"
+
+
+def _dedupe_recommendation_rows(recommendation_rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    seen: set[str] = set()
+    kept: list[dict[str, Any]] = []
+    skipped = 0
+    for row in recommendation_rows:
+        key = _dedupe_fingerprint(row)
+        if key in seen:
+            skipped += 1
+            continue
+        seen.add(key)
+        kept.append(row)
+    return kept, skipped
+
+
 def _run_recommendation_governance_bridge_step(
     *,
     recommendation_path: Path,
@@ -189,6 +224,8 @@ def _run_recommendation_governance_bridge_step(
             )
             return result
 
+        deduped_rows, skipped_duplicates = _dedupe_recommendation_rows(recommendation_rows)
+
         confidence_store = StatisticalConfidenceStore()
         attribution_store = CausalAttributionStore()
         decision_memory_store = DecisionMemoryStore()
@@ -222,7 +259,7 @@ def _run_recommendation_governance_bridge_step(
 
         bridge = bridge_factory(evaluator=evaluator) if bridge_factory else RecommendationGovernanceBridge(evaluator=evaluator)
         batch = bridge.evaluate_records(
-            recommendation_rows,
+            deduped_rows,
             created_at=created_at_utc,
             final_status="REPORTED",
         )
@@ -231,6 +268,8 @@ def _run_recommendation_governance_bridge_step(
                 "exit_code": 0,
                 "bridge_invoked": True,
                 "evaluated_records": len(batch.results),
+                "input_records": len(recommendation_rows),
+                "dedupe_skipped_records": skipped_duplicates,
                 "batch_fingerprint": str(batch.batch_fingerprint),
                 "offline_only": bool(batch.offline_only),
                 "advisory_only": bool(batch.advisory_only),

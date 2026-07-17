@@ -121,7 +121,7 @@ def test_valid_one_channel_request(monkeypatch, tmp_path):
     assert json.loads((tmp_path / "smoke.json").read_text(encoding="utf-8"))["output_hash"] == report["output_hash"]
 
 
-def test_fallback_token_selected_when_primary_missing(monkeypatch, tmp_path):
+def test_missing_primary_token_does_not_use_uploader_fallback(monkeypatch, tmp_path):
     cfg = _channel_config(tmp_path, analytics_token_exists=False, uploader_token_exists=True)
     _patch_channel(monkeypatch, cfg)
     monkeypatch.setenv("YOUTUBE_ANALYTICS_API_GO", "true")
@@ -143,12 +143,12 @@ def test_fallback_token_selected_when_primary_missing(monkeypatch, tmp_path):
         output_path=tmp_path / "smoke.json",
     )
 
-    assert report["result_state"] == "SUCCESS"
-    assert report["selected_token_source"] == "UPLOADER_TOKEN_FALLBACK"
-    assert loaded_paths == [cfg.token_path]
+    assert report["result_state"] == "TOKEN_MISSING"
+    assert report["selected_token_source"] == "NONE"
+    assert loaded_paths == []
 
 
-def test_primary_token_takes_precedence_over_fallback(monkeypatch, tmp_path):
+def test_primary_token_selected_when_present(monkeypatch, tmp_path):
     cfg = _channel_config(tmp_path, analytics_token_exists=True, uploader_token_exists=True)
     _patch_channel(monkeypatch, cfg)
     monkeypatch.setenv("YOUTUBE_ANALYTICS_API_GO", "true")
@@ -191,7 +191,7 @@ def test_both_token_paths_missing_returns_token_missing(monkeypatch, tmp_path):
     assert report["selected_token_source"] == "NONE"
 
 
-def test_fallback_token_without_analytics_scopes(monkeypatch, tmp_path):
+def test_missing_primary_token_reports_missing_even_if_uploader_scope_is_valid(monkeypatch, tmp_path):
     cfg = _channel_config(tmp_path, analytics_token_exists=False, uploader_token_exists=True)
     _patch_channel(monkeypatch, cfg)
     monkeypatch.setenv("YOUTUBE_ANALYTICS_API_GO", "true")
@@ -208,27 +208,8 @@ def test_fallback_token_without_analytics_scopes(monkeypatch, tmp_path):
         output_path=tmp_path / "smoke.json",
     )
 
-    assert report["selected_token_source"] == "UPLOADER_TOKEN_FALLBACK"
-    assert report["result_state"] == "API_SCOPE_INSUFFICIENT"
-
-
-def test_fallback_token_with_analytics_scopes(monkeypatch, tmp_path):
-    cfg = _channel_config(tmp_path, analytics_token_exists=False, uploader_token_exists=True)
-    _patch_channel(monkeypatch, cfg)
-    monkeypatch.setenv("YOUTUBE_ANALYTICS_API_GO", "true")
-    monkeypatch.setattr(smoke, "_load_credentials_read_only", lambda token_path: FakeCreds())
-    query = FakeQuery(response={"columnHeaders": [{"name": "day"}, {"name": "views"}], "rows": [["2026-07-01", "1"]]})
-    monkeypatch.setattr(smoke, "_build_service", lambda credentials, timeout_seconds: FakeService(query))
-
-    report = smoke.run_read_only_smoke(
-        channel_slugs=["para_pusulasi"],
-        start_date="2026-07-01",
-        end_date="2026-07-07",
-        output_path=tmp_path / "smoke.json",
-    )
-
-    assert report["selected_token_source"] == "UPLOADER_TOKEN_FALLBACK"
-    assert report["result_state"] == "SUCCESS"
+    assert report["selected_token_source"] == "NONE"
+    assert report["result_state"] == "TOKEN_MISSING"
 
 
 def test_maximum_seven_day_window(monkeypatch, tmp_path):
@@ -495,7 +476,6 @@ def test_selected_token_source_is_redacted_alias(monkeypatch, tmp_path):
 
     assert report["selected_token_source"] in {
         "ANALYTICS_TOKEN_PRIMARY",
-        "UPLOADER_TOKEN_FALLBACK",
         "NONE",
     }
     assert str(tmp_path) not in report["selected_token_source"]

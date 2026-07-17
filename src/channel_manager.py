@@ -10,8 +10,14 @@ from typing import Any
 
 REGISTRY_PATH = "channels/channel_registry.json"
 CHANNELS_DIR = "channels"
-ANALYTICS_TOKEN_POLICY_ENV = "ANALYTICS_TOKEN_POLICY"
+PERSISTENT_TOKEN_ROOT_ENV = "CHANNEL_TOKENS_ROOT"
+DEFAULT_PERSISTENT_TOKEN_ROOT = "/opt/parapusulasi-shared/tokens/channels"
 MARKET_LANGUAGE_NICHES = frozenset({"kisisel_finans", "borsa", "kripto", "gayrimenkul"})
+
+
+def _persistent_token_root() -> str:
+    root = str(os.getenv(PERSISTENT_TOKEN_ROOT_ENV, DEFAULT_PERSISTENT_TOKEN_ROOT) or "").strip()
+    return root.rstrip("/") or DEFAULT_PERSISTENT_TOKEN_ROOT
 
 
 def _normalize_bool(value: object) -> bool | None:
@@ -82,12 +88,14 @@ class ChannelConfig:
     client_secrets_path: str = ""
 
     def __post_init__(self):
+        token_root = _persistent_token_root()
         self.base_dir = f"{CHANNELS_DIR}/{self.channel_id}"
         self.output_dir = f"{self.base_dir}/output"
         self.scripts_dir = f"{self.base_dir}/output/scripts"
         self.audio_dir = f"{self.base_dir}/output/audio"
         self.videos_dir = f"{self.base_dir}/output/videos"
-        self.token_path = f"{self.base_dir}/youtube_token.pickle"
+        self.token_path = f"{token_root}/{self.channel_id}/youtube_token.pickle"
+        self.youtube_analytics_token_path = f"{token_root}/{self.channel_id}/youtube_analytics_token.pickle"
         self.client_secrets_path = f"{self.base_dir}/client_secrets.json"
 
         # .env dosyasindan API anahtarlarini yukle
@@ -98,21 +106,12 @@ class ChannelConfig:
             # Ana .env'den yukle (ilk kanal icin)
             self._load_env(".env")
 
-        # Analytics token topolojisini tek policy ile belirle.
-        if not str(self.youtube_analytics_token_path or "").strip():
-            policy = str(os.getenv(ANALYTICS_TOKEN_POLICY_ENV, "channel_local") or "").strip().lower()
-            if policy == "shared":
-                self.youtube_analytics_token_path = "youtube_analytics_token.pickle"
-            else:
-                self.youtube_analytics_token_path = f"{self.base_dir}/youtube_analytics_token.pickle"
-
     def _load_env(self, path: str):
         from dotenv import dotenv_values
         env = dotenv_values(path)
         self.anthropic_api_key = env.get("ANTHROPIC_API_KEY", os.getenv("ANTHROPIC_API_KEY", ""))
         self.youtube_client_id = env.get("YOUTUBE_CLIENT_ID", os.getenv("YOUTUBE_CLIENT_ID", ""))
         self.youtube_client_secret = env.get("YOUTUBE_CLIENT_SECRET", os.getenv("YOUTUBE_CLIENT_SECRET", ""))
-        self.youtube_analytics_token_path = env.get("YOUTUBE_ANALYTICS_TOKEN_PATH", os.getenv("YOUTUBE_ANALYTICS_TOKEN_PATH", ""))
         self.pexels_api_key = env.get("PEXELS_API_KEY", os.getenv("PEXELS_API_KEY", ""))
         self.elevenlabs_api_key = env.get("ELEVENLABS_API_KEY", os.getenv("ELEVENLABS_API_KEY", ""))
         self.elevenlabs_voice_id = env.get("ELEVENLABS_VOICE_ID", os.getenv("ELEVENLABS_VOICE_ID", ""))

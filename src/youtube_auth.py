@@ -47,6 +47,8 @@ def get_authenticated_analytics_service(channel_cfg=None):
         token_path=_resolve_token_path(channel_cfg, ANALYTICS_TOKEN_PATH, "youtube_analytics_token_path"),
         secrets_path=_resolve_secrets_path(channel_cfg),
         channel_cfg=channel_cfg,
+        allow_oauth_flow=False,
+        require_existing_token=True,
     )
     return build("youtubeAnalytics", "v2", credentials=credentials, cache_discovery=False, static_discovery=False)
 
@@ -65,12 +67,23 @@ def _resolve_secrets_path(channel_cfg) -> str:
     return CLIENT_SECRETS_PATH
 
 
-def _get_credentials(*, scopes: list[str], token_path: str, secrets_path: str, channel_cfg=None):
+def _get_credentials(
+    *,
+    scopes: list[str],
+    token_path: str,
+    secrets_path: str,
+    channel_cfg=None,
+    allow_oauth_flow: bool = True,
+    require_existing_token: bool = False,
+):
     credentials = None
+    token_file = Path(token_path)
 
-    if Path(token_path).exists():
-        with open(token_path, "rb") as f:
+    if token_file.exists():
+        with token_file.open("rb") as f:
             credentials = pickle.load(f)
+    elif require_existing_token:
+        raise FileNotFoundError(f"analytics_token_missing:{token_file}")
 
     if credentials is not None:
         try:
@@ -81,11 +94,17 @@ def _get_credentials(*, scopes: list[str], token_path: str, secrets_path: str, c
             channel_name = channel_cfg.name if channel_cfg else "Ana Kanal"
             print(f"[{channel_name}] Token scope yetersiz, yeniden yetkilendirme gerekiyor: {token_path}")
             credentials = None
+            if require_existing_token:
+                raise PermissionError(f"analytics_token_scope_invalid:{token_file}")
 
     if not credentials or not credentials.valid:
         if credentials and credentials.expired and credentials.refresh_token:
             credentials.refresh(Request())
+            if require_existing_token and (not credentials.valid or credentials.expired):
+                raise RuntimeError(f"analytics_token_expired:{token_file}")
         else:
+            if not allow_oauth_flow:
+                raise FileNotFoundError(f"analytics_token_missing:{token_file}")
             if not Path(secrets_path).exists():
                 _create_client_secrets(secrets_path, channel_cfg)
 
@@ -100,7 +119,8 @@ def _get_credentials(*, scopes: list[str], token_path: str, secrets_path: str, c
                 success_message="Izin verildi! Bu sekmeyi kapatabilirsiniz.",
             )
 
-        with open(token_path, "wb") as f:
+        token_file.parent.mkdir(parents=True, exist_ok=True)
+        with token_file.open("wb") as f:
             pickle.dump(credentials, f)
 
     return credentials

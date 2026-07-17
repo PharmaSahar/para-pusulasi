@@ -45,7 +45,6 @@ ALLOWED_METRICS = (
 )
 
 TOKEN_SOURCE_ANALYTICS_PRIMARY = "ANALYTICS_TOKEN_PRIMARY"
-TOKEN_SOURCE_UPLOADER_FALLBACK = "UPLOADER_TOKEN_FALLBACK"
 TOKEN_SOURCE_NONE = "NONE"
 
 
@@ -54,7 +53,6 @@ class SmokeContext:
     channel_slug: str
     channel_id: str
     primary_token_path: Path
-    fallback_token_path: Path
     selected_token_path: Path | None
     selected_token_source: str
     secrets_path: Path
@@ -129,16 +127,12 @@ def _resolve_channel_context(channel_slug: str) -> SmokeContext:
         raise ValueError("channel_mapping_error:missing_youtube_channel_id")
 
     primary_token_path = Path(str(getattr(cfg, "youtube_analytics_token_path", "") or "").strip())
-    fallback_token_path = Path(str(getattr(cfg, "token_path", "") or "").strip())
     secrets_path = Path(str(getattr(cfg, "client_secrets_path", "") or "").strip())
     selected_token_path: Path | None = None
     selected_token_source = TOKEN_SOURCE_NONE
     if primary_token_path.exists():
         selected_token_path = primary_token_path
         selected_token_source = TOKEN_SOURCE_ANALYTICS_PRIMARY
-    elif fallback_token_path.exists():
-        selected_token_path = fallback_token_path
-        selected_token_source = TOKEN_SOURCE_UPLOADER_FALLBACK
 
     token_source_present = selected_token_path is not None
     credential_source_present = token_source_present or secrets_path.exists()
@@ -146,7 +140,6 @@ def _resolve_channel_context(channel_slug: str) -> SmokeContext:
         channel_slug=channel_slug,
         channel_id=channel_id,
         primary_token_path=primary_token_path,
-        fallback_token_path=fallback_token_path,
         selected_token_path=selected_token_path,
         selected_token_source=selected_token_source,
         secrets_path=secrets_path,
@@ -288,6 +281,17 @@ def run_read_only_smoke(
 
         start_iso, end_iso = _validate_date_window(start_date, end_date)
         context = _resolve_channel_context(channel_slug)
+        if not context.token_source_present or context.selected_token_path is None:
+            report["channel_slug"] = context.channel_slug
+            report["channel_id_hash"] = _hash_text(context.channel_id)[:12]
+            report["start_date"] = start_iso
+            report["end_date"] = end_iso
+            report["credential_source_present"] = False
+            report["token_source_present"] = False
+            report["selected_token_source"] = TOKEN_SOURCE_NONE
+            report["result_state"] = "TOKEN_MISSING"
+            return report
+
         credentials = _load_credentials_read_only(context.selected_token_path)
 
         report["channel_slug"] = context.channel_slug

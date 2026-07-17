@@ -28,13 +28,13 @@ An optional `--timeout-seconds` flag is available. The wrapper accepts repeated 
 
 ## Read-Only Token Resolution
 
-The wrapper uses only this token resolution order:
+The wrapper uses only the dedicated analytics token path:
 
 1. `cfg.youtube_analytics_token_path` (`ANALYTICS_TOKEN_PRIMARY`)
-2. `cfg.token_path` (`UPLOADER_TOKEN_FALLBACK`) only when primary is missing
-3. `NONE` when both are missing
+2. `NONE` when the analytics token is missing
 
 No other token path is attempted.
+`cfg.token_path` is never used by the analytics smoke wrapper.
 No token refresh or OAuth login fallback is allowed.
 
 ## Allowed Query Surface
@@ -93,7 +93,7 @@ The output is written only to the explicit local path provided at runtime and in
 - `redacted_error`
 - `credential_source_present`
 - `token_source_present`
-- `selected_token_source` (`ANALYTICS_TOKEN_PRIMARY`, `UPLOADER_TOKEN_FALLBACK`, or `NONE`)
+- `selected_token_source` (`ANALYTICS_TOKEN_PRIMARY` or `NONE`)
 - `api_call_attempted`
 - `api_call_succeeded`
 - `mutation_attempted`

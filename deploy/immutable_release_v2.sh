@@ -233,6 +233,64 @@ write_release_metadata() {
 EOF
 }
 
+ensure_release_local_metadata_exclude() {
+  local release_dir="$1"
+  local git_dir exclude_file marker
+
+  git_dir="$(git -C "$release_dir" rev-parse --git-dir 2>/dev/null || true)"
+  [[ -n "$git_dir" ]] || die "FAIL_RELEASE_INTEGRITY: unable to resolve git dir for $release_dir"
+  if [[ "$git_dir" != /* ]]; then
+    git_dir="$release_dir/$git_dir"
+  fi
+  git_dir="$(canon_path "$git_dir")"
+  [[ -d "$git_dir" ]] || die "FAIL_RELEASE_INTEGRITY: git dir missing: $git_dir"
+
+  exclude_file="$git_dir/info/exclude"
+  mkdir -p "$(dirname "$exclude_file")"
+  touch "$exclude_file"
+  marker='/.immutable_release_metadata.json'
+  if ! grep -Fxq "$marker" "$exclude_file"; then
+    printf '\n%s\n' "$marker" >> "$exclude_file"
+  fi
+}
+
+assert_git_checkout_identity() {
+  local target_dir="$1"
+  local expected_sha="$2"
+  local scope_label="$3"
+  local head_sha status toplevel_real target_real
+  local git_dir git_dir_real expected_git_dir_real
+
+  [[ -d "$target_dir" ]] || die "FAIL_RELEASE_INTEGRITY: ${scope_label} directory missing: $target_dir"
+  [[ ! -L "$target_dir" ]] || die "FAIL_RELEASE_INTEGRITY: ${scope_label} directory is symlink: $target_dir"
+  [[ -d "$target_dir/.git" ]] || die "FAIL_RELEASE_INTEGRITY: ${scope_label} .git directory missing: $target_dir/.git"
+
+  toplevel_real="$(git -C "$target_dir" rev-parse --show-toplevel 2>/dev/null || true)"
+  [[ -n "$toplevel_real" ]] || die "FAIL_RELEASE_INTEGRITY: ${scope_label} is not a git worktree"
+  toplevel_real="$(canon_path "$toplevel_real")"
+  target_real="$(canon_path "$target_dir")"
+  [[ "$toplevel_real" == "$target_real" ]] || die "FAIL_RELEASE_INTEGRITY: ${scope_label} git top-level ($toplevel_real) != ${scope_label} dir ($target_real)"
+
+  git_dir="$(git -C "$target_dir" rev-parse --git-dir 2>/dev/null || true)"
+  [[ -n "$git_dir" ]] || die "FAIL_RELEASE_INTEGRITY: ${scope_label} git dir missing"
+  if [[ "$git_dir" != /* ]]; then
+    git_dir="$target_dir/$git_dir"
+  fi
+  git_dir_real="$(canon_path "$git_dir")"
+  expected_git_dir_real="$(canon_path "$target_dir/.git")"
+  [[ "$git_dir_real" == "$expected_git_dir_real" ]] || die "FAIL_RELEASE_INTEGRITY: ${scope_label} git dir ($git_dir_real) != ${scope_label} .git ($expected_git_dir_real)"
+
+  head_sha="$(git -C "$target_dir" rev-parse HEAD)"
+  [[ "$head_sha" == "$expected_sha" ]] || die "FAIL_RELEASE_INTEGRITY: ${scope_label} git HEAD ($head_sha) != expected sha ($expected_sha)"
+
+  status="$(git -C "$target_dir" status --short --untracked-files=no -- . ':(exclude)logs' ':(exclude)output')"
+  [[ -z "$status" ]] || die "FAIL_RELEASE_INTEGRITY: ${scope_label} git tracked worktree dirty\n${status}"
+
+  git -C "$target_dir" diff-index --quiet HEAD -- . ':(exclude)logs' ':(exclude)output' || die "FAIL_RELEASE_INTEGRITY: ${scope_label} has tracked modifications"
+  git -C "$target_dir" cat-file -e "$expected_sha^{commit}" >/dev/null 2>&1 || die "FAIL_RELEASE_INTEGRITY: expected commit object missing in ${scope_label} git object store"
+  git -C "$target_dir" merge-base --is-ancestor "$expected_sha" HEAD || die "FAIL_RELEASE_INTEGRITY: expected sha is not ancestor of ${scope_label} HEAD"
+}
+
 is_truthy() {
   local raw
   raw="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
@@ -256,9 +314,9 @@ assert_release_integrity_contract() {
   local release_dir="$1"
   local expected_sha="$2"
   local basename meta_sha
-  local head_sha status
 
   [[ -d "$release_dir" ]] || die "FAIL_RELEASE_INTEGRITY: release directory missing: $release_dir"
+  [[ ! -L "$release_dir" ]] || die "FAIL_RELEASE_INTEGRITY: release directory is symlink: $release_dir"
 
   basename="$(basename "$release_dir")"
   [[ "$basename" == "$expected_sha" ]] || die "FAIL_RELEASE_INTEGRITY: release basename ($basename) != expected sha ($expected_sha)"
@@ -267,23 +325,7 @@ assert_release_integrity_contract() {
   [[ -n "$meta_sha" ]] || die "FAIL_RELEASE_INTEGRITY: deployment manifest missing release_sha: $(release_meta_path "$release_dir")"
   [[ "$meta_sha" == "$expected_sha" ]] || die "FAIL_RELEASE_INTEGRITY: deployment manifest sha ($meta_sha) != expected sha ($expected_sha)"
 
-  if git -C "$release_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    head_sha="$(git -C "$release_dir" rev-parse HEAD)"
-    [[ "$head_sha" == "$expected_sha" ]] || die "FAIL_RELEASE_INTEGRITY: release git HEAD ($head_sha) != expected sha ($expected_sha)"
-    [[ "$basename" == "$head_sha" ]] || die "FAIL_RELEASE_INTEGRITY: release basename ($basename) != release git HEAD ($head_sha)"
-
-    status="$(git -C "$release_dir" status --short)"
-    [[ -z "$status" ]] || die "FAIL_RELEASE_INTEGRITY: release git worktree dirty"
-
-    git -C "$release_dir" diff-index --quiet HEAD -- || die "FAIL_RELEASE_INTEGRITY: release has tracked modifications"
-    git -C "$release_dir" cat-file -e "$expected_sha^{commit}" >/dev/null 2>&1 || die "FAIL_RELEASE_INTEGRITY: expected commit object missing in release git object store"
-    git -C "$release_dir" merge-base --is-ancestor "$expected_sha" HEAD || die "FAIL_RELEASE_INTEGRITY: expected sha is not ancestor of release HEAD"
-    return 0
-  fi
-
-  if is_truthy "$ENFORCE_GIT_RELEASE_IDENTITY"; then
-    die "FAIL_RELEASE_INTEGRITY: release git identity missing for $release_dir"
-  fi
+  assert_git_checkout_identity "$release_dir" "$expected_sha" "release"
 }
 
 write_preflight_json() {
@@ -1365,10 +1407,11 @@ mode_plan() {
 }
 
 mode_prepare() {
-  local release_dir staging_dir active_target
+  local release_dir staging_dir active_target source_repo
   release_dir="$(release_dir_for_sha "$TARGET_SHA")"
   staging_dir="$(staging_dir_for_sha "$TARGET_SHA")"
   active_target="$(capture_active_target)"
+  source_repo="$(git rev-parse --show-toplevel)"
 
   PREPARE_STAGING_DIR="$staging_dir"
   PREPARE_TARGET_RELEASE="$release_dir"
@@ -1400,7 +1443,8 @@ mode_prepare() {
   check_disk_space
 
   if [[ "$DRY_RUN" == "true" ]]; then
-    log "DRY-RUN: would export $TARGET_SHA to $staging_dir"
+    log "DRY-RUN: would clone git-backed staging checkout from $source_repo into $staging_dir"
+    log "DRY-RUN: would checkout --detach $TARGET_SHA in $staging_dir"
     log "DRY-RUN: would link persistent assets from $active_target"
     log "DRY-RUN: would ensure shared runtime output directories: output/scripts output/audio output/videos"
     log "DRY-RUN: would ensure release asset directories when needed: assets/backgrounds assets/music assets/fonts"
@@ -1413,12 +1457,17 @@ mode_prepare() {
   run_cmd mkdir -p "$staging_dir"
   PREPARE_STAGING_CREATED="true"
 
-  set_prepare_failure_phase "git_export"
+  set_prepare_failure_phase "git_materialization"
   if [[ "$DRY_RUN" == "true" ]]; then
-    log "DRY-RUN: export git archive for $TARGET_SHA into $staging_dir"
+    log "DRY-RUN: clone --no-hardlinks --no-checkout $source_repo $staging_dir"
+    log "DRY-RUN: git -C $staging_dir checkout --detach $TARGET_SHA"
   else
-    git archive "$TARGET_SHA" | tar -x -C "$staging_dir"
+    git clone --no-hardlinks --no-checkout "$source_repo" "$staging_dir"
+    git -C "$staging_dir" checkout --detach "$TARGET_SHA"
   fi
+
+  set_prepare_failure_phase "git_checkout_validation"
+  assert_git_checkout_identity "$staging_dir" "$TARGET_SHA" "staging"
 
   if [[ -n "${IMMUTABLE_V2_TEST_HOOK_AFTER_EXPORT:-}" ]]; then
     (cd "$staging_dir" && bash -c "$IMMUTABLE_V2_TEST_HOOK_AFTER_EXPORT")
@@ -1443,7 +1492,9 @@ mode_prepare() {
   fi
 
   set_prepare_failure_phase "metadata_write"
+  ensure_release_local_metadata_exclude "$staging_dir"
   write_release_metadata "$staging_dir"
+  assert_git_checkout_identity "$staging_dir" "$TARGET_SHA" "staging"
 
   set_prepare_failure_phase "finalization"
   if [[ "$DRY_RUN" == "true" ]]; then

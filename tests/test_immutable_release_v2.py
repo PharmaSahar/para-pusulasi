@@ -384,8 +384,11 @@ def test_existing_matching_release_is_idempotent(tmp_path: Path) -> None:
     env = _base_env(layout)
 
     release = layout["releases"] / sha
-    release.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "clone", str(repo), str(release)], check=True, capture_output=True, text=True)
+    subprocess.run(["git", "checkout", "--detach", sha], cwd=release, check=True, capture_output=True, text=True)
     _write(release / ".immutable_release_metadata.json", json.dumps({"release_sha": sha}, ensure_ascii=False))
+    exclude = release / ".git" / "info" / "exclude"
+    _write(exclude, exclude.read_text(encoding="utf-8") + "\n/.immutable_release_metadata.json\n")
 
     res = _invoke(repo, sha, "prepare", env)
 
@@ -986,8 +989,11 @@ def test_existing_prepared_release_is_left_untouched(tmp_path: Path) -> None:
     repo, sha = _init_repo(tmp_path, include_runtime_payload=True)
     layout = _runtime_layout(tmp_path)
     release = layout["releases"] / sha
-    release.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "clone", str(repo), str(release)], check=True, capture_output=True, text=True)
+    subprocess.run(["git", "checkout", "--detach", sha], cwd=release, check=True, capture_output=True, text=True)
     _write(release / ".immutable_release_metadata.json", json.dumps({"release_sha": sha}))
+    exclude = release / ".git" / "info" / "exclude"
+    _write(exclude, exclude.read_text(encoding="utf-8") + "\n/.immutable_release_metadata.json\n")
     _write(release / "logs" / "release-sentinel.log", "keep\n")
     _write(release / "output" / "state" / "release-sentinel.json", "{}\n")
     env = _base_env(layout)
@@ -999,11 +1005,96 @@ def test_existing_prepared_release_is_left_untouched(tmp_path: Path) -> None:
     assert (release / "output" / "state" / "release-sentinel.json").read_text(encoding="utf-8") == "{}\n"
 
 
+def test_fresh_prepare_creates_git_backed_release_identity(tmp_path: Path) -> None:
+    repo, _ = _init_repo(tmp_path)
+    _write(repo / ".gitignore", "*.tmp\n")
+    subprocess.run(["git", "add", ".gitignore"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-m", "add gitignore"], cwd=repo, check=True, capture_output=True, text=True)
+    sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+    subprocess.run(["git", "update-ref", "refs/remotes/origin/release/test", sha], cwd=repo, check=True)
+
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode == 0
+    release = layout["releases"] / sha
+    assert (release / ".git").is_dir()
+    assert subprocess.check_output(["git", "rev-parse", "--show-toplevel"], cwd=release, text=True).strip() == str(release)
+    assert subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=release, text=True).strip() == sha
+    assert json.loads((release / ".immutable_release_metadata.json").read_text(encoding="utf-8"))["release_sha"] == sha
+    assert subprocess.check_output(["git", "status", "--short", "--untracked-files=no"], cwd=release, text=True).strip() == ""
+    assert subprocess.run(["git", "diff-index", "--quiet", "HEAD", "--"], cwd=release).returncode == 0
+
+
+def test_prepare_under_parent_git_repo_still_uses_release_git_metadata(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+
+    parent = layout["base"]
+    subprocess.run(["git", "init"], cwd=parent, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.email", "parent@example.com"], cwd=parent, check=True)
+    subprocess.run(["git", "config", "user.name", "Parent User"], cwd=parent, check=True)
+    _write(parent / "PARENT_MARKER.txt", "parent\n")
+    subprocess.run(["git", "add", "PARENT_MARKER.txt"], cwd=parent, check=True)
+    subprocess.run(["git", "commit", "-m", "parent-init"], cwd=parent, check=True, capture_output=True, text=True)
+
+    env = _base_env(layout)
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode == 0
+    release = layout["releases"] / sha
+    assert subprocess.check_output(["git", "rev-parse", "--show-toplevel"], cwd=release, text=True).strip() == str(release)
+    assert subprocess.check_output(["git", "rev-parse", "--git-dir"], cwd=release, text=True).strip() == ".git"
+    assert subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=release, text=True).strip() == sha
+
+
+def test_prepare_metadata_file_is_excluded_locally_without_tracked_gitignore_change(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode == 0
+    release = layout["releases"] / sha
+    exclude_path = release / ".git" / "info" / "exclude"
+    exclude_text = exclude_path.read_text(encoding="utf-8")
+    assert "/.immutable_release_metadata.json" in exclude_text
+    assert subprocess.check_output(["git", "status", "--short", "--untracked-files=no"], cwd=release, text=True).strip() == ""
+    assert subprocess.run(["git", "diff-index", "--quiet", "HEAD", "--"], cwd=release).returncode == 0
+    assert subprocess.run(["git", "status", "--short", "--", ".gitignore"], cwd=release, text=True, capture_output=True).stdout.strip() == ""
+
+
 def test_existing_release_without_git_identity_is_rejected(tmp_path: Path) -> None:
     repo, sha = _init_repo(tmp_path)
     layout = _runtime_layout(tmp_path)
     env = _base_env(layout)
     env["IMMUTABLE_V2_ENFORCE_GIT_RELEASE_IDENTITY"] = "1"
+
+    release = layout["releases"] / sha
+    release.mkdir(parents=True, exist_ok=True)
+    _write(release / ".immutable_release_metadata.json", json.dumps({"release_sha": sha}, ensure_ascii=False))
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode != 0
+    assert "FAIL_RELEASE_INTEGRITY" in (res.stderr + res.stdout)
+
+
+def test_existing_release_parent_git_discovery_is_rejected(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+
+    parent = layout["base"]
+    subprocess.run(["git", "init"], cwd=parent, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.email", "parent@example.com"], cwd=parent, check=True)
+    subprocess.run(["git", "config", "user.name", "Parent User"], cwd=parent, check=True)
+    _write(parent / "PARENT_MARKER.txt", "parent\n")
+    subprocess.run(["git", "add", "PARENT_MARKER.txt"], cwd=parent, check=True)
+    subprocess.run(["git", "commit", "-m", "parent-init"], cwd=parent, check=True, capture_output=True, text=True)
 
     release = layout["releases"] / sha
     release.mkdir(parents=True, exist_ok=True)
@@ -1064,7 +1155,7 @@ def test_existing_git_release_dirty_tree_rejected(tmp_path: Path) -> None:
     subprocess.run(["git", "clone", str(repo), str(release)], check=True, capture_output=True, text=True)
     subprocess.run(["git", "checkout", sha], cwd=release, check=True, capture_output=True, text=True)
     _write(release / ".immutable_release_metadata.json", json.dumps({"release_sha": sha}, ensure_ascii=False))
-    _write(release / "dirty.txt", "dirty\n")
+    _write(release / "scheduler.py", "print('dirty')\n")
 
     res = _invoke(repo, sha, "prepare", env)
 

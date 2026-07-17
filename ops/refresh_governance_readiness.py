@@ -132,6 +132,124 @@ def _run_step(command: list[str], *, required: bool, fail_open: bool, fallback_a
     }
 
 
+def _run_recommendation_governance_bridge_step(
+    *,
+    recommendation_path: Path,
+    evaluation_path: Path,
+    repo_root: Path,
+    created_at_utc: str,
+    evaluator_factory=None,
+    bridge_factory=None,
+) -> dict[str, Any]:
+    """Run recommendation governance bridge in fail-open mode.
+
+    This step is offline-only and does not mutate scheduler, uploader, or deployment state.
+    """
+    started = _utc_now().isoformat()
+    result: dict[str, Any] = {
+        "name": "recommendation_governance_bridge",
+        "command": ["internal", "recommendation_governance_bridge"],
+        "required": False,
+        "fail_open": True,
+        "started_at_utc": started,
+        "bridge_invoked": False,
+        "evaluated_records": 0,
+        "recommendation_path": str(recommendation_path.resolve()),
+        "evaluation_path": str(evaluation_path.resolve()),
+    }
+
+    if not recommendation_path.exists():
+        result.update(
+            {
+                "exit_code": 0,
+                "warning": "bridge_skipped_missing_recommendation_store",
+                "finished_at_utc": _utc_now().isoformat(),
+            }
+        )
+        return result
+
+    try:
+        from src.causal_attribution_store import CausalAttributionStore
+        from src.decision_memory import DecisionMemoryStore
+        from src.recommendation_evaluation_store import RecommendationEvaluationStore
+        from src.recommendation_evaluator import RecommendationEvaluator
+        from src.recommendation_governance_bridge import RecommendationGovernanceBridge
+        from src.recommendation_store import RecommendationStore
+        from src.statistical_confidence_store import StatisticalConfidenceStore
+
+        recommendation_store = RecommendationStore(recommendation_path=recommendation_path)
+        recommendation_rows = recommendation_store.get_rows()
+        if not recommendation_rows:
+            result.update(
+                {
+                    "exit_code": 0,
+                    "warning": "bridge_skipped_empty_recommendation_store",
+                    "finished_at_utc": _utc_now().isoformat(),
+                }
+            )
+            return result
+
+        confidence_store = StatisticalConfidenceStore()
+        attribution_store = CausalAttributionStore()
+        decision_memory_store = DecisionMemoryStore()
+        evaluation_store = RecommendationEvaluationStore(evaluation_path=evaluation_path)
+
+        evaluator = (
+            evaluator_factory(
+                recommendation_store=recommendation_store,
+                confidence_store=confidence_store,
+                attribution_store=attribution_store,
+                decision_memory_store=decision_memory_store,
+                evaluation_store=evaluation_store,
+                repo_root=repo_root,
+                created_by="governance_refresh_bridge",
+                source_module="ops.refresh_governance_readiness",
+                source_version="a4.1",
+            )
+            if evaluator_factory
+            else RecommendationEvaluator(
+                recommendation_store=recommendation_store,
+                confidence_store=confidence_store,
+                attribution_store=attribution_store,
+                decision_memory_store=decision_memory_store,
+                evaluation_store=evaluation_store,
+                repo_root=repo_root,
+                created_by="governance_refresh_bridge",
+                source_module="ops.refresh_governance_readiness",
+                source_version="a4.1",
+            )
+        )
+
+        bridge = bridge_factory(evaluator=evaluator) if bridge_factory else RecommendationGovernanceBridge(evaluator=evaluator)
+        batch = bridge.evaluate_records(
+            recommendation_rows,
+            created_at=created_at_utc,
+            final_status="REPORTED",
+        )
+        result.update(
+            {
+                "exit_code": 0,
+                "bridge_invoked": True,
+                "evaluated_records": len(batch.results),
+                "batch_fingerprint": str(batch.batch_fingerprint),
+                "offline_only": bool(batch.offline_only),
+                "advisory_only": bool(batch.advisory_only),
+                "finished_at_utc": _utc_now().isoformat(),
+            }
+        )
+        return result
+    except Exception as exc:
+        result.update(
+            {
+                "exit_code": 0,
+                "warning": "bridge_fail_open",
+                "stderr_tail": str(exc),
+                "finished_at_utc": _utc_now().isoformat(),
+            }
+        )
+        return result
+
+
 def _append_monitor_row(snapshot: dict[str, Any]) -> None:
     LOGS.mkdir(parents=True, exist_ok=True)
     required_total = int(snapshot.get("required_steps_total", 0))
@@ -196,7 +314,7 @@ def _build_readiness_markdown(*, generated_at: str, lookback_rows: int, steps: l
     return "\n".join(lines)
 
 
-def run_refresh(*, lookback_rows: int) -> dict[str, Any]:
+def run_refresh(*, lookback_rows: int, bridge_step_runner=None) -> dict[str, Any]:
     python_bin = sys.executable
     readiness_markdown = _resolve_readiness_markdown()
     _assert_preprod_mutable_path(readiness_markdown, env_key="GOVERNANCE_READINESS_MD_PATH")
@@ -260,6 +378,22 @@ def run_refresh(*, lookback_rows: int) -> dict[str, Any]:
             if not exit_ok:
                 optional_failed += 1
                 warnings.append(f"optional_step_failed:{step['name']}")
+
+    bridge_runner = bridge_step_runner or _run_recommendation_governance_bridge_step
+    bridge_result = bridge_runner(
+        recommendation_path=Path(str(os.getenv("RECOMMENDATION_GOVERNANCE_PATH", "logs/recommendation_governance.jsonl")).strip()),
+        evaluation_path=Path(str(os.getenv("RECOMMENDATION_EVALUATION_PATH", "logs/recommendation_evaluation.jsonl")).strip()),
+        repo_root=ROOT,
+        created_at_utc=_utc_now().isoformat(),
+    )
+    bridge_result["name"] = "recommendation_governance_bridge"
+    bridge_result.setdefault("required", False)
+    bridge_result.setdefault("fail_open", True)
+    bridge_result["artifact"] = str(Path(bridge_result.get("evaluation_path") or "logs/recommendation_evaluation.jsonl").resolve())
+    results.append(bridge_result)
+    bridge_warning = str(bridge_result.get("warning") or "").strip()
+    if bridge_warning:
+        warnings.append(f"optional_step_warning:recommendation_governance_bridge:{bridge_warning}")
 
     readiness_generated_at = _utc_now().isoformat()
     try:

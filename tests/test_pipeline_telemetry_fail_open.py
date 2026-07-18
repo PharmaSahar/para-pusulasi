@@ -77,6 +77,11 @@ class _FakeGenerator:
         return _FakeContent()
 
 
+class _ForbiddenGenerator:
+    def __init__(self, channel_cfg=None):
+        raise AssertionError("content generation must not run in observation mode")
+
+
 class _FakeTTS:
     def __init__(self, channel_cfg=None):
         self.channel_cfg = channel_cfg
@@ -285,7 +290,7 @@ def test_observation_mode_pipeline_generates_manifest_and_precheck_without_side_
     monkeypatch.setattr(production_safety_gate, "get_global_overload_pause_status", lambda: {"is_open": False, "retry_after_seconds": 0, "pause_until": "", "reason": ""})
     monkeypatch.setattr(production_safety_gate, "get_provider_circuit_status", lambda _provider: {"provider": "anthropic", "is_open": False, "retry_after_seconds": 0, "state": {}})
     monkeypatch.setattr(production_safety_gate, "_resolve_git_head", lambda: "a" * 40)
-    monkeypatch.setattr(pipeline, "ContentGenerator", _FakeGenerator)
+    monkeypatch.setattr(pipeline, "ContentGenerator", _ForbiddenGenerator)
     monkeypatch.setattr(pipeline, "TTSEngine", _ForbiddenTTS)
     monkeypatch.setattr(pipeline, "ImageFetcher", _ObservationFetcher)
     monkeypatch.setattr(pipeline, "VideoCreator", _ForbiddenCreator)
@@ -299,6 +304,7 @@ def test_observation_mode_pipeline_generates_manifest_and_precheck_without_side_
     assert result["upload_safety_gate"]["blocking_reason"] == "production_observation_mode"
     assert result["upload_metadata"]["api_invoked"] is False
     assert result["shorts_upload_metadata"]["api_invoked"] is False
+    assert result["shorts_safety_gate"]["blocking_reason"] == "production_observation_mode"
     assert Path(result["visual_manifest_path"]).exists()
     assert result["upload_precheck"]["details"]["production_observation_mode"] is True
     assert not (tmp_path / "output" / "telemetry" / "experiments.jsonl").exists()

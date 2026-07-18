@@ -572,6 +572,138 @@ def run_full_pipeline(
 
     observation_mode = production_observation_mode_enabled()
     result["production_observation_mode"] = bool(observation_mode)
+    if observation_mode and not generate_only:
+        safe_topic = str(topic or getattr(cfg, "pexels_query", "") or getattr(cfg, "niche", "") or result.get("channel") or "observation probe")
+        safe_title = safe_topic[:100] or "Observation Probe"
+        observation_dir = Path(getattr(cfg, "output_dir", "output")) / "observation" / str(result.get("run_id", "run_observation"))
+        observation_dir.mkdir(parents=True, exist_ok=True)
+        script_path = Path(getattr(cfg, "scripts_dir", "output/scripts")) / f"{result['content_id']}_observation_script.json"
+        script_path.parent.mkdir(parents=True, exist_ok=True)
+        script_text = f"Observation-only visual safety probe for {safe_topic}."
+        script_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "production_observation_script.v1",
+                    "content_id": result["content_id"],
+                    "run_id": result["run_id"],
+                    "channel_id": result.get("channel"),
+                    "topic": safe_topic,
+                    "script": script_text,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        result["title"] = safe_title
+        result["script_path"] = str(script_path)
+        visual_query_decision = evaluate_visual_query(
+            query=safe_topic,
+            channel_id=str(result.get("channel", "")),
+            niche=str(getattr(cfg, "niche", "")),
+            topic=safe_topic,
+        )
+        result.setdefault("visual_safety_decisions", []).append(visual_query_decision.to_dict())
+        candidate_path = observation_dir / "visual_candidate_safe.jpg"
+        candidate_path.write_bytes(b"production-observation-visual-candidate")
+        candidate_list = [
+            {
+                "path": str(candidate_path),
+                "query": visual_query_decision.rewritten_query or safe_topic,
+                "allowed": bool(visual_query_decision.allowed),
+                "source": "production_observation_mode",
+            }
+        ]
+        result["visual_candidate_list"] = candidate_list
+        result["selected_visuals"] = [str(candidate_path)] if visual_query_decision.allowed else []
+        visual_manifest_path = build_visual_manifest(
+            channel_id=str(result.get("channel", "")),
+            content_id=str(result.get("content_id", "")),
+            run_id=str(result.get("run_id", "")),
+            niche=str(getattr(cfg, "niche", "")),
+            topic=safe_topic,
+            assets=list(result.get("selected_visuals") or []),
+            output_path=observation_dir / "visual_manifest.json",
+        )
+        result["visual_manifest_path"] = str(visual_manifest_path)
+        result["final_visual_assets"] = list(result.get("selected_visuals") or [])
+        render_gate = evaluate_production_safety_gate(
+            operation="render",
+            channel_id=str(result.get("channel", "")),
+            channel_cfg=cfg,
+            queue_path=Path(os.getenv("SCHEDULER_QUEUE_FILE", "output/state/channel_queue.json")),
+            writable_paths=[getattr(cfg, "output_dir", ""), getattr(cfg, "logs_dir", "")],
+            job_id=str(result.get("run_id", "")),
+        )
+        upload_gate = evaluate_production_safety_gate(
+            operation="upload",
+            channel_id=str(result.get("channel", "")),
+            channel_cfg=cfg,
+            queue_path=Path(os.getenv("SCHEDULER_QUEUE_FILE", "output/state/channel_queue.json")),
+            writable_paths=[getattr(cfg, "output_dir", ""), getattr(cfg, "logs_dir", "")],
+            job_id=str(result.get("run_id", "")),
+        )
+        shorts_gate = evaluate_production_safety_gate(
+            operation="shorts_upload",
+            channel_id=str(result.get("channel", "")),
+            channel_cfg=cfg,
+            queue_path=Path(os.getenv("SCHEDULER_QUEUE_FILE", "output/state/channel_queue.json")),
+            writable_paths=[getattr(cfg, "output_dir", ""), getattr(cfg, "logs_dir", "")],
+            job_id=str(result.get("run_id", "")),
+        )
+        result["production_safety_gate"] = render_gate.to_dict()
+        result["upload_safety_gate"] = upload_gate.to_dict()
+        result["shorts_safety_gate"] = shorts_gate.to_dict()
+        observation_video_path = observation_dir / "final_render_blocked.mp4"
+        ownership_manifest_path = persist_ownership_manifest(
+            channel_id=str(result.get("channel", "")),
+            content_id=str(result.get("content_id", "")),
+            run_id=str(result.get("run_id", "")),
+            niche=str(getattr(cfg, "niche", "")),
+            title=safe_title,
+            topic=safe_topic,
+            script=script_text,
+            script_path=str(script_path),
+            video_path=str(observation_video_path),
+            thumbnail_path=str(candidate_path),
+            visual_manifest_path=str(visual_manifest_path),
+        )
+        precheck = evaluate_upload_precheck(
+            channel_id=str(result.get("channel", "")),
+            content_id=str(result.get("content_id", "")),
+            run_id=str(result.get("run_id", "")),
+            niche=str(getattr(cfg, "niche", "")),
+            title=safe_title,
+            topic=safe_topic,
+            script=script_text,
+            description=script_text,
+            tags=[str(getattr(cfg, "niche", "") or "observation")],
+            script_path=str(script_path),
+            video_path=str(observation_video_path),
+            thumbnail_path=str(candidate_path),
+            manifest_path=ownership_manifest_path,
+            visual_manifest_path=visual_manifest_path,
+            final_visual_assets=list(result.get("final_visual_assets") or []),
+            duplicate_upload_detected=False,
+            quarantine_state="clear",
+            dry_run=True,
+        )
+        result["upload_precheck"] = precheck
+        result["upload_metadata"] = {
+            "video_id": None,
+            "api_invoked": False,
+            "dry_run": True,
+            "blocked_reason": "production_observation_mode",
+            "ownership_manifest_path": str(ownership_manifest_path),
+        }
+        result["shorts_upload_metadata"] = {"api_invoked": False, "blocked_reason": "production_observation_mode"}
+        result["render_metrics"] = {"render_status": "blocked", "blocked_reason": "production_observation_mode"}
+        result["video_id"] = None
+        result["youtube_url"] = ""
+        result["short_url"] = ""
+        result["final_status"] = "observation_complete"
+        result["observation_mode"] = read_observation_state()
+        return result
     if not generate_only and not observation_mode:
         gate_result = ensure_production_safety_gate(
             operation="render",

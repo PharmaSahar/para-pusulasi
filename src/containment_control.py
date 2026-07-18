@@ -417,8 +417,17 @@ def generate_release_evidence(
         os.chdir(old_cwd)
 
     critical_count = _critical_log_count_since(logs_since)
+    incident_state = status.get("incident_state", {})
+    if not isinstance(incident_state, dict):
+        incident_state = {}
+    current_release_sha = ""
+    if incident_state.get("released") is True:
+        release_metadata = incident_state.get("release_metadata")
+        if isinstance(release_metadata, dict):
+            current_release_sha = str(release_metadata.get("production_sha") or "")
+    deployed_sha_verified = production_sha == expected_production_sha and (not current_release_sha or current_release_sha == expected_production_sha)
     mandatory = {
-        "deployed_sha_verified": production_sha == expected_production_sha == status.get("incident_state", {}).get("release_metadata", {}).get("production_sha", expected_production_sha),
+        "deployed_sha_verified": deployed_sha_verified,
         "service_healthy": service_healthy,
         "scheduler_healthy": service_healthy,
         "visual_policy_loaded": policy_loaded,

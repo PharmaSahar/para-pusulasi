@@ -481,3 +481,37 @@ def test_generate_release_evidence_writes_strict_schema(tmp_path, monkeypatch):
     assert payload["schema_version"] == cc.EVIDENCE_SCHEMA_VERSION
     assert payload["mandatory"]["shorts_manifest_verified"] is True
     assert payload["dry_run_totals"]["unsafe_approvals"] == 0
+
+
+def test_generate_release_evidence_allows_restored_prior_release_metadata(tmp_path, monkeypatch):
+    paths = _paths(tmp_path)
+    state = _state()
+    state["visual_safety_incident_containment"].update({
+        "released": False,
+        "restored": True,
+        "release_metadata": {"production_sha": "old-release-sha"},
+        "release_history": [{"production_sha": "old-release-sha"}],
+        "restore_metadata": {"production_sha": "old-release-sha"},
+    })
+    _write_state(paths, state)
+    pipeline = tmp_path / "src" / "pipeline.py"
+    pipeline.parent.mkdir()
+    pipeline.write_text(
+        "build_visual_manifest(\nevaluate_upload_precheck(\nfinal_visual_assets\n"
+        "short_visual_manifest_path = build_visual_manifest(\nshort_precheck = evaluate_upload_precheck(\nfinal_visual_assets=short_visual_assets\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cc, "_critical_log_count_since", lambda _since: 0)
+    output = tmp_path / "evidence.generated.json"
+    result = cc.generate_release_evidence(
+        incident_id="PROJECT003",
+        expected_production_sha=SHA,
+        output_file=output,
+        paths=paths,
+        production_sha_resolver=lambda: SHA,
+        service_health_checker=lambda: True,
+    )
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert result["eligible_for_release"] is True
+    assert payload["mandatory"]["deployed_sha_verified"] is True

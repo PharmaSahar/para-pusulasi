@@ -226,25 +226,27 @@ Restriction: Full autonomy is allowed only after all safety, experiment, validat
 
 Mandatory system loop:
 
-OBSERVE  
-↓  
-MEASURE  
-↓  
-EXPLAIN  
-↓  
-PROPOSE  
-↓  
-VALIDATE  
-↓  
-EXPERIMENT  
-↓  
-APPROVE  
-↓  
-DEPLOY  
-↓  
-MONITOR  
-↓  
+```text
+OBSERVE
+↓
+MEASURE
+↓
+EXPLAIN
+↓
+PROPOSE
+↓
+VALIDATE
+↓
+EXPERIMENT
+↓
+APPROVE
+↓
+DEPLOY
+↓
+MONITOR
+↓
 LEARN
+```
 
 ## 8. Approval Model
 

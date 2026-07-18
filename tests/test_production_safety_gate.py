@@ -259,7 +259,34 @@ def test_ordinary_overload_pause_blocks_scheduler_startup_deployment(monkeypatch
     assert result.blocking_reason == "global_overload_pause_open"
 
 
-def test_visual_safety_containment_permits_only_contained_deployment_startup(monkeypatch, tmp_path: Path):
+def test_visual_safety_containment_permits_scheduler_startup_without_releasing_containment(monkeypatch, tmp_path: Path):
+    queue_path, _events = _prepare_common(monkeypatch, tmp_path)
+    monkeypatch.setattr("src.channel_manager.get_channel", lambda _cid: _make_cfg(tmp_path))
+    monkeypatch.setattr(
+        production_safety_gate,
+        "get_global_overload_pause_status",
+        lambda: {
+            "is_open": True,
+            "retry_after_seconds": 600,
+            "pause_until": "2099-01-01T00:00:00Z",
+            "reason": "visual_safety_incident_containment:PROJECT003:cross_channel_inappropriate_visuals",
+        },
+    )
+
+    result = production_safety_gate.evaluate_production_safety_gate(
+        operation="scheduler_startup",
+        startup_health=type("H", (), {"ok": True, "errors": (), "missing_api_keys": ()})(),
+        ready_channels=["demo_channel"],
+        queue_path=queue_path,
+    )
+
+    assert result.allowed is True
+    assert result.status == "warning"
+    assert result.blocking_reason == ""
+    assert any(check.reason_code == "visual_safety_containment_active_scheduler_startup" for check in result.checks)
+
+
+def test_visual_safety_containment_permits_contained_deployment_startup(monkeypatch, tmp_path: Path):
     queue_path, _events = _prepare_common(monkeypatch, tmp_path)
     monkeypatch.setenv("IMMUTABLE_CONTAINED_DEPLOYMENT", "1")
     monkeypatch.setattr("src.channel_manager.get_channel", lambda _cid: _make_cfg(tmp_path))
@@ -408,6 +435,7 @@ def test_production_safety_gate_blocks_duplicate_scheduler_state(monkeypatch, tm
     meta_path = tmp_path / "scheduler_singleton_meta.json"
     meta_path.write_text(json.dumps({"pid": 99999}), encoding="utf-8")
     monkeypatch.setenv("SCHEDULER_SINGLETON_META_FILE", str(meta_path))
+    monkeypatch.setattr(production_safety_gate, "_pid_is_running", lambda _pid: True)
     monkeypatch.setattr("src.channel_manager.get_channel", lambda _cid: _make_cfg(tmp_path))
 
     result = production_safety_gate.evaluate_production_safety_gate(
@@ -419,3 +447,22 @@ def test_production_safety_gate_blocks_duplicate_scheduler_state(monkeypatch, tm
 
     assert result.allowed is False
     assert result.blocking_reason == "duplicate_scheduler_state"
+
+
+def test_production_safety_gate_ignores_stale_scheduler_metadata(monkeypatch, tmp_path: Path):
+    queue_path, _events = _prepare_common(monkeypatch, tmp_path)
+    meta_path = tmp_path / "scheduler_singleton_meta.json"
+    meta_path.write_text(json.dumps({"pid": 99999}), encoding="utf-8")
+    monkeypatch.setenv("SCHEDULER_SINGLETON_META_FILE", str(meta_path))
+    monkeypatch.setattr(production_safety_gate, "_pid_is_running", lambda _pid: False)
+    monkeypatch.setattr("src.channel_manager.get_channel", lambda _cid: _make_cfg(tmp_path))
+
+    result = production_safety_gate.evaluate_production_safety_gate(
+        operation="scheduler_startup",
+        startup_health=type("H", (), {"ok": True, "errors": (), "missing_api_keys": ()})(),
+        ready_channels=["demo_channel"],
+        queue_path=queue_path,
+    )
+
+    assert result.allowed is True
+    assert result.blocking_reason == ""

@@ -415,7 +415,7 @@ def _check_scheduler_health(*, operation: str, startup_health: Any | None, relea
             except Exception:
                 meta = {}
             meta_pid = str((meta or {}).get("pid") or "").strip()
-            if meta_pid and meta_pid != str(os.getpid()):
+            if meta_pid and meta_pid != str(os.getpid()) and _pid_is_running(meta_pid):
                 return _build_check(
                     check_name="scheduler_health",
                     status="fail",
@@ -664,23 +664,41 @@ def _is_visual_safety_containment_pause(global_pause: dict[str, Any]) -> bool:
     return reason.startswith("visual_safety_incident_containment:")
 
 
+def _pid_is_running(raw_pid: str) -> bool:
+    try:
+        pid = int(str(raw_pid).strip())
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 def _check_rate_limit_status(*, operation: str, release_sha: str, channel_id: str, job_id: str) -> ProductionSafetyCheckResult:
     global_pause = get_global_overload_pause_status()
     provider_circuit = get_provider_circuit_status("anthropic")
     if operation in {"scheduler_startup", "render"}:
         if bool(global_pause.get("is_open")):
-            contained_deployment = operation == "scheduler_startup" and _is_enabled(os.getenv("IMMUTABLE_CONTAINED_DEPLOYMENT", "false"))
-            if contained_deployment and _is_visual_safety_containment_pause(global_pause):
+            scheduler_startup = operation == "scheduler_startup"
+            contained_deployment = scheduler_startup and _is_enabled(os.getenv("IMMUTABLE_CONTAINED_DEPLOYMENT", "false"))
+            if scheduler_startup and _is_visual_safety_containment_pause(global_pause):
+                reason_code = "visual_safety_containment_active_contained_deployment" if contained_deployment else "visual_safety_containment_active_scheduler_startup"
                 return _build_check(
                     check_name="rate_limit_status",
                     status="warn",
                     severity="warning",
-                    reason_code="visual_safety_containment_active_contained_deployment",
-                    message="Visual-safety containment is active; contained immutable deployment preflight is permitted.",
+                    reason_code=reason_code,
+                    message="Visual-safety containment is active; scheduler startup is permitted while render/upload remain blocked.",
                     release_sha=release_sha,
                     channel_id=channel_id,
                     job_id=job_id,
-                    evidence={"global_overload_pause": dict(global_pause), "contained_deployment": True},
+                    evidence={"global_overload_pause": dict(global_pause), "contained_deployment": contained_deployment},
                 )
             return _build_check(
                 check_name="rate_limit_status",

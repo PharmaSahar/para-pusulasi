@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 def _install_fake_dotenv(monkeypatch):
     fake_module = ModuleType("dotenv")
     fake_module.load_dotenv = lambda *args, **kwargs: None
+    fake_module.dotenv_values = lambda *args, **kwargs: {}
     monkeypatch.setitem(sys.modules, "dotenv", fake_module)
 
 

@@ -77,6 +77,41 @@ def test_production_safety_gate_all_checks_pass(monkeypatch, tmp_path: Path):
     assert events[-1]["release_sha"] == "a" * 40
 
 
+def test_observation_mode_blocks_render_and_upload_but_allows_scheduler_startup(monkeypatch, tmp_path: Path):
+    queue_path, _events = _prepare_common(monkeypatch, tmp_path)
+    cfg = _make_cfg(tmp_path)
+    monkeypatch.setenv("PRODUCTION_OBSERVATION_MODE", "true")
+
+    render = production_safety_gate.evaluate_production_safety_gate(
+        operation="render",
+        channel_id="demo_channel",
+        channel_cfg=cfg,
+        queue_path=queue_path,
+        deployment_lock_path=tmp_path / "no-lock",
+    )
+    upload = production_safety_gate.evaluate_production_safety_gate(
+        operation="upload",
+        channel_id="demo_channel",
+        channel_cfg=cfg,
+        queue_path=queue_path,
+        deployment_lock_path=tmp_path / "no-lock",
+    )
+    startup = production_safety_gate.evaluate_production_safety_gate(
+        operation="scheduler_startup",
+        channel_id="demo_channel",
+        channel_cfg=cfg,
+        startup_health=SimpleNamespace(ok=True, errors=[]),
+        queue_path=queue_path,
+        deployment_lock_path=tmp_path / "no-lock",
+    )
+
+    assert render.allowed is False
+    assert render.blocking_reason == "production_observation_mode"
+    assert upload.allowed is False
+    assert upload.blocking_reason == "production_observation_mode"
+    assert startup.allowed is True
+
+
 def test_production_safety_gate_blocks_missing_credential(monkeypatch, tmp_path: Path):
     queue_path, _events = _prepare_common(monkeypatch, tmp_path)
     cfg = _make_cfg(tmp_path)

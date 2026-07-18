@@ -11,6 +11,7 @@ from typing import Any
 
 from .config import config as default_config
 from .production_quality_platform import record_production_event
+from .production_observation import read_observation_state
 from .scheduler_utils import (
     check_token_health,
     get_free_disk_gb,
@@ -767,6 +768,44 @@ def _check_optional_integrations(*, release_sha: str, channel_id: str, job_id: s
     )
 
 
+def _check_observation_mode(*, operation: str, release_sha: str, channel_id: str, job_id: str) -> ProductionSafetyCheckResult | None:
+    state = read_observation_state()
+    if not bool(state.get("enabled")):
+        return None
+    blocked_operations = {
+        "render",
+        "upload",
+        "shorts_upload",
+        "publication",
+        "registry_update",
+        "analytics_write",
+        "queue_mutation",
+    }
+    if operation in blocked_operations:
+        return _build_check(
+            check_name="production_observation_mode",
+            status="fail",
+            severity="critical",
+            reason_code="production_observation_mode",
+            message="Production observation mode blocks irreversible production side effects.",
+            release_sha=release_sha,
+            channel_id=channel_id,
+            job_id=job_id,
+            evidence={"operation": operation, "observation_mode": state},
+        )
+    return _build_check(
+        check_name="production_observation_mode",
+        status="pass",
+        severity="critical",
+        reason_code="production_observation_mode_active_readonly_operation",
+        message="Production observation mode is active and this operation is read-only/allowed.",
+        release_sha=release_sha,
+        channel_id=channel_id,
+        job_id=job_id,
+        evidence={"operation": operation, "observation_mode": state},
+    )
+
+
 def _aggregate_status(checks: tuple[ProductionSafetyCheckResult, ...]) -> tuple[bool, str, str]:
     blocking_reason = next((item.reason_code for item in checks if item.status == "fail" and item.severity == "critical"), "")
     if blocking_reason:
@@ -878,6 +917,9 @@ def evaluate_production_safety_gate(
     checks.append(_check_active_deployment_lock(deployment_lock_path=deployment_lock_path, release_sha=release_sha, channel_id=channel_id, job_id=job_id))
     checks.append(_check_clock_sanity(release_sha=release_sha, channel_id=channel_id, job_id=job_id))
     checks.append(_check_rate_limit_status(operation=operation, release_sha=release_sha, channel_id=channel_id, job_id=job_id))
+    observation_check = _check_observation_mode(operation=operation, release_sha=release_sha, channel_id=channel_id, job_id=job_id)
+    if observation_check is not None:
+        checks.append(observation_check)
     optional_check = _check_optional_integrations(release_sha=release_sha, channel_id=channel_id, job_id=job_id)
     if optional_check is not None:
         checks.append(optional_check)

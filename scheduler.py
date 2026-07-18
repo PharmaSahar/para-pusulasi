@@ -41,6 +41,7 @@ from src.production_quality_platform import (
     record_dead_letter,
     update_production_dashboard,
 )
+from src.production_observation import production_observation_mode_enabled
 from src.production_safety_gate import evaluate_production_safety_gate
 from src.retry_policy import classify_retry_decision
 from src.runtime_storage import runtime_path
@@ -251,6 +252,9 @@ def load_queue() -> dict:
 
 
 def save_queue(data: dict):
+    if production_observation_mode_enabled():
+        logger.warning("Queue save blocked: production_observation_mode")
+        return
     with QUEUE_LOCK:
         mode = os.getenv("JOB_STORE_MODE", "json").strip().lower()
         if mode not in {"json", "shadow"}:
@@ -281,6 +285,9 @@ def save_queue(data: dict):
 
 
 def update_queue(mutator):
+    if production_observation_mode_enabled():
+        logger.warning("Queue mutation blocked: production_observation_mode")
+        return load_queue()
     with QUEUE_LOCK:
         mode = os.getenv("JOB_STORE_MODE", "json").strip().lower()
         if mode not in {"json", "shadow"}:

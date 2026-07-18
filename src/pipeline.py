@@ -40,7 +40,8 @@ from .thumbnail_candidate_generator import generate_thumbnail_candidates
 from .thumbnail_experiment_registry_binding import register_thumbnail_variant_bindings
 from .thumbnail_selection_policy import select_thumbnail_candidate
 from .tts_engine import TTSEngine
-from .production_safety_gate import ensure_production_safety_gate
+from .production_observation import production_observation_mode_enabled, read_observation_state
+from .production_safety_gate import evaluate_production_safety_gate, ensure_production_safety_gate
 from .video_creator_pro import VideoCreator
 from .upload_precheck import evaluate_upload_precheck, persist_ownership_manifest
 from .visual_safety_policy import build_visual_manifest, evaluate_visual_query
@@ -569,7 +570,9 @@ def run_full_pipeline(
         if "analytics_warning" not in result:
             result["analytics_warning"] = None
 
-    if not generate_only:
+    observation_mode = production_observation_mode_enabled()
+    result["production_observation_mode"] = bool(observation_mode)
+    if not generate_only and not observation_mode:
         gate_result = ensure_production_safety_gate(
             operation="render",
             channel_id=str(result.get("channel", "")),
@@ -698,7 +701,8 @@ def run_full_pipeline(
                     "final_status": result.get("final_status"),
                     "content_type": "video",
                 }
-                record_production_event(obs_payload)
+                if not production_observation_mode_enabled():
+                    record_production_event(obs_payload)
             except Exception:
                 pass
         except Exception as e:
@@ -1860,28 +1864,31 @@ def run_full_pipeline(
                 ],
             }
 
-    try:
-        _append_pipeline_run_registry_event(
-            experiment_id=resolved_experiment_id,
-            run_id=result["run_id"],
-            channel_id=str(result.get("channel", "default")),
-            topic=topic,
-            title=getattr(content, "title", ""),
-            schema_version=DEFAULT_SCHEMA_VERSION,
-        )
-    except Exception as e:
-        warning = _record_warning(
-            "registry_warning",
-            code="pipeline_registry_event_append_failed",
-            message="Pipeline registry event append failed; pipeline continued.",
-            extra={"error_type": e.__class__.__name__},
-        )
-        logger.warning(
-            "Registry fail-open: code=%s error_type=%s count=%s",
-            warning.get("code"),
-            warning.get("error_type"),
-            warning.get("count"),
-        )
+    if observation_mode:
+        result["pipeline_registry_skipped_reason"] = "production_observation_mode"
+    else:
+        try:
+            _append_pipeline_run_registry_event(
+                experiment_id=resolved_experiment_id,
+                run_id=result["run_id"],
+                channel_id=str(result.get("channel", "default")),
+                topic=topic,
+                title=getattr(content, "title", ""),
+                schema_version=DEFAULT_SCHEMA_VERSION,
+            )
+        except Exception as e:
+            warning = _record_warning(
+                "registry_warning",
+                code="pipeline_registry_event_append_failed",
+                message="Pipeline registry event append failed; pipeline continued.",
+                extra={"error_type": e.__class__.__name__},
+            )
+            logger.warning(
+                "Registry fail-open: code=%s error_type=%s count=%s",
+                warning.get("code"),
+                warning.get("error_type"),
+                warning.get("count"),
+            )
 
     diversity_video_record = None
     thumbnail_experiments = {}
@@ -2065,6 +2072,107 @@ def run_full_pipeline(
 
     if _content_quality_gate_enabled() or _production_quality_platform_enabled():
         _run_content_quality_gate()
+
+    if observation_mode:
+        logger.info("Production observation mode active: skipping TTS, final render, Shorts render, uploads, registry, and analytics writes.")
+        observation_dir = Path(getattr(cfg, "output_dir", "output")) / "observation" / str(result.get("run_id", "run_observation"))
+        observation_dir.mkdir(parents=True, exist_ok=True)
+        fetcher = ImageFetcher(channel_cfg=cfg)
+        visual_query_decision = evaluate_visual_query(
+            query=str(getattr(content, "pexels_search", None) or getattr(cfg, "pexels_query", None) or content.title),
+            channel_id=str(result.get("channel", "")),
+            niche=str(getattr(cfg, "niche", "")),
+            topic=str(topic or getattr(content, "title", "")),
+        )
+        result.setdefault("visual_safety_decisions", []).append(visual_query_decision.to_dict())
+        query_value = visual_query_decision.rewritten_query or str(getattr(content, "pexels_search", None) or content.title)
+        image_paths = fetcher.fetch_video_clips(
+            content.title,
+            count=4,
+            output_dir=str(observation_dir / "visual_candidates"),
+            query_override=query_value,
+        )
+        result["selected_visuals"] = [str(item) for item in (image_paths or [])]
+        thumbnail_path = str(image_paths[0]) if image_paths else ""
+        visual_manifest_path = build_visual_manifest(
+            channel_id=str(result.get("channel", "")),
+            content_id=str(result.get("content_id", "")),
+            run_id=str(result.get("run_id", "")),
+            niche=str(getattr(cfg, "niche", "")),
+            topic=str(topic or getattr(content, "title", "")),
+            assets=[str(item) for item in (image_paths or [])],
+            output_path=observation_dir / "visual_manifest.json",
+        )
+        result["visual_manifest_path"] = str(visual_manifest_path)
+        result["final_visual_assets"] = [str(item) for item in (image_paths or [])]
+        render_gate = evaluate_production_safety_gate(
+            operation="render",
+            channel_id=str(result.get("channel", "")),
+            channel_cfg=cfg,
+            queue_path=Path(os.getenv("SCHEDULER_QUEUE_FILE", "output/state/channel_queue.json")),
+            writable_paths=[getattr(cfg, "output_dir", ""), getattr(cfg, "logs_dir", "")],
+            job_id=str(result.get("run_id", "")),
+        )
+        upload_gate = evaluate_production_safety_gate(
+            operation="upload",
+            channel_id=str(result.get("channel", "")),
+            channel_cfg=cfg,
+            queue_path=Path(os.getenv("SCHEDULER_QUEUE_FILE", "output/state/channel_queue.json")),
+            writable_paths=[getattr(cfg, "output_dir", ""), getattr(cfg, "logs_dir", "")],
+            job_id=str(result.get("run_id", "")),
+        )
+        result["production_safety_gate"] = render_gate.to_dict()
+        result["upload_safety_gate"] = upload_gate.to_dict()
+        observation_video_path = observation_dir / "final_render_blocked.mp4"
+        ownership_manifest_path = persist_ownership_manifest(
+            channel_id=str(result.get("channel", "")),
+            content_id=str(result.get("content_id", "")),
+            run_id=str(result.get("run_id", "")),
+            niche=str(getattr(cfg, "niche", "")),
+            title=str(getattr(content, "title", "")),
+            topic=str(topic or getattr(content, "title", "")),
+            script=str(getattr(content, "script", "")),
+            script_path=str(result.get("script_path", "")),
+            video_path=str(observation_video_path),
+            thumbnail_path=thumbnail_path or None,
+            visual_manifest_path=str(visual_manifest_path),
+        )
+        precheck = evaluate_upload_precheck(
+            channel_id=str(result.get("channel", "")),
+            content_id=str(result.get("content_id", "")),
+            run_id=str(result.get("run_id", "")),
+            niche=str(getattr(cfg, "niche", "")),
+            title=str(getattr(content, "title", "")),
+            topic=str(topic or getattr(content, "title", "")),
+            script=str(getattr(content, "script", "")),
+            description=str(getattr(content, "description", "") or ""),
+            tags=list(getattr(content, "tags", []) or []),
+            script_path=str(result.get("script_path", "")),
+            video_path=str(observation_video_path),
+            thumbnail_path=thumbnail_path or None,
+            manifest_path=ownership_manifest_path,
+            visual_manifest_path=visual_manifest_path,
+            final_visual_assets=list(result.get("final_visual_assets") or []),
+            duplicate_upload_detected=False,
+            quarantine_state="clear",
+            dry_run=True,
+        )
+        result["upload_precheck"] = precheck
+        result["upload_metadata"] = {
+            "video_id": None,
+            "api_invoked": False,
+            "dry_run": True,
+            "blocked_reason": "production_observation_mode",
+            "ownership_manifest_path": str(ownership_manifest_path),
+        }
+        result["shorts_upload_metadata"] = {"api_invoked": False, "blocked_reason": "production_observation_mode"}
+        result["render_metrics"] = {"render_status": "blocked", "blocked_reason": "production_observation_mode"}
+        result["video_id"] = None
+        result["youtube_url"] = ""
+        result["short_url"] = ""
+        result["final_status"] = "observation_complete"
+        result["observation_mode"] = read_observation_state()
+        return result
 
     try:
         _run_fact_check_guard("tts", content.script, suppress_retryable_alert=True)

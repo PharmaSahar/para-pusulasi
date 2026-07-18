@@ -129,6 +129,36 @@ class _FakeUploader:
         return {"subscribers": 0}
 
 
+class _ForbiddenTTS:
+    def __init__(self, channel_cfg=None):
+        pass
+
+    def generate_audio(self, script: str) -> str:
+        raise AssertionError("TTS must not run in observation mode")
+
+
+class _ForbiddenCreator:
+    def __init__(self, channel_cfg=None):
+        pass
+
+    def create_video(self, *args, **kwargs):
+        raise AssertionError("final render must not run in observation mode")
+
+    def create_thumbnail(self, *args, **kwargs):
+        raise AssertionError("thumbnail render must not run in observation mode")
+
+
+class _ForbiddenUploader:
+    def __init__(self, channel_cfg=None):
+        pass
+
+    def upload_video(self, *args, **kwargs):
+        raise AssertionError("upload must not run in observation mode")
+
+    def get_channel_stats(self):
+        raise AssertionError("upload side-effect helpers must not run in observation mode")
+
+
 class _FakeShortsCreator:
     def __init__(self, channel_cfg=None):
         pass
@@ -217,6 +247,61 @@ class _FakeConfig:
         Path(self.scripts_dir).mkdir(parents=True, exist_ok=True)
         Path(self.audio_dir).mkdir(parents=True, exist_ok=True)
         Path(self.videos_dir).mkdir(parents=True, exist_ok=True)
+
+
+def test_observation_mode_pipeline_generates_manifest_and_precheck_without_side_effects(monkeypatch, tmp_path):
+    import src.production_safety_gate as production_safety_gate
+
+    cfg = _FakeConfig(tmp_path)
+    cfg.channel_id = "test_channel"
+    cfg.niche = "finance"
+    cfg.name = "Test Channel"
+    cfg.logs_dir = str(tmp_path / "logs")
+    cfg.validate = lambda: []
+    cfg.ensure_directories()
+    script_path = Path(cfg.scripts_dir) / "2026-07-09_Test Baslik.json"
+    script_path.parent.mkdir(parents=True, exist_ok=True)
+    script_path.write_text("{}", encoding="utf-8")
+
+    class _ObservationFetcher:
+        def __init__(self, channel_cfg=None):
+            self.channel_cfg = channel_cfg
+
+        def fetch_video_clips(self, *_args, **kwargs):
+            out = Path(kwargs["output_dir"]) / "clip.jpg"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(b"clip")
+            return [str(out)]
+
+        def fetch_thumbnail_photo(self, *_args, **_kwargs):
+            return None
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PRODUCTION_OBSERVATION_MODE", "true")
+    monkeypatch.setenv("PRODUCTION_SAFETY_GATE_IN_TESTS", "1")
+    monkeypatch.setenv("UPLOAD_PRECHECK_ENABLED", "true")
+    monkeypatch.setattr(production_safety_gate, "check_token_health", lambda _cfg: (True, "ok"))
+    monkeypatch.setattr(production_safety_gate, "get_free_disk_gb", lambda: 9.5)
+    monkeypatch.setattr(production_safety_gate, "get_global_overload_pause_status", lambda: {"is_open": False, "retry_after_seconds": 0, "pause_until": "", "reason": ""})
+    monkeypatch.setattr(production_safety_gate, "get_provider_circuit_status", lambda _provider: {"provider": "anthropic", "is_open": False, "retry_after_seconds": 0, "state": {}})
+    monkeypatch.setattr(production_safety_gate, "_resolve_git_head", lambda: "a" * 40)
+    monkeypatch.setattr(pipeline, "ContentGenerator", _FakeGenerator)
+    monkeypatch.setattr(pipeline, "TTSEngine", _ForbiddenTTS)
+    monkeypatch.setattr(pipeline, "ImageFetcher", _ObservationFetcher)
+    monkeypatch.setattr(pipeline, "VideoCreator", _ForbiddenCreator)
+    monkeypatch.setattr(pipeline, "YouTubeUploader", _ForbiddenUploader)
+    monkeypatch.setattr(pipeline, "record_production_event", lambda _payload: (_ for _ in ()).throw(AssertionError("analytics/telemetry write blocked")))
+
+    result = pipeline.run_full_pipeline(topic="x", generate_only=False, channel_cfg=cfg)
+
+    assert result["final_status"] == "observation_complete"
+    assert result["production_safety_gate"]["blocking_reason"] == "production_observation_mode"
+    assert result["upload_safety_gate"]["blocking_reason"] == "production_observation_mode"
+    assert result["upload_metadata"]["api_invoked"] is False
+    assert result["shorts_upload_metadata"]["api_invoked"] is False
+    assert Path(result["visual_manifest_path"]).exists()
+    assert result["upload_precheck"]["details"]["production_observation_mode"] is True
+    assert not (tmp_path / "output" / "telemetry" / "experiments.jsonl").exists()
 
 
 def _fact_check_ok(*args, **kwargs):

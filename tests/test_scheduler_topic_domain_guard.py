@@ -7,6 +7,8 @@ from unittest.mock import patch
 import scheduler
 import pytest
 
+TEST_TRIGGER_SOURCE = "recurring_empty_queue_fill"
+
 
 @pytest.fixture(autouse=True)
 def _isolate_production_dashboard_paths(monkeypatch, tmp_path):
@@ -61,7 +63,7 @@ def test_scheduler_quarantines_topic_domain_block(monkeypatch, tmp_path):
 
     monkeypatch.setattr(pipeline, "run_full_pipeline", _raise_domain_block)
 
-    scheduler.render_and_schedule("demo_channel")
+    scheduler.render_and_schedule("demo_channel", trigger_source=TEST_TRIGGER_SOURCE)
 
     data = json.loads(queue_file.read_text(encoding="utf-8"))
     entry = data["demo_channel"][0]
@@ -103,7 +105,7 @@ def test_scheduler_topic_domain_block_is_not_retried(monkeypatch):
             raise err
 
         monkeypatch.setattr(pipeline, "run_full_pipeline", _raise_domain_block)
-        scheduler.render_and_schedule("demo_channel")
+        scheduler.render_and_schedule("demo_channel", trigger_source=TEST_TRIGGER_SOURCE)
 
     assert calls["pipeline"] == 1
 
@@ -122,7 +124,7 @@ def test_transient_provider_failure_remains_retryable(monkeypatch, tmp_path):
 
     monkeypatch.setattr(pipeline, "run_full_pipeline", _transient_then_success)
     monkeypatch.setattr(scheduler.time, "sleep", lambda _s: None)
-    scheduler.render_and_schedule("demo_channel")
+    scheduler.render_and_schedule("demo_channel", trigger_source=TEST_TRIGGER_SOURCE)
 
     data = json.loads(queue_file.read_text(encoding="utf-8"))
     assert data["demo_channel"][0]["status"] == "active"
@@ -144,7 +146,7 @@ def test_quarantine_entry_contains_identity_fields(monkeypatch, tmp_path):
         raise exc
 
     monkeypatch.setattr(pipeline, "run_full_pipeline", _raise_domain_block_with_identity)
-    scheduler.render_and_schedule("demo_channel")
+    scheduler.render_and_schedule("demo_channel", trigger_source=TEST_TRIGGER_SOURCE)
 
     data = json.loads(queue_file.read_text(encoding="utf-8"))
     entry = data["demo_channel"][0]
@@ -183,8 +185,8 @@ def test_quarantine_duplicate_handling_is_idempotent(monkeypatch, tmp_path):
         raise exc
 
     monkeypatch.setattr(pipeline, "run_full_pipeline", _raise_repeatable_domain_block)
-    scheduler.render_and_schedule("demo_channel")
-    scheduler.render_and_schedule("demo_channel")
+    scheduler.render_and_schedule("demo_channel", trigger_source=TEST_TRIGGER_SOURCE)
+    scheduler.render_and_schedule("demo_channel", trigger_source=TEST_TRIGGER_SOURCE)
 
     data = json.loads(queue_file.read_text(encoding="utf-8"))
     entries = data["demo_channel"]
@@ -209,7 +211,7 @@ def test_blocked_main_content_cannot_upload_short(monkeypatch, tmp_path):
         lambda *_args, **_kwargs: calls.__setitem__("notify_upload", calls["notify_upload"] + 1),
     )
 
-    scheduler.render_and_schedule("demo_channel")
+    scheduler.render_and_schedule("demo_channel", trigger_source=TEST_TRIGGER_SOURCE)
 
     assert calls["notify_upload"] == 0
 
@@ -223,7 +225,7 @@ def test_retry_resume_cannot_bypass_terminal_domain_block(monkeypatch, tmp_path)
         raise RuntimeError("topic_provenance_collision")
 
     monkeypatch.setattr(pipeline, "run_full_pipeline", _raise_domain_block)
-    scheduler.render_and_schedule("demo_channel")
+    scheduler.render_and_schedule("demo_channel", trigger_source=TEST_TRIGGER_SOURCE)
 
     data = json.loads(queue_file.read_text(encoding="utf-8"))
     entry = data["demo_channel"][0]
@@ -243,7 +245,7 @@ def test_domain_block_does_not_consume_general_retry_budget(monkeypatch, tmp_pat
         raise RuntimeError("domain_policy_forbidden_keyword")
 
     monkeypatch.setattr(pipeline, "run_full_pipeline", _raise_domain_block)
-    scheduler.render_and_schedule("demo_channel")
+    scheduler.render_and_schedule("demo_channel", trigger_source=TEST_TRIGGER_SOURCE)
 
     assert calls["pipeline"] == 1
 
@@ -258,7 +260,7 @@ def test_terminal_domain_block_never_schedules_rendered_or_uploaded_content(monk
 
     monkeypatch.setattr(pipeline, "run_full_pipeline", _raise_domain_block)
 
-    scheduler.render_and_schedule("demo_channel")
+    scheduler.render_and_schedule("demo_channel", trigger_source=TEST_TRIGGER_SOURCE)
 
     data = json.loads(queue_file.read_text(encoding="utf-8"))
     entry = data["demo_channel"][0]
@@ -305,8 +307,8 @@ def test_scheduler_continues_with_other_channel_after_terminal_domain_block(monk
 
     monkeypatch.setattr(pipeline, "run_full_pipeline", _pipeline)
 
-    scheduler.render_and_schedule("blocked_channel")
-    scheduler.render_and_schedule("healthy_channel")
+    scheduler.render_and_schedule("blocked_channel", trigger_source=TEST_TRIGGER_SOURCE)
+    scheduler.render_and_schedule("healthy_channel", trigger_source=TEST_TRIGGER_SOURCE)
 
     data = json.loads(queue_file.read_text(encoding="utf-8"))
     assert data["blocked_channel"][0]["status"] == "quarantined"
@@ -332,7 +334,7 @@ def test_quarantine_persistence_failure_is_fail_safe_and_never_uploads(monkeypat
     )
     monkeypatch.setattr(scheduler, "update_queue", lambda _fn: (_ for _ in ()).throw(OSError("read only fs")))
 
-    scheduler.render_and_schedule("demo_channel")
+    scheduler.render_and_schedule("demo_channel", trigger_source=TEST_TRIGGER_SOURCE)
 
     assert calls["notify_upload"] == 0
 

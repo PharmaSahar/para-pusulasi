@@ -182,6 +182,95 @@ def test_provenance_file_persisted_with_selected_index(monkeypatch, tmp_path):
     assert data["hashes"]["payload"]
 
 
+def test_same_run_regeneration_replaces_provenance_without_collision(monkeypatch, tmp_path):
+    ctx = {
+        "run_id": "run_retry",
+        "content_id": "content_retry",
+        "channel_id": "para_pusulasi",
+        "channel_slug": "para_pusulasi",
+        "runtime_build_identity": {},
+        "output_dir": str(tmp_path),
+    }
+    generator = content_generator.ContentGenerator(channel_cfg=_FakeFinanceConfig(), provenance_context=ctx)
+
+    generator._last_topic_trace = {
+        "provider": "internal_topic_source",
+        "raw_provider_rows": [{"query": "Türkiye'de Emeklilik Planlaması"}],
+        "normalized_provider_rows": ["Türkiye'de Emeklilik Planlaması"],
+        "pre_filter_candidates": ["Türkiye'de Emeklilik Planlaması"],
+        "post_filter_candidates": ["Türkiye'de Emeklilik Planlaması"],
+    }
+    generator._persist_topic_provenance(
+        selected_index=0,
+        selected_topic="Türkiye'de Emeklilik Planlaması",
+        final_topics=["Türkiye'de Emeklilik Planlaması"],
+    )
+
+    generator._last_topic_trace = {
+        "provider": "fact_check_retry",
+        "raw_provider_rows": [{"query": "Emtia oynakligini kesin seviye vermeden yorumlama rehberi"}],
+        "normalized_provider_rows": ["Emtia oynakligini kesin seviye vermeden yorumlama rehberi"],
+        "pre_filter_candidates": ["Emtia oynakligini kesin seviye vermeden yorumlama rehberi"],
+        "post_filter_candidates": ["Emtia oynakligini kesin seviye vermeden yorumlama rehberi"],
+    }
+    generator._persist_topic_provenance(
+        selected_index=0,
+        selected_topic="Emtia oynakligini kesin seviye vermeden yorumlama rehberi",
+        final_topics=["Emtia oynakligini kesin seviye vermeden yorumlama rehberi"],
+    )
+
+    path = tmp_path / "topic_provenance" / "para_pusulasi" / "run_retry" / "content_retry.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["run_id"] == "run_retry"
+    assert data["content_id"] == "content_retry"
+    assert data["channel_id"] == "para_pusulasi"
+    assert data["provider_name"] == "fact_check_retry"
+    assert data["selected_topic"] == "Emtia oynakligini kesin seviye vermeden yorumlama rehberi"
+
+
+def test_conflicting_provenance_identity_remains_blocked(monkeypatch, tmp_path):
+    ctx = {
+        "run_id": "run_retry",
+        "content_id": "content_retry",
+        "channel_id": "para_pusulasi",
+        "channel_slug": "para_pusulasi",
+        "runtime_build_identity": {},
+        "output_dir": str(tmp_path),
+    }
+    path = tmp_path / "topic_provenance" / "para_pusulasi" / "run_retry" / "content_retry.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "run_id": "run_retry",
+                "content_id": "content_retry",
+                "channel_id": "saglik_pusulasi",
+                "selected_topic": "Uyku kalitesini artirma yollari",
+            }
+        ),
+        encoding="utf-8",
+    )
+    generator = content_generator.ContentGenerator(channel_cfg=_FakeFinanceConfig(), provenance_context=ctx)
+    generator._last_topic_trace = {
+        "provider": "internal_topic_source",
+        "raw_provider_rows": [{"query": "Dolar/TL 2026 sonu tahminleri"}],
+        "normalized_provider_rows": ["Dolar/TL 2026 sonu tahminleri"],
+        "pre_filter_candidates": ["Dolar/TL 2026 sonu tahminleri"],
+        "post_filter_candidates": ["Dolar/TL 2026 sonu tahminleri"],
+    }
+
+    with pytest.raises(content_generator.TopicDomainBlockedError) as excinfo:
+        generator._persist_topic_provenance(
+            selected_index=0,
+            selected_topic="Dolar/TL 2026 sonu tahminleri",
+            final_topics=["Dolar/TL 2026 sonu tahminleri"],
+        )
+
+    assert "topic_provenance_collision" in str(excinfo.value)
+    assert excinfo.value.trace["existing_identity"]["channel_id"] == "saglik_pusulasi"
+    assert excinfo.value.trace["attempted_identity"]["channel_id"] == "para_pusulasi"
+
+
 def test_retry_cannot_bypass_filter(monkeypatch):
     generator = _build_health_generator(monkeypatch)
     captured = {"topic": None}

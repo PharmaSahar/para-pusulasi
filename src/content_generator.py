@@ -1177,6 +1177,7 @@ class ContentGenerator:
             "final_ranked_list": list(final_topics),
             "selected_index": selected_index,
             "selected_topic": selected_topic,
+            "provenance_attempt": 1,
             "runtime_build_identity": runtime_identity,
         }
         payload["hashes"] = {
@@ -1192,11 +1193,35 @@ class ContentGenerator:
 
         path.parent.mkdir(parents=True, exist_ok=True)
         if path.exists():
-            raise TopicDomainBlockedError(
-                f"topic_provenance_collision:{path}",
-                trace={"path": str(path)},
-            )
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            try:
+                existing = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                existing = {}
+            identity_keys = ("run_id", "content_id", "channel_id")
+            existing_identity = {key: existing.get(key) for key in identity_keys}
+            attempted_identity = {key: payload.get(key) for key in identity_keys}
+            if existing_identity != attempted_identity:
+                raise TopicDomainBlockedError(
+                    f"topic_provenance_collision:{path}",
+                    trace={
+                        "path": str(path),
+                        "existing_identity": existing_identity,
+                        "attempted_identity": attempted_identity,
+                    },
+                )
+            existing_hashes = existing.get("hashes") if isinstance(existing.get("hashes"), dict) else {}
+            payload["provenance_attempt"] = int(existing.get("provenance_attempt") or 1) + 1
+            payload["replaces_provenance"] = {
+                "previous_payload_hash": existing_hashes.get("payload"),
+                "previous_selected_topic": existing.get("selected_topic"),
+                "previous_timestamp_utc": existing.get("timestamp_utc"),
+            }
+
+        payload["hashes"]["payload"] = _json_sha256(payload)
+
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp_path.replace(path)
 
     def _validate_explicit_topic_or_block(self, topic: str) -> tuple[str, bool]:
         """Validate an explicitly supplied topic (retry/resume/manual) before generation."""

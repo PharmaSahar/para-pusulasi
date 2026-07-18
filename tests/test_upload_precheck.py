@@ -356,6 +356,48 @@ def test_upload_precheck_blocks_missing_video_file(tmp_path, monkeypatch):
     assert "upload_precheck_video_missing" in res["guard_reason_codes"]
 
 
+def test_upload_precheck_allows_missing_final_video_in_observation_mode(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PRODUCTION_OBSERVATION_MODE", "true")
+
+    script = tmp_path / "channels" / "saglik_pusulasi" / "scripts" / "ok.json"
+    missing_video = tmp_path / "channels" / "saglik_pusulasi" / "output" / "videos" / "blocked.mp4"
+    thumb = tmp_path / "channels" / "saglik_pusulasi" / "output" / "videos" / "ok.jpg"
+    _write_file(script, b"script-content")
+    _write_file(thumb, b"thumb-content")
+    manifest = _make_manifest(
+        channel_id="saglik_pusulasi",
+        content_id="content_obs",
+        run_id="run_obs",
+        niche="saglik",
+        title="Saglikli Yasam Rehberi",
+        topic="Saglikli yasam",
+        script="Beslenme ve uyku duzeni",
+        script_path=script,
+        video_path=missing_video,
+        thumbnail_path=thumb,
+    )
+
+    res = evaluate_upload_precheck(
+        channel_id="saglik_pusulasi",
+        content_id="content_obs",
+        run_id="run_obs",
+        niche="saglik",
+        title="Saglikli Yasam Rehberi",
+        topic="Saglikli yasam",
+        script="Beslenme ve uyku duzeni",
+        script_path=str(script),
+        video_path=str(missing_video),
+        thumbnail_path=str(thumb),
+        manifest_path=manifest,
+        enabled=True,
+    )
+
+    assert "upload_precheck_video_missing" not in res["guard_reason_codes"]
+    assert "upload_precheck_video_empty" not in res["guard_reason_codes"]
+    assert res["details"]["production_observation_mode"] is True
+
+
 def test_upload_precheck_blocks_missing_thumbnail_when_required(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 

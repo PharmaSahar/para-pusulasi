@@ -15,6 +15,11 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .scheduler_utils import PROVIDER_HEALTH_FILE
+from .production_observation import (
+    production_observation_mode_enabled,
+    read_observation_state,
+    set_production_observation_mode,
+)
 from .visual_safety_policy import POLICY_VERSION
 
 
@@ -468,6 +473,7 @@ def get_status(*, incident_id: str, paths: ContainmentPaths | None = None) -> di
         "provider_health_sha256": _state_hash(state),
         "provider_health_path": str(resolved_paths.provider_health_file),
         "audit_path": str(resolved_paths.audit_file),
+        "observation_mode": read_observation_state(),
         "tool_version": TOOL_VERSION,
     }
 
@@ -539,6 +545,8 @@ def release_containment(
             raise ContainmentControlError("uploads_not_disabled")
         if not request.renders_disabled:
             raise ContainmentControlError("renders_not_disabled")
+        if not production_observation_mode_enabled():
+            raise ContainmentControlError("observation_mode_not_enabled")
         if request.quarantine_recovery_requested:
             raise ContainmentControlError("quarantine_recovery_requested")
         validate_release_evidence(
@@ -748,6 +756,18 @@ def build_parser() -> argparse.ArgumentParser:
     generate.add_argument("--output-file", required=True)
     generate.add_argument("--logs-since", default="")
 
+    enable_observation = sub.add_parser("enable-observation")
+    enable_observation.add_argument("--incident-id", required=True)
+    enable_observation.add_argument("--operator", required=True)
+    enable_observation.add_argument("--reason", required=True)
+    enable_observation.add_argument("--expected-production-sha", required=True)
+
+    disable_observation = sub.add_parser("disable-observation")
+    disable_observation.add_argument("--incident-id", required=True)
+    disable_observation.add_argument("--operator", required=True)
+    disable_observation.add_argument("--reason", required=True)
+    disable_observation.add_argument("--expected-production-sha", required=True)
+
     release = sub.add_parser("release")
     release.add_argument("--incident-id", required=True)
     release.add_argument("--expected-reason", required=True)
@@ -788,6 +808,22 @@ def main(argv: list[str] | None = None) -> int:
                 expected_production_sha=args.expected_production_sha,
                 output_file=Path(args.output_file),
                 logs_since=args.logs_since,
+            )
+        elif args.command == "enable-observation":
+            _validate_incident_id(args.incident_id)
+            result = set_production_observation_mode(
+                enabled=True,
+                operator=args.operator,
+                reason=args.reason,
+                expected_production_sha=args.expected_production_sha,
+            )
+        elif args.command == "disable-observation":
+            _validate_incident_id(args.incident_id)
+            result = set_production_observation_mode(
+                enabled=False,
+                operator=args.operator,
+                reason=args.reason,
+                expected_production_sha=args.expected_production_sha,
             )
         elif args.command == "release":
             result = release_containment(

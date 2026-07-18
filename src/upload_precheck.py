@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .content_quality_guard import check_channel_topic_fit
+from .production_observation import production_observation_mode_enabled
 from .visual_safety_policy import build_upload_quarantine_result, validate_visual_manifest
 
 
@@ -295,15 +296,17 @@ def evaluate_upload_precheck(
         if manifest_path and manifest_path != artifact_path:
             reason_codes.append(f"upload_precheck_{label}_ownership_metadata_mismatch")
 
+    observation_mode = production_observation_mode_enabled()
+    details["production_observation_mode"] = bool(observation_mode)
     _validate_artifact("script", script_path, required=True)
-    _validate_artifact("video", video_path, required=True)
+    _validate_artifact("video", video_path, required=not observation_mode)
     _validate_artifact("thumbnail", thumbnail_path, required=True)
 
     try:
         video_size = Path(video_path).stat().st_size
     except Exception:
         video_size = 0
-    if video_size <= 0:
+    if video_size <= 0 and not observation_mode:
         reason_codes.append("upload_precheck_video_empty")
         details["video_size"] = video_size
 

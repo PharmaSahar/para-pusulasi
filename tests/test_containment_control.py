@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from src import containment_control as cc
+import src.production_observation as production_observation
 
 
 SHA = "60c58ca610106e154fbddc4caeeb5c9d27b20c6a"
@@ -93,12 +94,20 @@ def _request(evidence: Path, **overrides) -> cc.ReleaseRequest:
 
 
 def _release(paths: cc.ContainmentPaths, request: cc.ReleaseRequest):
-    return cc.release_containment(
-        request,
-        paths=paths,
-        production_sha_resolver=lambda: SHA,
-        service_health_checker=lambda: True,
-    )
+    previous = os.environ.get("PRODUCTION_OBSERVATION_MODE")
+    os.environ["PRODUCTION_OBSERVATION_MODE"] = "true"
+    try:
+        return cc.release_containment(
+            request,
+            paths=paths,
+            production_sha_resolver=lambda: SHA,
+            service_health_checker=lambda: True,
+        )
+    finally:
+        if previous is None:
+            os.environ.pop("PRODUCTION_OBSERVATION_MODE", None)
+        else:
+            os.environ["PRODUCTION_OBSERVATION_MODE"] = previous
 
 
 def _audit_records(paths: cc.ContainmentPaths) -> list[dict]:
@@ -115,6 +124,36 @@ def test_status_is_read_only(tmp_path):
     assert not paths.audit_file.exists()
 
 
+def test_observation_cli_enable_disable_round_trip(tmp_path, monkeypatch):
+    state_file = tmp_path / "observation.json"
+    audit_file = tmp_path / "observation_audit.jsonl"
+    monkeypatch.setenv("PRODUCTION_OBSERVATION_MODE_STATE_FILE", str(state_file))
+    monkeypatch.setenv("PRODUCTION_OBSERVATION_MODE_AUDIT_FILE", str(audit_file))
+    monkeypatch.delenv("PRODUCTION_OBSERVATION_MODE", raising=False)
+    monkeypatch.setattr(production_observation, "_resolve_production_sha", lambda *_args, **_kwargs: SHA)
+
+    enable_rc = cc.main([
+        "enable-observation",
+        "--incident-id", "PROJECT003",
+        "--operator", "test-operator",
+        "--reason", "unit test enable",
+        "--expected-production-sha", SHA,
+    ])
+    assert enable_rc == 0
+    assert json.loads(state_file.read_text(encoding="utf-8"))["enabled"] is True
+
+    disable_rc = cc.main([
+        "disable-observation",
+        "--incident-id", "PROJECT003",
+        "--operator", "test-operator",
+        "--reason", "unit test disable",
+        "--expected-production-sha", SHA,
+    ])
+    assert disable_rc == 0
+    assert json.loads(state_file.read_text(encoding="utf-8"))["enabled"] is False
+    assert len(audit_file.read_text(encoding="utf-8").splitlines()) == 2
+
+
 def test_valid_release_succeeds(tmp_path):
     paths = _paths(tmp_path)
     _write_state(paths)
@@ -126,6 +165,19 @@ def test_valid_release_succeeds(tmp_path):
     assert state["providers"] == {"anthropic": {"consecutive_failures": 0, "last_error": "Overloaded"}}
     assert state["unrelated"] == {"keep": True}
     assert state["visual_safety_incident_containment"]["released"] is True
+
+
+def test_release_fails_when_observation_mode_disabled(tmp_path, monkeypatch):
+    paths = _paths(tmp_path)
+    _write_state(paths)
+    monkeypatch.setenv("PRODUCTION_OBSERVATION_MODE", "false")
+    with pytest.raises(cc.ContainmentControlError, match="observation_mode_not_enabled"):
+        cc.release_containment(
+            _request(_evidence(tmp_path)),
+            paths=paths,
+            production_sha_resolver=lambda: SHA,
+            service_health_checker=lambda: True,
+        )
 
 
 @pytest.mark.parametrize(
@@ -226,9 +278,10 @@ def test_wrong_evidence_policy_version_fails(tmp_path):
         cc.validate_release_evidence(evidence_file=evidence, expected_incident_id="PROJECT003", expected_production_sha=SHA, expected_policy_version=cc.POLICY_VERSION)
 
 
-def test_current_production_sha_mismatch_fails(tmp_path):
+def test_current_production_sha_mismatch_fails(tmp_path, monkeypatch):
     paths = _paths(tmp_path)
     _write_state(paths)
+    monkeypatch.setenv("PRODUCTION_OBSERVATION_MODE", "true")
     with pytest.raises(cc.ContainmentControlError, match="production_sha_mismatch"):
         cc.release_containment(
             _request(_evidence(tmp_path)),
@@ -238,9 +291,10 @@ def test_current_production_sha_mismatch_fails(tmp_path):
         )
 
 
-def test_unhealthy_service_fails(tmp_path):
+def test_unhealthy_service_fails(tmp_path, monkeypatch):
     paths = _paths(tmp_path)
     _write_state(paths)
+    monkeypatch.setenv("PRODUCTION_OBSERVATION_MODE", "true")
     with pytest.raises(cc.ContainmentControlError, match="service_not_healthy"):
         cc.release_containment(
             _request(_evidence(tmp_path)),

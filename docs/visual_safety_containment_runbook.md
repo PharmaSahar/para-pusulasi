@@ -13,8 +13,8 @@ The tool is scoped to incident `PROJECT003` and pause reason `visual_safety_inci
 - Production must be on the expected immutable release SHA.
 - `parapusulasi` service must be active and running.
 - `/opt/parapusulasi/deploy.lock/.active_lock` must be absent.
-- Uploads must be disabled for the first observation window.
-- Rendering must be disabled for the first observation window.
+- Production Observation Mode must be enabled by the official CLI for the first observation window.
+- Uploads, Shorts uploads, final renders, queue mutation, registry writes, analytics writes, and publication actions must be blocked by `PRODUCTION_OBSERVATION_MODE`.
 - Fresh release eligibility evidence must pass schema validation.
 - Quarantined jobs must remain untouched.
 
@@ -24,6 +24,34 @@ Status is read-only and writes no audit record:
 
 ```bash
 python tools/visual_safety_containment.py status --incident-id PROJECT003
+```
+
+The status output includes the current production observation-mode state.
+
+## Production Observation Mode
+
+Production Observation Mode is the canonical runtime control for the no-upload/no-render release window. The mode is derived from `PRODUCTION_OBSERVATION_MODE` and the official persisted state file `output/state/production_observation_mode.json` unless overridden by `PRODUCTION_OBSERVATION_MODE_STATE_FILE`.
+
+Enable it before release:
+
+```bash
+python tools/visual_safety_containment.py enable-observation \
+  --incident-id PROJECT003 \
+  --operator "<operator identity>" \
+  --reason "PROJECT003 controlled no-upload/no-render release window" \
+  --expected-production-sha <sha>
+```
+
+When enabled, the production safety gate allows scheduler startup and read-only safety checks, but blocks irreversible side-effect operations with reason `production_observation_mode`: final render, upload, Shorts upload, publication, registry update, analytics write, and queue mutation.
+
+Disable it only after the controlled observation passes, or after restore if observation fails:
+
+```bash
+python tools/visual_safety_containment.py disable-observation \
+  --incident-id PROJECT003 \
+  --operator "<operator identity>" \
+  --reason "PROJECT003 controlled observation passed" \
+  --expected-production-sha <sha>
 ```
 
 ## Eligibility Evidence
@@ -54,6 +82,8 @@ python tools/visual_safety_containment.py generate-eligibility-evidence \
 
 Release uses a filesystem lock, rereads state under lock, validates expected state, atomically writes `provider_health.json`, preserves unrelated provider state, and appends an audit record.
 
+Release fails closed unless Production Observation Mode is enabled. The `--uploads-disabled` and `--renders-disabled` flags are assertions; they are not substitutes for the active observation-mode runtime control.
+
 ```bash
 python tools/visual_safety_containment.py release \
   --incident-id PROJECT003 \
@@ -75,7 +105,7 @@ Audit records are append-only JSONL at `output/runtime/telemetry/visual_safety_c
 
 ## No-Upload Observation
 
-After release, run exactly one controlled observation cycle with uploads disabled, dry-run enabled, no final publication, no quarantine recovery, and no legacy unsafe asset reuse. Restore immediately if any unsafe selection, unsafe approval, upload attempt, cache contamination, quarantine escape, or critical runtime error occurs.
+After release, run exactly one controlled observation cycle with Production Observation Mode enabled, no final publication, no quarantine recovery, and no legacy unsafe asset reuse. Restore immediately if any unsafe selection, unsafe approval, upload attempt, render output, registry write, analytics write, queue mutation, cache contamination, quarantine escape, or critical runtime error occurs.
 
 ## Restore
 
@@ -106,4 +136,6 @@ If release verification or the no-upload observation fails, run the restore comm
 - Do not clear unrelated pauses.
 - Do not restore quarantined jobs automatically.
 - Do not enable uploads during first observation.
+- Do not release containment unless Production Observation Mode is enabled.
+- Do not manually edit `production_observation_mode.json`; use the CLI.
 - Do not bypass evidence validation.

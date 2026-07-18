@@ -114,3 +114,20 @@ def test_shadow_failure_isolation_never_blocks_json_write(tmp_path, monkeypatch,
     saved = json.loads(queue_file.read_text(encoding="utf-8"))
     assert saved["test-channel"][0]["video_id"] == "v2"
     assert "Shadow mirror failed (non-blocking)" in caplog.text
+
+
+def test_observation_mode_blocks_scheduler_queue_writes(tmp_path, monkeypatch, caplog):
+    import scheduler
+
+    queue_file = tmp_path / "channel_queue.json"
+    queue_file.write_text(json.dumps({"test-channel": [{"video_id": "existing"}]}), encoding="utf-8")
+    before = queue_file.read_text(encoding="utf-8")
+    monkeypatch.setattr(scheduler, "QUEUE_FILE", str(queue_file))
+    monkeypatch.setenv("PRODUCTION_OBSERVATION_MODE", "true")
+    caplog.set_level("WARNING")
+
+    scheduler.save_queue({"test-channel": [{"video_id": "new"}]})
+    scheduler.update_queue(lambda queue: queue.setdefault("test-channel", []).append({"video_id": "mutated"}))
+
+    assert queue_file.read_text(encoding="utf-8") == before
+    assert "production_observation_mode" in caplog.text

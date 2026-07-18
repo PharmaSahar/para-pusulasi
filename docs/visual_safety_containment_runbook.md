@@ -107,6 +107,34 @@ Audit records are append-only JSONL at `output/runtime/telemetry/visual_safety_c
 
 After release, run exactly one controlled observation cycle with Production Observation Mode enabled, no final publication, no quarantine recovery, and no legacy unsafe asset reuse. Restore immediately if any unsafe selection, unsafe approval, upload attempt, render output, registry write, analytics write, queue mutation, cache contamination, quarantine escape, or critical runtime error occurs.
 
+## Scheduler Startup Contract
+
+A deployment or service restart does not generate content. Scheduler startup is validation-only: it may acquire the singleton lock, run startup preflight, run the scheduler startup safety gate, load channel configuration, register scheduled jobs, inspect queue state, inspect overdue entries, emit startup telemetry, and enter the scheduler loop.
+
+Startup must not submit `render_and_schedule`, call the generation pipeline, generate scripts, call TTS, fetch media, create MP4 or Shorts artifacts, or attempt upload. Empty publishable queues are reported as deferred work instead of being filled during service initialization.
+
+Permitted render trigger sources are explicit and validated before submission:
+
+- `scheduled_slot`
+- `recurring_empty_queue_fill`
+- `explicit_initial_fill`
+- `overdue_recovery`
+- `post_upload_continuation`
+- `manual_operator`
+- `retry`
+
+Run explicit initial fill only as an operator action after confirming the current safety state:
+
+```bash
+python scheduler.py --initial-fill
+```
+
+Normal startup emits append-only telemetry with `event_type=startup_content_generation_decision`, `trigger_source=service_startup`, `startup_mode=validation_only`, `generation_allowed=false`, `submitted_channels=[]`, and `reason=startup_generation_deferred`. Explicit initial fill emits the same event type with `trigger_source=explicit_initial_fill` and the submitted channel list.
+
+Startup validation, queue inspection, content generation, and upload are separate phases. Validation and inspection are safe startup activities. Content generation requires an explicit or scheduled trigger. Upload remains guarded by the production safety gate and upload precheck.
+
+Rollback for an unsafe startup-generation regression is the normal immutable release rollback to the previous release SHA, followed by read-only verification that service health is restored and no startup-generated artifacts were created.
+
 ## Restore
 
 Restore atomically reapplies PROJECT003 containment and appends an audit record:

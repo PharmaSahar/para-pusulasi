@@ -457,6 +457,7 @@ def run_full_pipeline(
     publish_at: str | None = None,
     posting_slot: str | None = None,
     experiment_id: str | None = None,
+    trigger_source: str | None = None,
 ) -> dict:
     """Tam pipeline: icerik -> ses -> video -> YouTube yukle."""
     # Aktif config belirle
@@ -496,6 +497,7 @@ def run_full_pipeline(
     result["upload_retry_count"] = 0
     result["final_status"] = "in_progress"
     result["dry_run"] = bool(dry_run)
+    result["trigger_source"] = str(trigger_source or "")
     _invoke_fact_bundle_pipeline_adapter(cfg, result)
     shadow_mode_enabled = _content_quality_shadow_mode_enabled()
     script_lineage_enabled = _script_lineage_evidence_runtime_enabled()
@@ -790,6 +792,7 @@ def run_full_pipeline(
             merged_payload["process_started_at_utc"] = runtime_build_identity.get("process_started_at_utc")
             merged_payload["python_executable"] = runtime_build_identity.get("python_executable")
             merged_payload["working_directory"] = runtime_build_identity.get("working_directory")
+            merged_payload["trigger_source"] = result.get("trigger_source")
             envelope = build_event_envelope(
                 content_id=result["content_id"],
                 run_id=result["run_id"],

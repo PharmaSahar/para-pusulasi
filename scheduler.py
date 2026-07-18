@@ -18,6 +18,7 @@ KULLANIM:
   python scheduler.py          # Token'i olan tüm kanalları çalıştır
   python scheduler.py --list   # Aktif kanalları listele
   python scheduler.py --status # Kuyruk durumunu göster
+    python scheduler.py --initial-fill # Açık operatör tetikli ön render
 """
 import json
 import atexit
@@ -39,6 +40,7 @@ import pytz
 from src.production_quality_platform import (
     canary_gate_decision,
     record_dead_letter,
+    record_production_event,
     update_production_dashboard,
 )
 from src.production_observation import production_observation_mode_enabled
@@ -210,6 +212,16 @@ render_locks = {}  # Her kanal için kilit — aynı anda iki render başlaması
 RETRYABLE = "RETRYABLE"
 NON_RETRYABLE_QUARANTINE = "NON_RETRYABLE_QUARANTINE"
 TERMINAL_FAILURE = "TERMINAL_FAILURE"
+
+VALID_RENDER_TRIGGER_SOURCES = frozenset({
+    "scheduled_slot",
+    "recurring_empty_queue_fill",
+    "explicit_initial_fill",
+    "overdue_recovery",
+    "post_upload_continuation",
+    "manual_operator",
+    "retry",
+})
 
 _NON_RETRYABLE_DOMAIN_TOKENS = (
     "topic_domain_blocked",
@@ -824,11 +836,93 @@ def get_next_upload_time(cfg, skip_occupied: list = None) -> str:
 
 # ─── Ana İşlemler ─────────────────────────────────────────────────────────────
 
-def render_and_schedule(channel_id: str):
+def _validate_render_trigger_source(trigger_source: str | None) -> str:
+    source = str(trigger_source or "").strip()
+    if source not in VALID_RENDER_TRIGGER_SOURCES:
+        raise ValueError(f"invalid_render_trigger_source:{source or '<missing>'}")
+    return source
+
+
+def _submit_render(channel_id: str, *, trigger_source: str):
+    source = _validate_render_trigger_source(trigger_source)
+    return render_executor.submit(render_and_schedule, channel_id, trigger_source=source)
+
+
+def _eligible_initial_fill_channels(*, ready_channels: list[str] | None = None, queue: dict | None = None) -> list[str]:
+    ready = list(ready_channels if ready_channels is not None else get_ready_channels())
+    current_queue = queue if queue is not None else load_queue()
+    eligible = []
+    for cid in ready:
+        active_entries = [entry for entry in current_queue.get(cid, []) if _is_publishable_queue_entry(entry)]
+        if not active_entries:
+            eligible.append(cid)
+    return eligible
+
+
+def _emit_startup_content_generation_decision(
+    *,
+    trigger_source: str,
+    startup_mode: str,
+    generation_allowed: bool,
+    eligible_channels: list[str],
+    submitted_channels: list[str],
+    reason: str,
+) -> dict[str, Any]:
+    event = {
+        "event_type": "startup_content_generation_decision",
+        "timestamp": datetime.now(TZ).isoformat(),
+        "production_sha": _resolve_git_head_short(),
+        "service_pid": os.getpid(),
+        "trigger_source": str(trigger_source),
+        "startup_mode": str(startup_mode),
+        "generation_allowed": bool(generation_allowed),
+        "eligible_channels": list(eligible_channels),
+        "submitted_channels": list(submitted_channels),
+        "reason": str(reason),
+    }
+    try:
+        record_production_event(event)
+    except Exception as exc:
+        logger.warning("startup_content_generation_decision telemetry failed: %s", exc)
+    return event
+
+
+def inspect_startup_generation_candidates(ready_channels: list[str] | None = None) -> dict[str, Any]:
+    ready = list(ready_channels if ready_channels is not None else get_ready_channels())
+    queue = load_queue()
+    publishable_counts = {
+        cid: len([entry for entry in queue.get(cid, []) if _is_publishable_queue_entry(entry)])
+        for cid in ready
+    }
+    eligible = [cid for cid, count in publishable_counts.items() if count == 0]
+    decision = _emit_startup_content_generation_decision(
+        trigger_source="service_startup",
+        startup_mode="validation_only",
+        generation_allowed=False,
+        eligible_channels=eligible,
+        submitted_channels=[],
+        reason="startup_generation_deferred",
+    )
+    logger.info(
+        "Startup generation deferred: ready_channels=%s publishable_queue_counts=%s eligible_channels=%s required_trigger=%s",
+        len(ready),
+        publishable_counts,
+        eligible,
+        "explicit_initial_fill_or_scheduled_fill",
+    )
+    decision["ready_channels"] = ready
+    decision["publishable_queue_counts"] = publishable_counts
+    decision["required_trigger"] = "explicit_initial_fill_or_scheduled_fill"
+    return decision
+
+
+def render_and_schedule(channel_id: str, *, trigger_source: str):
     """
     Bir kanalın sonraki videosunu render eder ve
     YouTube'a Scheduled olarak yükler.
     """
+    trigger_source = _validate_render_trigger_source(trigger_source)
+
     try:
         from src.scheduler_utils import (
             check_disk_space, cleanup_old_renders, force_cleanup,
@@ -934,6 +1028,7 @@ def render_and_schedule(channel_id: str):
                     channel_cfg=cfg,
                     privacy="private",
                     publish_at=publish_at,
+                    trigger_source=trigger_source,
                 )
                 break  # Başarılı
             except Exception as e:
@@ -1303,14 +1398,18 @@ def on_upload_time(channel_id: str):
         logger.warning(f"Yayın bildirimi gönderilemedi: {e}")
 
     # Bir sonraki video için render'ı thread havuzuna gönder
-    render_executor.submit(render_and_schedule, channel_id)
+    _submit_render(channel_id, trigger_source="post_upload_continuation")
 
 
-def initial_fill():
+def initial_fill(*, trigger_source: str = "explicit_initial_fill"):
     """
     Başlangıçta tüm kanallar için ön render başlat.
     Her kanal için bir sonraki boş saate video hazırla.
     """
+    trigger_source = _validate_render_trigger_source(trigger_source)
+    if trigger_source != "explicit_initial_fill":
+        raise ValueError(f"initial_fill_requires_explicit_trigger:{trigger_source}")
+
     if _observation_mode_active():
         logger.warning("Initial fill skipped: production_observation_mode")
         return
@@ -1336,6 +1435,7 @@ def initial_fill():
     except Exception as e:
         logger.warning(f"Bayat kuyruk temizleme hatası: {e}")
 
+    submitted_channels = []
     for cid in ready:
         # Bu kanalın kuyruğunda zaten video var mı?
         active_entries = [e for e in queue.get(cid, []) if _is_publishable_queue_entry(e)]
@@ -1344,12 +1444,22 @@ def initial_fill():
             continue
         # Kuyrugu bos — render baslât
         logger.info(f"[{cid}] On render basliyor (siraya eklendi)...")
-        render_executor.submit(render_and_schedule, cid)
+        _submit_render(cid, trigger_source=trigger_source)
+        submitted_channels.append(cid)
         time.sleep(5)  # Kilit çakışmasını önle — ThreadPoolExecutor zaten tek sırada çalıştırır
+
+    _emit_startup_content_generation_decision(
+        trigger_source=trigger_source,
+        startup_mode="explicit_initial_fill",
+        generation_allowed=True,
+        eligible_channels=_eligible_initial_fill_channels(ready_channels=ready, queue=queue),
+        submitted_channels=submitted_channels,
+        reason="explicit_initial_fill_requested",
+    )
 
 
 def catch_up_overdue_queue_entries() -> dict[str, list[dict]]:
-    """Tarihi geçmiş publish kayıtlarını başlangıçta tüket ve tek render zinciri başlat."""
+    """Tarihi geçmiş publish kayıtlarını başlangıçta tüket; yeni render başlatmaz."""
     from src.channel_manager import get_channel
 
     queue = load_queue()
@@ -1419,7 +1529,7 @@ def catch_up_overdue_queue_entries() -> dict[str, list[dict]]:
         except Exception as e:
             logger.warning("[%s] Startup catch-up bildirimi gönderilemedi: %s", channel_id, e)
 
-        render_executor.submit(render_and_schedule, channel_id)
+        logger.info("[%s] Startup catch-up generation deferred; next render requires scheduled or explicit trigger", channel_id)
 
     return caught_up
 
@@ -1518,7 +1628,7 @@ def maintenance_job():
     if freed:
         for cid in freed:
             logger.info(f"[{cid}] Bayat kuyruk temizlendi → yeni render başlatılıyor")
-            render_executor.submit(render_and_schedule, cid)
+            _submit_render(cid, trigger_source="recurring_empty_queue_fill")
 
     # 4. Token sağlık kontrolü (sorunlular Telegram'a bildirilir)
     verify_all_tokens()
@@ -2144,7 +2254,7 @@ def fill_empty_queues_job():
                     new_time = get_next_upload_time(cfg, skip_occupied=occupied)
                     occupied.append(new_time)
                     logger.info(f"[{cid}] Eksik slot → render başlatılıyor: {new_time}")
-                    render_executor.submit(render_and_schedule, cid)
+                    _submit_render(cid, trigger_source="recurring_empty_queue_fill")
                     time.sleep(5)
             except Exception as e:
                 logger.warning(f"[{cid}] fill_empty_queues_job hatası: {e}")
@@ -2158,6 +2268,7 @@ def _print_help() -> None:
     print("  python scheduler.py          # Token'i olan tum kanallari calistir")
     print("  python scheduler.py --list   # Aktif kanallari listele")
     print("  python scheduler.py --status # Kuyruk durumunu goster")
+    print("  python scheduler.py --initial-fill # Bos kuyruklar icin acik operator tetikli render baslat")
     print("  python scheduler.py --health-check # Uretim hazirlik kontrolunu calistir")
     print("  python scheduler.py --startup-preflight # Sistemd-esdeger baslangic hazirlik kontrolu")
     print("  python scheduler.py --safety-check-now # Production safety gate raporu olustur")
@@ -3428,6 +3539,44 @@ def main():
         _print_help()
         return
 
+    if "--initial-fill" in args:
+        invalid = [arg for arg in args if arg not in {"--initial-fill", "--skip-provider-preflight"}]
+        if invalid:
+            print(f"Initial fill: FAIL unsupported_args={','.join(invalid)}")
+            sys.exit(2)
+        startup_health, provider_ok, provider_detail, ready, errors = _run_startup_preflight(
+            skip_provider_preflight=skip_provider_preflight,
+        )
+        gate_payload = {"ok": False, "blocking_reason": "not_run_due_to_health_check_fail", "checks": []}
+        if startup_health.ok and provider_ok and ready:
+            gate_payload = _evaluate_scheduler_startup_production_safety_gate(
+                startup_health=startup_health,
+                ready_channels=ready,
+            )
+        if not startup_health.ok or not provider_ok or not ready or not bool(gate_payload.get("ok", True)):
+            _record_safety_gate_result(
+                mode="explicit_initial_fill",
+                startup_health=startup_health,
+                provider_preflight_ok=provider_ok,
+                provider_preflight_detail=provider_detail,
+                production_safety_gate_payload=gate_payload,
+            )
+            for error in errors:
+                print(f"ERROR: {error}")
+            for error in _production_safety_gate_errors(gate_payload):
+                print(f"ERROR: {error}")
+            sys.exit(1)
+        _record_safety_gate_result(
+            mode="explicit_initial_fill",
+            startup_health=startup_health,
+            provider_preflight_ok=True,
+            provider_preflight_detail=provider_detail,
+            production_safety_gate_payload=gate_payload,
+        )
+        initial_fill(trigger_source="explicit_initial_fill")
+        print("Initial fill: submitted eligible channels")
+        return
+
     if "--health-check" in args:
         result = _run_startup_health_check(
             create_missing_directories=False,
@@ -3603,6 +3752,8 @@ def main():
     # Restart sonrası geçmiş publish slotlarını tüket
     catch_up_overdue_queue_entries()
 
+    inspect_startup_generation_candidates(ready_channels=ready_channels)
+
     # Günlük bakım (gece 03:00)
     schedule.every().day.at("03:00").do(maintenance_job)
 
@@ -3627,11 +3778,7 @@ def main():
             live_status,
         )
 
-    # Ön render başlat (arka planda)
-    if _observation_mode_active():
-        logger.warning("Startup initial-fill thread skipped: production_observation_mode")
-    else:
-        threading.Thread(target=initial_fill, daemon=True, name="initial-fill").start()
+    logger.info("Startup initial fill disabled: generation requires --initial-fill or scheduled queue fill")
 
     # Telegram startup bildirimi
     notify_startup(len(ready))

@@ -81,6 +81,17 @@ def _init_repo(
     if include_uploader:
         _write(repo / "src" / "youtube_uploader.py", "X = 1\n")
     _write(repo / "src" / "youtube_analytics_smoke.py", "Y = 1\n")
+    _write(
+        repo / "watchdog.sh",
+        (
+            "#!/usr/bin/env bash\n"
+            "if systemctl is-active --quiet parapusulasi; then\n"
+            "  exit 0\n"
+            "fi\n"
+            "systemctl start parapusulasi\n"
+        ),
+    )
+    (repo / "watchdog.sh").chmod(0o755)
     if include_runtime_payload:
         for path, content in {
             repo / "logs" / "activation_controller_report_latest.json": '{"kind": "activation_controller_report"}\n',
@@ -1759,6 +1770,76 @@ def test_cutover_writes_rollback_metadata_file(tmp_path: Path) -> None:
     payload = json.loads(metadata_file.read_text(encoding="utf-8"))
     assert payload["previous_target"].endswith(layout["active"].name)
     assert payload["new_target"].endswith(sha)
+
+
+def test_watchdog_is_tracked_executable_in_prepared_release(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode == 0
+    release = layout["releases"] / sha
+    mode = subprocess.check_output(["git", "ls-files", "--stage", "watchdog.sh"], cwd=release, text=True).split()[0]
+    assert mode == "100755"
+    assert os.access(release / "watchdog.sh", os.X_OK)
+
+
+def test_prepare_rejects_non_executable_watchdog(tmp_path: Path) -> None:
+    repo, _ = _init_repo(tmp_path)
+    subprocess.run(["chmod", "0644", "watchdog.sh"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "watchdog.sh"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-m", "make watchdog non executable"], cwd=repo, check=True, capture_output=True, text=True)
+    sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+    subprocess.run(["git", "update-ref", "refs/remotes/origin/release/test", sha], cwd=repo, check=True)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+
+    res = _invoke(repo, sha, "prepare", env)
+
+    assert res.returncode != 0
+    assert "watchdog.sh must be executable" in (res.stderr + res.stdout)
+
+
+def test_cutover_links_operator_watchdog_to_managed_release(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    fakebin, _ = _fake_bin(tmp_path)
+    env = _base_env(layout, fakebin)
+    legacy = layout["operator"] / "watchdog.sh"
+    _write(legacy, "#!/usr/bin/env bash\nexit 99\n")
+    legacy.chmod(0o644)
+
+    prep = _invoke(repo, sha, "prepare", env)
+    assert prep.returncode == 0
+    cut = _invoke(repo, sha, "cutover", env)
+
+    assert cut.returncode == 0
+    target = layout["releases"] / sha / "watchdog.sh"
+    assert legacy.is_symlink()
+    assert legacy.resolve() == target.resolve()
+    assert os.access(legacy, os.X_OK)
+
+
+def test_watchdog_exits_without_restart_when_service_healthy(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    fakebin, log = _fake_bin(tmp_path, active_service=True)
+    env = _base_env(layout, fakebin)
+
+    prep = _invoke(repo, sha, "prepare", env)
+    assert prep.returncode == 0
+    cut = _invoke(repo, sha, "cutover", env)
+    assert cut.returncode == 0
+    log.write_text("", encoding="utf-8")
+
+    res = _run([str(layout["operator"] / "watchdog.sh")], cwd=repo, env=env)
+
+    assert res.returncode == 0
+    calls = log.read_text(encoding="utf-8")
+    assert "is-active --quiet parapusulasi" in calls
+    assert "start parapusulasi" not in calls
 
 
 def test_rollback_failure_reported_clearly(tmp_path: Path) -> None:

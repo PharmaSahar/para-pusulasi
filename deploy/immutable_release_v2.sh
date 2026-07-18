@@ -1083,6 +1083,8 @@ PY
     die "Preflight import validation failed"
   fi
 
+  assert_watchdog_executable "$release_dir"
+
   if [[ "${IMMUTABLE_V2_SKIP_HEALTHCHECK:-0}" == "1" ]]; then
     health_check="pass"
     PRECHECK_HEALTH_STDOUT_JSON='"health_check_skipped"'
@@ -1106,11 +1108,57 @@ PY
   write_preflight_json "$release_dir" "$scheduler_import" "$uploader_import" "$wrapper_import" "$health_check"
 }
 
+assert_watchdog_executable() {
+  local release_dir="$1"
+  local mode
+
+  [[ -f "$release_dir/watchdog.sh" ]] || die "watchdog.sh missing in prepared release"
+  [[ -x "$release_dir/watchdog.sh" ]] || die "watchdog.sh must be executable in prepared release"
+
+  mode="$(git -C "$release_dir" ls-files --stage -- watchdog.sh | awk '{print $1}')"
+  [[ "$mode" == "100755" ]] || die "watchdog.sh must be tracked executable mode 100755 (found ${mode:-missing})"
+}
+
+install_operator_watchdog() {
+  local release_dir="$1"
+  local src dest tmp_link expected_resolved actual_resolved
+
+  src="$release_dir/watchdog.sh"
+  dest="$OPERATOR_ROOT/watchdog.sh"
+  tmp_link="$OPERATOR_ROOT/.watchdog.sh.next.$$"
+
+  assert_watchdog_executable "$release_dir"
+  is_within_root "$release_dir" "$RELEASES_ROOT" || die "Watchdog source release escapes release root: $release_dir"
+  is_within_root "$dest" "$OPERATOR_ROOT" || die "Watchdog destination escapes operator root: $dest"
+  expected_resolved="$(canon_path "$src")"
+
+  if [[ -L "$dest" ]]; then
+    actual_resolved="$(canon_path "$dest")"
+    if [[ "$actual_resolved" == "$expected_resolved" ]]; then
+      return 0
+    fi
+  elif [[ -e "$dest" && ! -f "$dest" ]]; then
+    die "Watchdog destination is not a file or symlink: $dest"
+  fi
+
+  if [[ "$DRY_RUN" == "true" ]]; then
+    log "DRY-RUN: ln -sfn $src $tmp_link && mv -Tf $tmp_link $dest"
+    return 0
+  fi
+
+  ln -sfn "$src" "$tmp_link"
+  mv -Tf "$tmp_link" "$dest"
+  actual_resolved="$(canon_path "$dest")"
+  [[ "$actual_resolved" == "$expected_resolved" ]] || die "Watchdog install verification failed: $dest -> $actual_resolved (expected $expected_resolved)"
+  [[ -x "$dest" ]] || die "Watchdog install verification failed: $dest is not executable"
+}
+
 assert_prepared_release() {
   local release_dir
   release_dir="$(release_dir_for_sha "$TARGET_SHA")"
   [[ -d "$release_dir" ]] || die "Prepared release not found: $release_dir"
   assert_release_integrity_contract "$release_dir" "$TARGET_SHA"
+  assert_watchdog_executable "$release_dir"
   [[ -f "$(preflight_json_path "$release_dir")" ]] || die "Prepared release missing preflight report"
 }
 
@@ -1540,6 +1588,7 @@ mode_cutover() {
   record_rollback_metadata "$active_target" "$release_dir"
   run_preflight "$release_dir"
   atomic_switch_symlink "$release_dir"
+  install_operator_watchdog "$release_dir"
   restart_service_if_allowed "cutover"
   if ! wait_for_service_health "$release_dir"; then
     if [[ "$AUTO_ROLLBACK" == "true" ]]; then

@@ -659,11 +659,29 @@ def _check_clock_sanity(*, release_sha: str, channel_id: str, job_id: str) -> Pr
     )
 
 
+def _is_visual_safety_containment_pause(global_pause: dict[str, Any]) -> bool:
+    reason = str(global_pause.get("reason") or "").strip()
+    return reason.startswith("visual_safety_incident_containment:")
+
+
 def _check_rate_limit_status(*, operation: str, release_sha: str, channel_id: str, job_id: str) -> ProductionSafetyCheckResult:
     global_pause = get_global_overload_pause_status()
     provider_circuit = get_provider_circuit_status("anthropic")
     if operation in {"scheduler_startup", "render"}:
         if bool(global_pause.get("is_open")):
+            contained_deployment = operation == "scheduler_startup" and _is_enabled(os.getenv("IMMUTABLE_CONTAINED_DEPLOYMENT", "false"))
+            if contained_deployment and _is_visual_safety_containment_pause(global_pause):
+                return _build_check(
+                    check_name="rate_limit_status",
+                    status="warn",
+                    severity="warning",
+                    reason_code="visual_safety_containment_active_contained_deployment",
+                    message="Visual-safety containment is active; contained immutable deployment preflight is permitted.",
+                    release_sha=release_sha,
+                    channel_id=channel_id,
+                    job_id=job_id,
+                    evidence={"global_overload_pause": dict(global_pause), "contained_deployment": True},
+                )
             return _build_check(
                 check_name="rate_limit_status",
                 status="fail",

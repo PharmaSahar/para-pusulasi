@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from src.upload_precheck import evaluate_upload_precheck, persist_ownership_manifest
+from src.visual_safety_policy import build_visual_manifest
 
 
 def _write_file(path: Path, content: bytes) -> None:
@@ -12,6 +13,16 @@ def _write_file(path: Path, content: bytes) -> None:
 
 
 def _make_manifest(*, channel_id: str, content_id: str, run_id: str, niche: str, title: str, topic: str, script: str, script_path: Path, video_path: Path, thumbnail_path: Path | None = None):
+    visual_assets = [str(thumbnail_path or video_path)]
+    visual_manifest_path = build_visual_manifest(
+        channel_id=channel_id,
+        content_id=content_id,
+        run_id=run_id,
+        niche=niche,
+        topic=topic,
+        assets=visual_assets,
+        output_path=video_path.with_suffix(".visual_manifest.json"),
+    )
     return persist_ownership_manifest(
         channel_id=channel_id,
         content_id=content_id,
@@ -23,6 +34,7 @@ def _make_manifest(*, channel_id: str, content_id: str, run_id: str, niche: str,
         script_path=str(script_path),
         video_path=str(video_path),
         thumbnail_path=str(thumbnail_path) if thumbnail_path is not None else None,
+        visual_manifest_path=str(visual_manifest_path),
     )
 
 
@@ -66,6 +78,49 @@ def test_upload_precheck_allows_valid_manifest(tmp_path, monkeypatch):
 
     assert res["status"] == "allow"
     assert res["guard_reason_codes"] == []
+
+
+def test_upload_precheck_blocks_missing_visual_manifest(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    script = tmp_path / "channels" / "saglik_pusulasi" / "scripts" / "ok.json"
+    video = tmp_path / "channels" / "saglik_pusulasi" / "output" / "videos" / "ok.mp4"
+    thumb = tmp_path / "channels" / "saglik_pusulasi" / "output" / "videos" / "ok.jpg"
+    _write_file(script, b"script-content")
+    _write_file(video, b"video-content")
+    _write_file(thumb, b"thumb-content")
+
+    manifest = persist_ownership_manifest(
+        channel_id="saglik_pusulasi",
+        content_id="content_ok",
+        run_id="run_ok",
+        niche="saglik",
+        title="Saglikli Yasam Rehberi",
+        topic="Saglikli yasam",
+        script="Beslenme ve uyku duzeni",
+        script_path=str(script),
+        video_path=str(video),
+        thumbnail_path=str(thumb),
+    )
+
+    res = evaluate_upload_precheck(
+        channel_id="saglik_pusulasi",
+        content_id="content_ok",
+        run_id="run_ok",
+        niche="saglik",
+        title="Saglikli Yasam Rehberi",
+        topic="Saglikli yasam",
+        script="Beslenme ve uyku duzeni",
+        script_path=str(script),
+        video_path=str(video),
+        thumbnail_path=str(thumb),
+        manifest_path=manifest,
+        enabled=True,
+    )
+
+    assert res["status"] == "blocked"
+    assert "visual_manifest_missing" in res["guard_reason_codes"]
+    assert res["details"]["visual_quarantine"]["prevent_upload"] is True
 
 
 def test_upload_precheck_blocks_tuple_mismatch(tmp_path, monkeypatch):

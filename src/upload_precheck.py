@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .content_quality_guard import check_channel_topic_fit
+from .visual_safety_policy import build_upload_quarantine_result, validate_visual_manifest
 
 
 DEFAULT_POLICY_PATH = Path("config/content_domain_policy.json")
@@ -116,6 +117,7 @@ def persist_ownership_manifest(
     script_path: str,
     video_path: str,
     thumbnail_path: str | None = None,
+    visual_manifest_path: str | None = None,
 ) -> Path:
     OWNERSHIP_DIR.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -139,6 +141,7 @@ def persist_ownership_manifest(
                 "size": None,
             },
         },
+        "visual_manifest_path": str(visual_manifest_path or ""),
     }
 
     target = OWNERSHIP_DIR / f"{payload['content_id']}_{payload['run_id']}.json"
@@ -163,6 +166,8 @@ def evaluate_upload_precheck(
     video_path: str,
     thumbnail_path: str | None,
     manifest_path: str | Path,
+    visual_manifest_path: str | Path | None = None,
+    final_visual_assets: list[str] | None = None,
     duplicate_upload_detected: bool = False,
     quarantine_state: str = "",
     dry_run: bool = False,
@@ -226,6 +231,32 @@ def evaluate_upload_precheck(
         reason_codes.append("upload_precheck_thumbnail_path_channel_scope_violation")
 
     manifest_artifacts = dict(manifest.get("artifacts") or {})
+    resolved_visual_manifest_path = str(visual_manifest_path or manifest.get("visual_manifest_path") or "").strip()
+    visual_manifest = None
+    if resolved_visual_manifest_path:
+        try:
+            visual_manifest = json.loads(Path(resolved_visual_manifest_path).read_text(encoding="utf-8"))
+        except Exception as exc:
+            reason_codes.append("visual_manifest_unreadable")
+            details["visual_manifest_error"] = exc.__class__.__name__
+    visual_decision = validate_visual_manifest(
+        manifest=visual_manifest,
+        channel_id=channel_id,
+        content_id=content_id,
+        run_id=run_id,
+        final_assets=final_visual_assets,
+    )
+    details["visual_safety"] = visual_decision.to_dict()
+    if not visual_decision.allowed:
+        reason_codes.extend(visual_decision.failed_rules)
+        details["visual_quarantine"] = build_upload_quarantine_result(
+            channel_id=channel_id,
+            content_id=content_id,
+            run_id=run_id,
+            failed_rules=visual_decision.failed_rules,
+            evidence_paths=[resolved_visual_manifest_path] if resolved_visual_manifest_path else [],
+            unsafe_assets=list(visual_decision.evidence.get("unsafe_assets") or []),
+        )
 
     def _validate_artifact(label: str, path_value: str | None, *, required: bool = True):
         artifact_path = str(path_value or "").strip()

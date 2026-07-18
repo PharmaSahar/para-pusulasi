@@ -238,6 +238,102 @@ def test_production_safety_gate_blocks_invalid_clock(monkeypatch, tmp_path: Path
     assert result.blocking_reason == "clock_sanity_failed"
 
 
+def test_ordinary_overload_pause_blocks_scheduler_startup_deployment(monkeypatch, tmp_path: Path):
+    queue_path, _events = _prepare_common(monkeypatch, tmp_path)
+    monkeypatch.setenv("IMMUTABLE_CONTAINED_DEPLOYMENT", "1")
+    monkeypatch.setattr("src.channel_manager.get_channel", lambda _cid: _make_cfg(tmp_path))
+    monkeypatch.setattr(
+        production_safety_gate,
+        "get_global_overload_pause_status",
+        lambda: {"is_open": True, "retry_after_seconds": 300, "pause_until": "2099-01-01T00:00:00Z", "reason": "overload_storm:3/300s"},
+    )
+
+    result = production_safety_gate.evaluate_production_safety_gate(
+        operation="scheduler_startup",
+        startup_health=type("H", (), {"ok": True, "errors": (), "missing_api_keys": ()})(),
+        ready_channels=["demo_channel"],
+        queue_path=queue_path,
+    )
+
+    assert result.allowed is False
+    assert result.blocking_reason == "global_overload_pause_open"
+
+
+def test_visual_safety_containment_permits_only_contained_deployment_startup(monkeypatch, tmp_path: Path):
+    queue_path, _events = _prepare_common(monkeypatch, tmp_path)
+    monkeypatch.setenv("IMMUTABLE_CONTAINED_DEPLOYMENT", "1")
+    monkeypatch.setattr("src.channel_manager.get_channel", lambda _cid: _make_cfg(tmp_path))
+    monkeypatch.setattr(
+        production_safety_gate,
+        "get_global_overload_pause_status",
+        lambda: {
+            "is_open": True,
+            "retry_after_seconds": 600,
+            "pause_until": "2099-01-01T00:00:00Z",
+            "reason": "visual_safety_incident_containment:PROJECT003:cross_channel_inappropriate_visuals",
+        },
+    )
+
+    result = production_safety_gate.evaluate_production_safety_gate(
+        operation="scheduler_startup",
+        startup_health=type("H", (), {"ok": True, "errors": (), "missing_api_keys": ()})(),
+        ready_channels=["demo_channel"],
+        queue_path=queue_path,
+    )
+
+    assert result.allowed is True
+    assert result.status == "warning"
+    assert result.blocking_reason == ""
+    assert any(check.reason_code == "visual_safety_containment_active_contained_deployment" for check in result.checks)
+
+
+def test_visual_safety_containment_still_blocks_render_without_releasing_containment(monkeypatch, tmp_path: Path):
+    queue_path, _events = _prepare_common(monkeypatch, tmp_path)
+    cfg = _make_cfg(tmp_path)
+    monkeypatch.setenv("IMMUTABLE_CONTAINED_DEPLOYMENT", "1")
+    monkeypatch.setattr(
+        production_safety_gate,
+        "get_global_overload_pause_status",
+        lambda: {
+            "is_open": True,
+            "retry_after_seconds": 600,
+            "pause_until": "2099-01-01T00:00:00Z",
+            "reason": "visual_safety_incident_containment:PROJECT003:cross_channel_inappropriate_visuals",
+        },
+    )
+
+    result = production_safety_gate.evaluate_production_safety_gate(
+        operation="render",
+        channel_id="demo_channel",
+        channel_cfg=cfg,
+        queue_path=queue_path,
+    )
+
+    assert result.allowed is False
+    assert result.blocking_reason == "global_overload_pause_open"
+
+
+def test_unknown_pause_reason_remains_fail_closed_for_contained_deployment(monkeypatch, tmp_path: Path):
+    queue_path, _events = _prepare_common(monkeypatch, tmp_path)
+    monkeypatch.setenv("IMMUTABLE_CONTAINED_DEPLOYMENT", "1")
+    monkeypatch.setattr("src.channel_manager.get_channel", lambda _cid: _make_cfg(tmp_path))
+    monkeypatch.setattr(
+        production_safety_gate,
+        "get_global_overload_pause_status",
+        lambda: {"is_open": True, "retry_after_seconds": 600, "pause_until": "2099-01-01T00:00:00Z", "reason": "manual_pause"},
+    )
+
+    result = production_safety_gate.evaluate_production_safety_gate(
+        operation="scheduler_startup",
+        startup_health=type("H", (), {"ok": True, "errors": (), "missing_api_keys": ()})(),
+        ready_channels=["demo_channel"],
+        queue_path=queue_path,
+    )
+
+    assert result.allowed is False
+    assert result.blocking_reason == "global_overload_pause_open"
+
+
 def test_production_safety_gate_blocks_queue_corruption(monkeypatch, tmp_path: Path):
     queue_path, _events = _prepare_common(monkeypatch, tmp_path)
     cfg = _make_cfg(tmp_path)

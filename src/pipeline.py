@@ -43,6 +43,7 @@ from .tts_engine import TTSEngine
 from .production_safety_gate import ensure_production_safety_gate
 from .video_creator_pro import VideoCreator
 from .upload_precheck import evaluate_upload_precheck, persist_ownership_manifest
+from .visual_safety_policy import build_visual_manifest, evaluate_visual_query
 from .youtube_uploader import YouTubeUploader
 from .production_quality_platform import (
     build_idempotency_key,
@@ -2161,6 +2162,15 @@ def run_full_pipeline(
 
         # İçerikten gelen özgün Pexels sorgusu varsa kullan, yoksa kanal default'u
         pexels_query = getattr(content, "pexels_search", None) or getattr(cfg, "pexels_query", None)
+        visual_query_decision = evaluate_visual_query(
+            query=pexels_query or content.title,
+            channel_id=str(result.get("channel", "")),
+            niche=str(getattr(cfg, "niche", "")),
+            topic=str(topic or getattr(content, "title", "")),
+        )
+        if not visual_query_decision.allowed:
+            result.setdefault("visual_safety_decisions", []).append(visual_query_decision.to_dict())
+            pexels_query = visual_query_decision.rewritten_query or content.title
 
         # Storyblocks (premium) varsa önce dene, yoksa Pexels kullan
         image_paths = []
@@ -2265,6 +2275,15 @@ def run_full_pipeline(
             from .premium_services import has_dalle, generate_dalle_thumbnail
             if has_dalle():
                 dalle_prompt = getattr(content, "thumbnail_prompt", content.title)
+                dalle_prompt_decision = evaluate_visual_query(
+                    query=dalle_prompt,
+                    channel_id=str(result.get("channel", "")),
+                    niche=str(getattr(cfg, "niche", "")),
+                    topic=str(topic or getattr(content, "title", "")),
+                )
+                if not dalle_prompt_decision.allowed:
+                    result.setdefault("visual_safety_decisions", []).append(dalle_prompt_decision.to_dict())
+                    dalle_prompt = dalle_prompt_decision.rewritten_query or content.title
                 dalle_path = f"{cfg.videos_dir}/thumb_dalle_{__import__('uuid').uuid4().hex[:8]}.jpg"
                 thumb_bg = generate_dalle_thumbnail(dalle_prompt, dalle_path)
                 if thumb_bg:
@@ -2278,6 +2297,20 @@ def run_full_pipeline(
         thumbnail_path = creator.create_thumbnail(content.title, image_path=thumb_bg)
         result["video_path"] = video_path
         result["thumbnail_path"] = thumbnail_path
+        final_visual_assets = [str(item) for item in (image_paths or [])]
+        if thumbnail_path:
+            final_visual_assets.append(str(thumbnail_path))
+        visual_manifest_path = build_visual_manifest(
+            channel_id=str(result.get("channel", "")),
+            content_id=str(result.get("content_id", "")),
+            run_id=str(result.get("run_id", "")),
+            niche=str(getattr(cfg, "niche", "")),
+            topic=str(topic or getattr(content, "title", "")),
+            assets=final_visual_assets,
+            output_path=Path(video_path).with_suffix(".visual_manifest.json"),
+        )
+        result["visual_manifest_path"] = str(visual_manifest_path)
+        result["final_visual_assets"] = final_visual_assets
         _attach_thumbnail_experiment_binding_metadata(thumbnail_path=thumbnail_path)
         _attach_thumbnail_validation_metadata(
             content_type="video",
@@ -2456,6 +2489,7 @@ def run_full_pipeline(
         script_path=str(result.get("script_path", "")),
         video_path=str(video_path),
         thumbnail_path=str(thumbnail_path) if thumbnail_path else None,
+        visual_manifest_path=str(result.get("visual_manifest_path", "")),
     )
     precheck = evaluate_upload_precheck(
         channel_id=str(result.get("channel", "")),
@@ -2471,6 +2505,8 @@ def run_full_pipeline(
         video_path=str(video_path),
         thumbnail_path=str(thumbnail_path) if thumbnail_path else None,
         manifest_path=ownership_manifest_path,
+        visual_manifest_path=str(result.get("visual_manifest_path", "")),
+        final_visual_assets=list(result.get("final_visual_assets") or []),
         duplicate_upload_detected=bool(get_registered_upload(idempotency_key)),
         quarantine_state="pending" if result.get("production_safety_gate", {}).get("ok") is False else "clear",
         dry_run=bool(dry_run),
@@ -2690,6 +2726,15 @@ def run_full_pipeline(
                     from .premium_services import has_dalle, generate_dalle_thumbnail
                     if has_dalle():
                         short_prompt = diversity_short_record.get("thumbnail_prompt") or short_title
+                        short_prompt_decision = evaluate_visual_query(
+                            query=short_prompt,
+                            channel_id=str(result.get("channel", "default")),
+                            niche=str(getattr(cfg, "niche", "")),
+                            topic=short_title,
+                        )
+                        if not short_prompt_decision.allowed:
+                            result.setdefault("visual_safety_decisions", []).append(short_prompt_decision.to_dict())
+                            short_prompt = short_prompt_decision.rewritten_query or short_title
                         short_dalle_path = f"{cfg.videos_dir}/thumb_short_dalle_{__import__('uuid').uuid4().hex[:8]}.jpg"
                         short_thumb_bg = generate_dalle_thumbnail(short_prompt, short_dalle_path)
                 except Exception:
@@ -2739,6 +2784,54 @@ def run_full_pipeline(
                 category_id=content.category_id,
                 niche=content.niche,
             )
+            short_content_id = f"{str(result.get('content_id', '') or '').strip()}_short"
+            short_visual_assets = [str(result["short_path"])]
+            if short_thumbnail_path:
+                short_visual_assets.append(str(short_thumbnail_path))
+            short_visual_manifest_path = build_visual_manifest(
+                channel_id=str(result.get("channel", "")),
+                content_id=short_content_id,
+                run_id=str(result.get("run_id", "")),
+                niche=str(getattr(cfg, "niche", "")),
+                topic=short_title,
+                assets=short_visual_assets,
+                output_path=Path(result["short_path"]).with_suffix(".visual_manifest.json"),
+            )
+            short_ownership_manifest_path = persist_ownership_manifest(
+                channel_id=str(result.get("channel", "")),
+                content_id=short_content_id,
+                run_id=str(result.get("run_id", "")),
+                niche=str(getattr(cfg, "niche", "")),
+                title=short_title,
+                topic=short_title,
+                script=str(getattr(content, "script", "")),
+                script_path=str(result.get("script_path", "")),
+                video_path=str(result["short_path"]),
+                thumbnail_path=str(short_thumbnail_path) if short_thumbnail_path else None,
+                visual_manifest_path=str(short_visual_manifest_path),
+            )
+            short_precheck = evaluate_upload_precheck(
+                channel_id=str(result.get("channel", "")),
+                content_id=short_content_id,
+                run_id=str(result.get("run_id", "")),
+                niche=str(getattr(cfg, "niche", "")),
+                title=short_title,
+                topic=short_title,
+                script=str(getattr(content, "script", "")),
+                description=str(short_content.description or ""),
+                tags=list(short_content.tags or []),
+                script_path=str(result.get("script_path", "")),
+                video_path=str(result["short_path"]),
+                thumbnail_path=str(short_thumbnail_path) if short_thumbnail_path else None,
+                manifest_path=short_ownership_manifest_path,
+                visual_manifest_path=short_visual_manifest_path,
+                final_visual_assets=short_visual_assets,
+                dry_run=False,
+            )
+            result["short_upload_precheck"] = short_precheck
+            result["short_visual_manifest_path"] = str(short_visual_manifest_path)
+            if short_precheck.get("status") == "blocked":
+                raise RuntimeError("short_upload_precheck_blocked:" + ",".join(short_precheck.get("guard_reason_codes") or []))
             short_id = uploader.upload_video(
                 video_path=result["short_path"],
                 content=short_content,

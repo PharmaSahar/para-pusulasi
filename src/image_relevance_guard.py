@@ -381,6 +381,34 @@ def classify_asset_relevance(
     check_text = _extract_check_text(asset, asset_type)
     check_lower = check_text.lower()
 
+    from .visual_safety_policy import evaluate_visual_candidate
+
+    central_decision = evaluate_visual_candidate(
+        candidate=asset,
+        media_type=asset_type,
+        channel_id="unknown",
+        niche=niche_norm,
+        topic=topic,
+        query=query_used,
+        source="pexels",
+    )
+    if not central_decision.allowed:
+        return AssetClassification(
+            asset_id=asset_id,
+            asset_url=asset_url,
+            asset_type=asset_type,
+            alt_text=alt_text,
+            topic=topic,
+            niche=niche_norm,
+            query_used=query_used,
+            hard_blocked="unsafe" in " ".join(central_decision.failed_rules),
+            positive_score=0,
+            negative_score=10,
+            contextual_penalty=0,
+            final_decision="reject",
+            rejection_reason="visual_safety_policy:" + ",".join(central_decision.failed_rules),
+        )
+
     # ── 1. Hard-block check ────────────────────────────────────────────────────
     hard_blocked = bool(_HARD_BLOCK_RE.search(check_lower))
     if hard_blocked:

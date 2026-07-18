@@ -7,6 +7,7 @@ from pathlib import Path
 import requests
 
 from .config import config
+from .visual_safety_policy import evaluate_visual_query
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +183,22 @@ class ImageFetcher:
         raw = str(query or "").strip()
         fallback = self._fallback_query(title)
         if not raw:
+            return fallback
+
+        decision = evaluate_visual_query(
+            query=raw,
+            channel_id=str(getattr(self.channel_cfg, "channel_id", "unknown") or "unknown"),
+            niche=getattr(self.channel_cfg, "niche", ""),
+            topic=title,
+        )
+        if not decision.allowed:
+            logger.warning(
+                "Visual safety query rejected; fallback applied: channel=%s reason=%s query=%s rewrite=%s",
+                getattr(self.channel_cfg, "channel_id", "unknown"),
+                decision.reason,
+                raw,
+                decision.rewritten_query or fallback,
+            )
             return fallback
 
         if not self._is_query_allowed_for_niche(raw):

@@ -840,7 +840,7 @@ run_prepare_scheduler_health_check() {
   state_root="$(prepare_preprod_state_root)"
   stdout_file="$(mktemp)"
   stderr_file="$(mktemp)"
-  PRECHECK_HEALTH_COMMAND="PREPROD_ISOLATION_MODE=true PREPROD_STATE_ROOT=$state_root SCHEDULE_ENABLED=false UPLOAD_ENABLED=false SHORTS_UPLOAD_ENABLED=false LIVE_COLLECTOR_ENABLED=false YOUTUBE_ANALYTICS_API_GO=false $pybin scheduler.py --startup-preflight"
+  PRECHECK_HEALTH_COMMAND="PREPROD_ISOLATION_MODE=true PREPROD_STATE_ROOT=$state_root IMMUTABLE_V2_LOCK_DIR=$state_root/state/deploy.lock SCHEDULE_ENABLED=false UPLOAD_ENABLED=false SHORTS_UPLOAD_ENABLED=false LIVE_COLLECTOR_ENABLED=false YOUTUBE_ANALYTICS_API_GO=false $pybin scheduler.py --startup-preflight"
 
   mkdir -p "$state_root/state" "$state_root/telemetry" "$state_root/logs"
 
@@ -850,6 +850,7 @@ run_prepare_scheduler_health_check() {
     PREPROD_ISOLATION_MODE=true \
     IMMUTABLE_CONTAINED_DEPLOYMENT="${IMMUTABLE_V2_CONTAINED_DEPLOYMENT:-0}" \
     PREPROD_STATE_ROOT="$state_root" \
+    IMMUTABLE_V2_LOCK_DIR="$state_root/state/deploy.lock" \
     SCHEDULE_ENABLED=false \
     UPLOAD_ENABLED=false \
     SHORTS_UPLOAD_ENABLED=false \
@@ -1359,6 +1360,7 @@ wait_for_service_health() {
         PREPROD_ISOLATION_MODE=true \
         IMMUTABLE_CONTAINED_DEPLOYMENT="${IMMUTABLE_V2_CONTAINED_DEPLOYMENT:-0}" \
         PREPROD_STATE_ROOT="$state_root" \
+        IMMUTABLE_V2_LOCK_DIR="$state_root/state/deploy.lock" \
         RUNTIME_OUTPUT_ROOT="$state_root" \
         SCHEDULE_ENABLED=false \
         UPLOAD_ENABLED=false \

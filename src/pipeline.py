@@ -42,6 +42,7 @@ from .thumbnail_selection_policy import select_thumbnail_candidate
 from .tts_engine import TTSEngine
 from .production_observation import production_observation_mode_enabled, read_observation_state
 from .production_safety_gate import evaluate_production_safety_gate, ensure_production_safety_gate
+from .automatic_qa_evidence import record_automatic_qa_evidence
 from .video_creator_pro import VideoCreator
 from .upload_precheck import evaluate_upload_precheck, persist_ownership_manifest
 from .visual_safety_policy import build_visual_manifest, evaluate_visual_query
@@ -2473,6 +2474,23 @@ def run_full_pipeline(
                     "shorts_enabled": True,
                 }
                 automatic_qa = evaluate_automatic_qa(qa_payload)
+                try:
+                    record_automatic_qa_evidence(
+                        generation_id=result.get("content_id"),
+                        run_id=result.get("run_id"),
+                        qa_attempt=_qa_regeneration_count,
+                        stage="media_fetch",
+                        git_sha_full=runtime_build_identity.get("git_sha_full", "unknown"),
+                        qa_payload=qa_payload,
+                        automatic_qa=automatic_qa,
+                    )
+                except Exception as exc:
+                    _record_warning(
+                        "automatic_qa_evidence_warning",
+                        code="automatic_qa_evidence_append_failed",
+                        message="Automatic QA evidence append failed; pipeline continued.",
+                        extra={"error_type": exc.__class__.__name__},
+                    )
                 result["automatic_qa"] = automatic_qa
                 if automatic_qa.get("decision") != "block":
                     break

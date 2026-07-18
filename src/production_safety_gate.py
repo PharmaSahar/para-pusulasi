@@ -621,17 +621,25 @@ def _check_release_integrity(*, release_metadata_path: str | Path | None, releas
 
 def _check_active_deployment_lock(*, deployment_lock_path: str | Path | None, release_sha: str, channel_id: str, job_id: str) -> ProductionSafetyCheckResult:
     path = Path(deployment_lock_path) if deployment_lock_path else Path(os.getenv("IMMUTABLE_V2_LOCK_DIR", "/opt/parapusulasi/deploy.lock"))
-    exists = path.exists()
+    path_exists = path.exists()
+    active_marker = path / ".active_lock"
+    active_marker_exists = active_marker.exists() if path.is_dir() else False
+    active = active_marker_exists or (path_exists and not path.is_dir())
     return _build_check(
         check_name="active_deployment_lock",
-        status="fail" if exists else "pass",
+        status="fail" if active else "pass",
         severity="critical",
-        reason_code="active_deployment_lock" if exists else "no_active_deployment_lock",
-        message="An active deployment lock is present." if exists else "No active deployment lock is present.",
+        reason_code="active_deployment_lock" if active else "no_active_deployment_lock",
+        message="An active deployment lock is present." if active else "No active deployment lock is present.",
         release_sha=release_sha,
         channel_id=channel_id,
         job_id=job_id,
-        evidence={"path": str(path), "exists": exists},
+        evidence={
+            "path": str(path),
+            "exists": path_exists,
+            "active_marker_path": str(active_marker),
+            "active_marker_exists": active_marker_exists,
+        },
     )
 
 

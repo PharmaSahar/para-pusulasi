@@ -130,7 +130,7 @@ def test_production_safety_gate_blocks_active_deployment_lock(monkeypatch, tmp_p
     queue_path, _events = _prepare_common(monkeypatch, tmp_path)
     cfg = _make_cfg(tmp_path)
     lock_path = tmp_path / "deploy.lock"
-    lock_path.mkdir(parents=True, exist_ok=True)
+    (lock_path / ".active_lock").mkdir(parents=True, exist_ok=True)
 
     result = production_safety_gate.evaluate_production_safety_gate(
         operation="render",
@@ -142,6 +142,26 @@ def test_production_safety_gate_blocks_active_deployment_lock(monkeypatch, tmp_p
 
     assert result.ok is False
     assert result.blocking_reason == "active_deployment_lock"
+
+
+def test_production_safety_gate_allows_empty_deployment_lock_directory(monkeypatch, tmp_path: Path):
+    queue_path, _events = _prepare_common(monkeypatch, tmp_path)
+    cfg = _make_cfg(tmp_path)
+    lock_path = tmp_path / "deploy.lock"
+    lock_path.mkdir(parents=True, exist_ok=True)
+
+    result = production_safety_gate.evaluate_production_safety_gate(
+        operation="render",
+        channel_id="demo_channel",
+        channel_cfg=cfg,
+        queue_path=queue_path,
+        deployment_lock_path=lock_path,
+    )
+
+    assert result.ok is True
+    lock_check = next(check for check in result.checks if check.check_name == "active_deployment_lock")
+    assert lock_check.reason_code == "no_active_deployment_lock"
+    assert lock_check.evidence["active_marker_exists"] is False
 
 
 def test_production_safety_gate_blocks_release_integrity_mismatch(monkeypatch, tmp_path: Path):
@@ -265,7 +285,7 @@ def test_production_safety_gate_emits_structured_event_contents(monkeypatch, tmp
     queue_path, events = _prepare_common(monkeypatch, tmp_path)
     cfg = _make_cfg(tmp_path)
     lock_path = tmp_path / "deploy.lock"
-    lock_path.mkdir(parents=True, exist_ok=True)
+    (lock_path / ".active_lock").mkdir(parents=True, exist_ok=True)
 
     result = production_safety_gate.evaluate_production_safety_gate(
         operation="render",

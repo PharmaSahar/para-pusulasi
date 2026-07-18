@@ -40,6 +40,7 @@ from .thumbnail_candidate_generator import generate_thumbnail_candidates
 from .thumbnail_experiment_registry_binding import register_thumbnail_variant_bindings
 from .thumbnail_selection_policy import select_thumbnail_candidate
 from .tts_engine import TTSEngine
+from .production_safety_gate import ensure_production_safety_gate
 from .video_creator_pro import VideoCreator
 from .upload_precheck import evaluate_upload_precheck, persist_ownership_manifest
 from .youtube_uploader import YouTubeUploader
@@ -448,6 +449,7 @@ def _validate_performance_snapshot(snapshot: dict) -> tuple[bool, dict]:
 def run_full_pipeline(
     topic: str | None = None,
     generate_only: bool = False,
+    dry_run: bool = False,
     privacy: str = os.getenv("DEFAULT_PRIVACY", "public"),
     channel_cfg=None,
     publish_at: str | None = None,
@@ -491,6 +493,7 @@ def run_full_pipeline(
     result["pipeline_retry_count"] = 0
     result["upload_retry_count"] = 0
     result["final_status"] = "in_progress"
+    result["dry_run"] = bool(dry_run)
     _invoke_fact_bundle_pipeline_adapter(cfg, result)
     shadow_mode_enabled = _content_quality_shadow_mode_enabled()
     script_lineage_enabled = _script_lineage_evidence_runtime_enabled()
@@ -564,6 +567,17 @@ def run_full_pipeline(
             result["audio_warning"] = None
         if "analytics_warning" not in result:
             result["analytics_warning"] = None
+
+    if not generate_only:
+        gate_result = ensure_production_safety_gate(
+            operation="render",
+            channel_id=str(result.get("channel", "")),
+            channel_cfg=cfg,
+            queue_path=Path(os.getenv("SCHEDULER_QUEUE_FILE", "output/state/channel_queue.json")),
+            writable_paths=[getattr(cfg, "output_dir", ""), getattr(cfg, "logs_dir", "")],
+            job_id=str(result.get("run_id", "")),
+        )
+        result["production_safety_gate"] = gate_result.to_dict()
 
     shadow_engine = None
 
@@ -1275,7 +1289,8 @@ def run_full_pipeline(
         try:
             yield
         except Exception as e:
-            _emit(stage, "stage_failed", {"error": str(e)[:300]})
+            if not getattr(e, "_suppress_pipeline_stage_failed_event", False):
+                _emit(stage, "stage_failed", {"error": str(e)[:300]})
             raise
         else:
             payload = {}
@@ -2450,10 +2465,15 @@ def run_full_pipeline(
         title=str(getattr(content, "title", "")),
         topic=str(topic or getattr(content, "title", "")),
         script=str(getattr(content, "script", "")),
+        description=str(getattr(content, "description", "") or ""),
+        tags=list(getattr(content, "tags", []) or []),
         script_path=str(result.get("script_path", "")),
         video_path=str(video_path),
         thumbnail_path=str(thumbnail_path) if thumbnail_path else None,
         manifest_path=ownership_manifest_path,
+        duplicate_upload_detected=bool(get_registered_upload(idempotency_key)),
+        quarantine_state="pending" if result.get("production_safety_gate", {}).get("ok") is False else "clear",
+        dry_run=bool(dry_run),
     )
     result["upload_precheck"] = precheck
     _capture_forward_evidence("OWNERSHIP_FINALIZED", ownership_manifest_path=str(ownership_manifest_path))
@@ -2476,6 +2496,23 @@ def run_full_pipeline(
                 "guard_reason_codes": list(precheck.get("guard_reason_codes") or []),
             },
         )
+        record_production_event(
+            {
+                "event_type": "upload_quality_block",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "severity": "ERROR",
+                "status": "blocked",
+                "reason": str(precheck.get("quarantine_reason") or "upload_precheck_blocked"),
+                "operation": "upload_precheck",
+                "release_sha": str(result.get("commit_sha") or ""),
+                "channel": result.get("channel"),
+                "channel_id": result.get("channel"),
+                "job_id": result.get("run_id"),
+                "video_id": result.get("video_id"),
+                "source_component": "upload_precheck",
+                "evidence": dict(precheck),
+            }
+        )
         logger.error("Upload precheck blocked: %s", precheck)
     else:
         try:
@@ -2497,39 +2534,50 @@ def run_full_pipeline(
                         "duplicate_prevented": True,
                     }
                 else:
-                    def _upload_once():
-                        return uploader.upload_video(
-                            video_path=video_path,
-                            content=content,
-                            thumbnail_path=thumbnail_path,
-                            privacy=privacy,
-                            publish_at=publish_at,
+                    if dry_run:
+                        video_id = "dry_run_video"
+                        result["upload_recovery"] = {
+                            "stage": "upload",
+                            "attempts": 0,
+                            "max_attempts": 0,
+                            "recovered": False,
+                            "ok": True,
+                            "dry_run": True,
+                        }
+                    else:
+                        def _upload_once():
+                            return uploader.upload_video(
+                                video_path=video_path,
+                                content=content,
+                                thumbnail_path=thumbnail_path,
+                                privacy=privacy,
+                                publish_at=publish_at,
+                            )
+
+                        def _on_upload_retry(attempt: int, _exc: Exception) -> None:
+                            result["upload_retry_count"] = int(result.get("upload_retry_count", 0)) + 1
+
+                        video_id, recovery = run_stage_with_recovery(
+                            stage="upload",
+                            fn=_upload_once,
+                            max_attempts=2,
+                            base_backoff_seconds=4.0,
+                            on_retry=_on_upload_retry,
                         )
-
-                    def _on_upload_retry(attempt: int, _exc: Exception) -> None:
-                        result["upload_retry_count"] = int(result.get("upload_retry_count", 0)) + 1
-
-                    video_id, recovery = run_stage_with_recovery(
-                        stage="upload",
-                        fn=_upload_once,
-                        max_attempts=1,
-                        base_backoff_seconds=4.0,
-                        on_retry=_on_upload_retry,
-                    )
-                    if not str(video_id or "").strip():
-                        raise RuntimeError("upload_response_missing_id")
-                    result["upload_recovery"] = recovery
-                    register_upload(
-                        idempotency_key,
-                        {
-                            "video_id": video_id,
-                            "channel": result.get("channel"),
-                            "title": getattr(content, "title", ""),
-                            "youtube_url": f"https://youtube.com/watch?v={video_id}",
-                        },
-                    )
-                result["video_id"] = video_id
-                result["youtube_url"] = f"https://youtube.com/watch?v={video_id}"
+                        if not str(video_id or "").strip():
+                            raise RuntimeError("upload_response_missing_id")
+                        result["upload_recovery"] = recovery
+                        register_upload(
+                            idempotency_key,
+                            {
+                                "video_id": video_id,
+                                "channel": result.get("channel"),
+                                "title": getattr(content, "title", ""),
+                                "youtube_url": f"https://youtube.com/watch?v={video_id}",
+                            },
+                        )
+                result["video_id"] = None if dry_run else video_id
+                result["youtube_url"] = "" if dry_run else f"https://youtube.com/watch?v={video_id}"
                 if script_lineage_enabled and script_lineage_recorder is not None:
                     try:
                         script_lineage_recorder.record_linked_to_upload(script_text=str(getattr(content, "script", "") or ""))
@@ -2546,7 +2594,9 @@ def run_full_pipeline(
                     "privacy": privacy,
                     "publish_at": publish_at,
                     "idempotency_key": idempotency_key,
-                      "ownership_manifest_path": str(ownership_manifest_path),
+                                        "ownership_manifest_path": str(ownership_manifest_path),
+                                        "dry_run": bool(dry_run),
+                                        "api_invoked": not bool(dry_run),
                 }
                 # Register script fingerprint ONLY after confirmed upload
                 try:
@@ -2567,7 +2617,10 @@ def run_full_pipeline(
         except Exception as e:
             upload_error = e
             result["upload_error"] = str(e)
-            failure_kind = _classify_upload_failure(str(e))
+            gate_result = getattr(e, "gate_result", None)
+            failure_kind = "production_safety_gate" if gate_result is not None else _classify_upload_failure(str(e))
+            if gate_result is not None and hasattr(gate_result, "to_dict"):
+                result["production_safety_gate"] = gate_result.to_dict()
             result["upload_metadata"] = {
                 "experiment_id": resolved_experiment_id,
                 "video_id": None,
@@ -2575,8 +2628,10 @@ def run_full_pipeline(
                 "publish_at": publish_at,
                 "error": str(e),
                 "failure_kind": failure_kind,
-                  "ownership_manifest_path": str(ownership_manifest_path),
+                "ownership_manifest_path": str(ownership_manifest_path),
             }
+            if result.get("production_safety_gate"):
+                result["upload_metadata"]["production_safety_gate"] = dict(result["production_safety_gate"])
             logger.error(
                 "Upload başarısız, snapshot yine kaydedilecek: %s (failure_kind=%s)",
                 e,
@@ -2589,6 +2644,8 @@ def run_full_pipeline(
     short_upload_skipped_reason = None
     if upload_error:
         short_upload_skipped_reason = "main_upload_failed"
+    elif dry_run:
+        short_upload_skipped_reason = "dry_run"
     elif result.get("upload_precheck", {}).get("status") == "blocked":
         short_upload_skipped_reason = "main_upload_blocked"
     elif result.get("short_path"):
@@ -2837,6 +2894,10 @@ def run_full_pipeline(
         result["final_status"] = "success"
     elif result.get("upload_precheck", {}).get("status") == "blocked":
         result["final_status"] = "blocked"
+    elif result.get("production_safety_gate", {}).get("ok") is False:
+        result["final_status"] = "blocked"
+    elif dry_run and result.get("video_path"):
+        result["final_status"] = "dry_run"
     elif result.get("upload_error"):
         result["final_status"] = "failed"
     else:

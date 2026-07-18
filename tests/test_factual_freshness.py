@@ -198,6 +198,12 @@ def test_pipeline_fact_check_prevents_tts_render_upload_and_sends_alert(monkeypa
 def test_pipeline_retries_once_for_unverifiable_claim_and_continues(monkeypatch, tmp_path):
     alerts: list[str] = []
 
+    import src.production_quality_platform as production_quality_platform
+    import src.upload_precheck as upload_precheck
+
+    monkeypatch.setattr(production_quality_platform, "UPLOAD_REGISTRY_PATH", tmp_path / "production_upload_registry.json")
+    monkeypatch.setattr(upload_precheck, "OWNERSHIP_DIR", tmp_path / "content_ownership")
+
     class FakeConfig:
         channel_id = "test_channel"
         scripts_dir = str(tmp_path / "channels" / "test_channel" / "scripts")

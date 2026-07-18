@@ -24,8 +24,10 @@ from .channel_capabilities import (
     capability_gating_enabled,
     get_default_channel_capability_resolver,
 )
+from .production_safety_gate import ensure_production_safety_gate
 from .youtube_auth import get_authenticated_service
 from .quality_scoring import build_quality_scores
+from .retry_policy import classify_retry_decision
 from .chapter_validation_trail import (
     append_chapter_validation_event,
     write_latest_chapter_validator_artifact,
@@ -145,6 +147,17 @@ class YouTubeUploader:
         file_size = vp.stat().st_size
         if file_size < 100_000:
             raise ValueError(f"Video dosyası çok küçük ({file_size} bytes) - bozuk render: {video_path}")
+        ensure_production_safety_gate(
+            operation="upload",
+            channel_id=self._channel_id(),
+            channel_cfg=self.channel_cfg,
+            queue_path=Path(os.getenv("SCHEDULER_QUEUE_FILE", "output/state/channel_queue.json")),
+            artifact_paths={
+                "video": video_path,
+                "thumbnail": thumbnail_path,
+            },
+            writable_paths=[vp.parent],
+        )
         logger.info(f"YouTube'a yukleniyor: '{content.title}' ({file_size // 1024 // 1024:.1f} MB)")
         self._log_dns_resolution(YOUTUBE_API_HOST)
         self._ensure_dns_resolution(YOUTUBE_API_HOST)
@@ -623,6 +636,21 @@ class YouTubeUploader:
                     logger.warning(
                         "Transient upload hatası (%s), %ss sonra yeniden denenecek (%s/%s)",
                         type(e).__name__,
+                        wait,
+                        retry,
+                        MAX_RETRIES,
+                    )
+                    time.sleep(wait)
+                else:
+                    raise
+            except Exception as e:
+                decision = classify_retry_decision(error_text=str(e), exc=e, stage="youtube_upload")
+                if retry < MAX_RETRIES and decision.retryable:
+                    retry += 1
+                    wait = 2 ** retry
+                    logger.warning(
+                        "Retryable upload hatası (%s), %ss sonra yeniden denenecek (%s/%s)",
+                        decision.reason_code,
                         wait,
                         retry,
                         MAX_RETRIES,

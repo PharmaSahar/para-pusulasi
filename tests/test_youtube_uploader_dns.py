@@ -9,6 +9,11 @@ from httplib2 import ServerNotFoundError
 
 import src.youtube_uploader as youtube_uploader
 from src.content_generator import VideoContent
+from src.production_safety_gate import (
+    ProductionSafetyCheckResult,
+    ProductionSafetyGateBlocked,
+    ProductionSafetyGateResult,
+)
 
 
 class _FakeRequest:
@@ -77,6 +82,49 @@ def test_upload_video_runs_dns_preflight(tmp_path: Path, monkeypatch):
     assert result == "video123"
     assert preflight_calls == ["log:youtube.googleapis.com", "check:youtube.googleapis.com"]
     assert request.calls == 1
+
+
+def test_upload_video_blocks_when_production_safety_gate_fails(tmp_path: Path, monkeypatch):
+    request = _FakeRequest([(None, {"id": "video123"})])
+    uploader = youtube_uploader.YouTubeUploader()
+    uploader._get_service = lambda: _FakeService(request)  # noqa: SLF001
+
+    gate_result = ProductionSafetyGateResult(
+        operation="upload",
+        channel_id="default",
+        job_id="",
+        allowed=False,
+        status="blocked",
+        blocking_reason="active_deployment_lock",
+        timestamp="2026-07-18T00:00:00+00:00",
+        release_sha="a" * 40,
+        checks=(
+            ProductionSafetyCheckResult(
+                check_name="active_deployment_lock",
+                status="fail",
+                severity="critical",
+                reason_code="active_deployment_lock",
+                message="An active deployment lock is present.",
+                timestamp="2026-07-18T00:00:00+00:00",
+                release_sha="a" * 40,
+                channel_id="default",
+                job_id="",
+                evidence={"path": "/tmp/deploy.lock"},
+            ),
+        ),
+        evidence={"critical_failures": 1, "warnings": 0, "check_count": 1},
+    )
+
+    def _block_upload(**_kwargs):
+        raise ProductionSafetyGateBlocked(gate_result)
+
+    monkeypatch.setattr(youtube_uploader, "ensure_production_safety_gate", _block_upload)
+
+    with pytest.raises(ProductionSafetyGateBlocked) as exc:
+        uploader.upload_video(str(_make_video_file(tmp_path)), _make_content())
+
+    assert exc.value.gate_result.blocking_reason == "active_deployment_lock"
+    assert request.calls == 0
 
 
 def test_resumable_upload_retries_server_not_found(monkeypatch):

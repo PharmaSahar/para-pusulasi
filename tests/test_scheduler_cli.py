@@ -168,6 +168,38 @@ def test_scheduler_startup_preflight_fails_when_no_ready_channels(monkeypatch, c
     assert "Hiçbir kanalın token'i yok! Önce setup_channel.py çalıştırın." in out
 
 
+def test_scheduler_startup_preflight_stops_before_work_when_safety_gate_blocks(monkeypatch, capsys):
+    monkeypatch.setattr(scheduler.sys, "argv", ["scheduler.py", "--startup-preflight"])
+
+    class _Result:
+        ok = True
+        errors = ()
+
+    calls = {"ready": 0, "setup": 0}
+
+    monkeypatch.setattr(scheduler, "_run_startup_health_check", lambda **_kwargs: _Result())
+    monkeypatch.setattr(scheduler, "_run_provider_preflight_check", lambda **_kwargs: (True, "ok"))
+    monkeypatch.setattr(scheduler, "get_ready_channels", lambda: calls.__setitem__("ready", calls["ready"] + 1) or ["demo"])
+    monkeypatch.setattr(
+        scheduler,
+        "_evaluate_scheduler_startup_production_safety_gate",
+        lambda **_kwargs: {
+            "ok": False,
+            "blocking_reason": "active_deployment_lock",
+            "checks": [{"status": "fail", "reason": "active_deployment_lock"}],
+        },
+    )
+    monkeypatch.setattr(scheduler, "setup_schedule", lambda: calls.__setitem__("setup", calls["setup"] + 1) or ["demo"])
+
+    with pytest.raises(SystemExit) as exc:
+        scheduler.main()
+
+    out = capsys.readouterr().out
+    assert exc.value.code == 1
+    assert calls == {"ready": 1, "setup": 0}
+    assert "Production safety gate failed: active_deployment_lock" in out
+
+
 def test_scheduler_sync_analytics_now_runs_once_and_exits(monkeypatch, capsys):
     monkeypatch.setattr(scheduler.sys, "argv", ["scheduler.py", "--sync-analytics-now"])
     calls = {"refresh": 0}

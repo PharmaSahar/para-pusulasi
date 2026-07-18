@@ -118,6 +118,14 @@ def _is_enabled(value: object) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _observation_mode_active() -> bool:
+    try:
+        return production_observation_mode_enabled()
+    except Exception as exc:
+        logger.warning("Observation mode state unavailable; treating scheduler automation as blocked: %s", exc)
+        return True
+
+
 def _resolve_governance_shadow_activation() -> dict[str, Any]:
     """Resolve governance shadow activation in deterministic fail-open mode."""
     try:
@@ -1303,6 +1311,9 @@ def initial_fill():
     Başlangıçta tüm kanallar için ön render başlat.
     Her kanal için bir sonraki boş saate video hazırla.
     """
+    if _observation_mode_active():
+        logger.warning("Initial fill skipped: production_observation_mode")
+        return
     ready = get_ready_channels()
     queue = load_queue()
 
@@ -2102,6 +2113,9 @@ def fill_empty_queues_job():
     Her saatte bir: kanalların tüm yakın slotlarını doldur.
     Günde 2 upload olan kanallar 2 video kuyruğa alır.
     """
+    if _observation_mode_active():
+        logger.warning("Automatic queue fill skipped: production_observation_mode")
+        return
     try:
         from src.scheduler_utils import cleanup_stale_queue
         cleanup_state = {"freed": []}
@@ -2333,6 +2347,9 @@ def run_live_analytics_sync_once() -> int:
 def _run_provider_preflight_check(*, skip_preflight: bool = False) -> tuple[bool, str]:
     if skip_preflight:
         return True, "skipped_by_flag"
+
+    if _observation_mode_active():
+        return True, "skipped_by_production_observation_mode"
 
     enabled = _is_enabled(os.getenv("ANTHROPIC_PREFLIGHT_ENABLED", "true"))
     if not enabled:
@@ -3595,7 +3612,10 @@ def main():
     logger.info("Governance refresh job scheduled at %s", governance_refresh_time)
 
     # Her saatte boş kuyruğu olan kanalları doldur (restart güvencesi)
-    schedule.every(1).hour.do(fill_empty_queues_job)
+    if _observation_mode_active():
+        logger.warning("Hourly queue fill scheduling skipped: production_observation_mode")
+    else:
+        schedule.every(1).hour.do(fill_empty_queues_job)
 
     # Canlı YouTube Analytics senkronu (no-go durumunda planlama yapılmaz)
     live_enabled, live_status = _resolve_live_collector_runtime()
@@ -3608,7 +3628,10 @@ def main():
         )
 
     # Ön render başlat (arka planda)
-    threading.Thread(target=initial_fill, daemon=True, name="initial-fill").start()
+    if _observation_mode_active():
+        logger.warning("Startup initial-fill thread skipped: production_observation_mode")
+    else:
+        threading.Thread(target=initial_fill, daemon=True, name="initial-fill").start()
 
     # Telegram startup bildirimi
     notify_startup(len(ready))

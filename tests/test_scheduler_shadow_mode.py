@@ -131,3 +131,37 @@ def test_observation_mode_blocks_scheduler_queue_writes(tmp_path, monkeypatch, c
 
     assert queue_file.read_text(encoding="utf-8") == before
     assert "production_observation_mode" in caplog.text
+
+
+def test_observation_mode_skips_provider_preflight(monkeypatch):
+    import scheduler
+
+    monkeypatch.setenv("PRODUCTION_OBSERVATION_MODE", "true")
+
+    def forbidden_preflight(*_args, **_kwargs):
+        raise AssertionError("provider preflight must not run in observation mode")
+
+    monkeypatch.setattr("src.scheduler_utils.run_anthropic_preflight", forbidden_preflight)
+
+    ok, detail = scheduler._run_provider_preflight_check()
+
+    assert ok is True
+    assert detail == "skipped_by_production_observation_mode"
+
+
+def test_observation_mode_skips_automatic_queue_fill(monkeypatch, caplog):
+    import scheduler
+
+    monkeypatch.setenv("PRODUCTION_OBSERVATION_MODE", "true")
+
+    def forbidden_ready_channels():
+        raise AssertionError("automatic fill must not enumerate channels in observation mode")
+
+    monkeypatch.setattr(scheduler, "get_ready_channels", forbidden_ready_channels)
+    caplog.set_level("WARNING")
+
+    scheduler.initial_fill()
+    scheduler.fill_empty_queues_job()
+
+    assert "Initial fill skipped: production_observation_mode" in caplog.text
+    assert "Automatic queue fill skipped: production_observation_mode" in caplog.text

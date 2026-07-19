@@ -25,6 +25,7 @@ import atexit
 import io
 import logging
 import os
+import socket
 import subprocess
 import sys
 import threading
@@ -2346,6 +2347,7 @@ def _evaluate_scheduler_startup_production_safety_gate(*, startup_health, ready_
         ready_channels=list(ready_channels or []),
         queue_path=Path(QUEUE_FILE),
         writable_paths=list(_collect_preprod_mutable_paths().values()),
+        expected_deployment_lock_owner_token=os.getenv("IMMUTABLE_V2_EXPECTED_LOCK_OWNER_TOKEN", ""),
     ).to_dict()
 
 
@@ -2357,12 +2359,55 @@ def _production_safety_gate_errors(payload: dict[str, Any] | None) -> list[str]:
     for item in list(payload.get("checks") or []):
         if str(item.get("status") or "") != "fail":
             continue
+        evidence = dict(item.get("evidence") or {})
+        classification = str(evidence.get("lock_classification") or "")
+        if classification in {"self_owned_active_lock", "foreign_active_lock"}:
+            errors.append("ACTIVE DEPLOYMENT: production safety gate blocked scheduler startup because a live deployment lock is present")
+            continue
+        if classification == "stale_lock":
+            errors.append("STALE DEPLOYMENT LOCK: production safety gate blocked scheduler startup; explicit operator confirmation is required")
+            continue
         errors.append(
             f"Production safety gate failed: {str(item.get('reason') or 'production_safety_gate_failed')}"
         )
     return errors or [
         f"Production safety gate failed: {str(payload.get('blocking_reason') or 'unknown')}"
     ]
+
+
+def _deployment_lock_context_from_gate(payload: dict[str, Any] | None) -> dict[str, Any]:
+    for item in list((payload or {}).get("checks") or []):
+        evidence = dict(item.get("evidence") or {})
+        if str(evidence.get("lock_classification") or ""):
+            return evidence
+    return {}
+
+
+def _send_startup_incident_alert(*, gate_payload: dict[str, Any] | None) -> None:
+    context = _deployment_lock_context_from_gate(gate_payload)
+    incident_id = f"startup-{datetime.now(TZ).strftime('%Y%m%dT%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    owner_age = context.get("owner_age_seconds")
+    owner_state = str(context.get("owner_state") or "unknown")
+    try:
+        from src.scheduler_utils import send_telegram
+
+        send_telegram(
+            "<b>Scheduler startup blocked</b>\n"
+            f"incident_id={incident_id}\n"
+            f"lock_classification={str(context.get('lock_classification') or 'none')}\n"
+            f"reason={owner_state}\n"
+            f"owner_state={owner_state}\n"
+            f"owner_pid={str(context.get('owner_pid') or 'unknown')}\n"
+            f"pid_state={owner_state}\n"
+            f"owner_hostname={str(context.get('owner_host') or 'unknown')}\n"
+            f"owner_mode={str(context.get('owner_mode') or 'unknown')}\n"
+            f"owner_age_seconds={owner_age if owner_age is not None else 'unknown'}\n"
+            f"target_sha={str(context.get('target_sha') or 'unknown')}\n"
+            f"active_sha={str(context.get('active_sha') or _resolve_git_head_short() or 'unknown')}\n"
+            f"current_hostname={str(context.get('hostname') or socket.gethostname())}"
+        )
+    except Exception as exc:
+        logger.warning("Startup incident Telegram alert failed: %s incident_id=%s", exc, incident_id)
 
 
 def _record_safety_gate_result(
@@ -3704,6 +3749,7 @@ def main():
             provider_preflight_detail=provider_detail,
             production_safety_gate_payload=gate_payload,
         )
+        _send_startup_incident_alert(gate_payload=gate_payload)
         for error in errors:
             logger.error("Startup validation failed: %s", error)
             print(f"ERROR: {error}")

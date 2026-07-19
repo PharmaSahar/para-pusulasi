@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import subprocess
+import sys
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -620,27 +622,54 @@ def _check_release_integrity(*, release_metadata_path: str | Path | None, releas
     )
 
 
-def _check_active_deployment_lock(*, deployment_lock_path: str | Path | None, release_sha: str, channel_id: str, job_id: str) -> ProductionSafetyCheckResult:
-    path = Path(deployment_lock_path) if deployment_lock_path else Path(os.getenv("IMMUTABLE_V2_LOCK_DIR", "/opt/parapusulasi/deploy.lock"))
-    path_exists = path.exists()
-    active_marker = path / ".active_lock"
-    active_marker_exists = active_marker.exists() if path.is_dir() else False
-    active = active_marker_exists or (path_exists and not path.is_dir())
+def _check_active_deployment_lock(
+    *,
+    operation: str,
+    deployment_lock_path: str | Path | None,
+    expected_owner_token: str,
+    release_sha: str,
+    channel_id: str,
+    job_id: str,
+) -> ProductionSafetyCheckResult:
+    lock = classify_deployment_lock(
+        deployment_lock_path,
+        expected_owner_token=expected_owner_token if operation == "scheduler_startup" else "",
+        expected_target_sha=release_sha if operation == "scheduler_startup" and expected_owner_token else "",
+        expected_mode=os.getenv("IMMUTABLE_V2_EXPECTED_LOCK_MODE", "") if operation == "scheduler_startup" and expected_owner_token else "",
+        expected_target_ref=os.getenv("IMMUTABLE_V2_EXPECTED_LOCK_TARGET_REF", "") if operation == "scheduler_startup" and expected_owner_token else "",
+        release_sha=release_sha,
+    )
+    classification = str(lock.get("lock_classification") or "ambiguous_lock")
+    self_owned = classification == "self_owned_active_lock" and bool(lock.get("self_owned")) and operation == "scheduler_startup"
+    blocked = classification != "no_lock" and not self_owned
+    reason_by_classification = {
+        "no_lock": "no_active_deployment_lock",
+        "self_owned_active_lock": "self_owned_deployment_lock",
+        "foreign_active_lock": "deployment_lock_owner_mismatch" if str(lock.get("owner_state") or "") in {"owner_token_mismatch", "target_sha_mismatch", "mode_mismatch", "target_ref_mismatch"} else "active_deployment_lock",
+        "stale_lock": "stale_deployment_lock",
+        "malformed_lock": "malformed_deployment_lock",
+        "unreadable_lock": "unreadable_deployment_lock",
+        "ambiguous_lock": "ambiguous_deployment_lock",
+    }
+    message_by_classification = {
+        "no_lock": "No active deployment lock is present.",
+        "self_owned_active_lock": "The active deployment lock is owned by this startup preflight.",
+        "foreign_active_lock": "An active deployment lock belongs to another owner or metadata does not match this flow.",
+        "stale_lock": "A stale deployment lock is present and requires operator confirmation.",
+        "malformed_lock": "Deployment lock metadata is malformed.",
+        "unreadable_lock": "Deployment lock metadata is unreadable.",
+        "ambiguous_lock": "Deployment lock state is ambiguous and requires operator review.",
+    }
     return _build_check(
         check_name="active_deployment_lock",
-        status="fail" if active else "pass",
+        status="fail" if blocked else "pass",
         severity="critical",
-        reason_code="active_deployment_lock" if active else "no_active_deployment_lock",
-        message="An active deployment lock is present." if active else "No active deployment lock is present.",
+        reason_code="self_owned_deployment_lock" if self_owned else reason_by_classification.get(classification, "ambiguous_deployment_lock"),
+        message="The active deployment lock is owned by this startup preflight." if self_owned else message_by_classification.get(classification, message_by_classification["ambiguous_lock"]),
         release_sha=release_sha,
         channel_id=channel_id,
         job_id=job_id,
-        evidence={
-            "path": str(path),
-            "exists": path_exists,
-            "active_marker_path": str(active_marker),
-            "active_marker_exists": active_marker_exists,
-        },
+        evidence=lock,
     )
 
 
@@ -679,6 +708,226 @@ def _pid_is_running(raw_pid: str) -> bool:
     except PermissionError:
         return True
     return True
+
+
+def _read_process_command(raw_pid: str) -> str:
+    try:
+        pid = int(str(raw_pid).strip())
+    except (TypeError, ValueError):
+        return ""
+    if pid <= 0:
+        return ""
+    try:
+        return subprocess.check_output(
+            ["ps", "-p", str(pid), "-o", "command="],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+    except Exception:
+        return ""
+
+
+def _owner_age_seconds(started_at_utc: str) -> int | None:
+    raw = str(started_at_utc or "").strip()
+    if not raw:
+        return None
+    try:
+        started = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    return max(0, int((_now_utc() - started.astimezone(timezone.utc)).total_seconds()))
+
+
+def _write_stale_lock_forensics(*, lock_path: Path, owner_file: Path, owner_payload: dict[str, Any], owner_raw: str, release_sha: str, evidence: dict[str, Any]) -> str:
+    root = Path(os.getenv("DEPLOYMENT_LOCK_FORENSICS_DIR", "") or lock_path.parent / "deploy-lock-forensics")
+    timestamp = _now_utc().strftime("%Y%m%dT%H%M%SZ")
+    bundle = root / f"stale_lock_{timestamp}_{uuid.uuid4().hex[:12]}.json"
+    try:
+        process_list = subprocess.check_output(
+            ["ps", "-axo", "pid,ppid,stat,lstart,etime,command"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except Exception as exc:
+        process_list = f"process_list_unavailable:{exc.__class__.__name__}"
+    payload = {
+        "timestamp_utc": _now_utc().isoformat(),
+        "lock_path": str(lock_path),
+        "owner_json_path": str(owner_file),
+        "owner_json_raw": owner_raw,
+        "owner_json": dict(owner_payload),
+        "pid_check": {
+            "pid": evidence.get("owner_pid"),
+            "owner_state": evidence.get("owner_state"),
+            "pid_live": evidence.get("owner_pid_live"),
+            "process_command": evidence.get("process_command"),
+        },
+        "process_list": process_list,
+        "deployment_metadata": dict(owner_payload),
+        "release_sha": release_sha,
+    }
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        tmp = bundle.with_suffix(bundle.suffix + ".tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp, bundle)
+    except Exception:
+        return ""
+    return str(bundle)
+
+
+def classify_deployment_lock(
+    deployment_lock_path: str | Path | None = None,
+    *,
+    expected_owner_token: str = "",
+    expected_target_sha: str = "",
+    expected_mode: str = "",
+    expected_target_ref: str = "",
+    release_sha: str = "",
+) -> dict[str, Any]:
+    path = Path(deployment_lock_path) if deployment_lock_path else Path(os.getenv("IMMUTABLE_V2_LOCK_DIR", "/opt/parapusulasi/deploy.lock"))
+    active_marker = path / ".active_lock"
+    owner_file = active_marker / "owner.json"
+    hostname = socket.gethostname()
+    evidence: dict[str, Any] = {
+        "lock_classification": "no_lock",
+        "path": str(path),
+        "exists": path.exists(),
+        "active_marker_path": str(active_marker),
+        "active_marker_exists": active_marker.exists() if path.is_dir() else False,
+        "owner_file_path": str(owner_file),
+        "owner_pid": "",
+        "owner_state": "none",
+        "owner_age_seconds": None,
+        "target_sha": "",
+        "active_sha": release_sha,
+        "hostname": hostname,
+        "self_owned": False,
+        "expected_owner_token_present": bool(str(expected_owner_token or "").strip()),
+        "expected_target_sha": str(expected_target_sha or "").strip(),
+        "expected_mode": str(expected_mode or "").strip(),
+        "expected_target_ref": str(expected_target_ref or "").strip(),
+        "forensic_bundle_path": "",
+    }
+
+    if not path.exists():
+        return evidence
+    if not path.is_dir():
+        evidence.update({"lock_classification": "malformed_lock", "owner_state": "lock_path_not_directory"})
+        return evidence
+    if not active_marker.exists():
+        return evidence
+    if not active_marker.is_dir():
+        evidence.update({"lock_classification": "malformed_lock", "owner_state": "active_marker_not_directory"})
+        return evidence
+
+    try:
+        before = active_marker.stat()
+        owner_raw = owner_file.read_text(encoding="utf-8")
+        after = active_marker.stat()
+    except PermissionError as exc:
+        evidence.update({"lock_classification": "unreadable_lock", "owner_state": "owner_metadata_unreadable", "owner_metadata_error": exc.__class__.__name__})
+        return evidence
+    except FileNotFoundError:
+        evidence.update({"lock_classification": "malformed_lock", "owner_state": "owner_metadata_missing", "owner_metadata_error": "owner_metadata_missing"})
+        return evidence
+    except OSError as exc:
+        evidence.update({"lock_classification": "unreadable_lock", "owner_state": "owner_metadata_unreadable", "owner_metadata_error": exc.__class__.__name__})
+        return evidence
+
+    if (before.st_ino, before.st_mtime_ns, before.st_ctime_ns) != (after.st_ino, after.st_mtime_ns, after.st_ctime_ns):
+        evidence.update({"lock_classification": "ambiguous_lock", "owner_state": "lock_changed_during_validation"})
+        return evidence
+
+    try:
+        owner_payload = json.loads(owner_raw)
+    except json.JSONDecodeError:
+        evidence.update({"lock_classification": "malformed_lock", "owner_state": "owner_metadata_invalid_json", "owner_metadata_error": "owner_metadata_invalid_json"})
+        return evidence
+    if not isinstance(owner_payload, dict):
+        evidence.update({"lock_classification": "malformed_lock", "owner_state": "owner_metadata_not_object", "owner_metadata_error": "owner_metadata_not_object"})
+        return evidence
+
+    owner_id = str(owner_payload.get("owner_id") or "").strip()
+    owner_pid = str(owner_payload.get("pid") or "").strip()
+    owner_host = str(owner_payload.get("host") or "").strip()
+    started_at = str(owner_payload.get("started_at_utc") or "").strip()
+    target_sha = str(owner_payload.get("target_sha") or "").strip()
+    target_ref = str(owner_payload.get("target_ref") or "").strip()
+    owner_mode = str(owner_payload.get("mode") or "").strip()
+    process_identity = str(owner_payload.get("process_identity") or "").strip()
+    missing = [name for name, value in {
+        "owner_id": owner_id,
+        "pid": owner_pid,
+        "host": owner_host,
+        "started_at_utc": started_at,
+        "target_sha": target_sha,
+        "target_ref": target_ref,
+        "mode": owner_mode,
+        "process_identity": process_identity,
+    }.items() if not value]
+    evidence.update(
+        {
+            "owner_id_present": bool(owner_id),
+            "owner_pid": owner_pid,
+            "owner_host": owner_host,
+            "owner_age_seconds": _owner_age_seconds(started_at),
+            "target_sha": target_sha,
+            "target_ref": target_ref,
+            "owner_mode": owner_mode,
+            "process_identity": process_identity,
+            "owner_metadata_missing_fields": missing,
+        }
+    )
+    if missing:
+        evidence.update({"lock_classification": "malformed_lock", "owner_state": "owner_metadata_incomplete", "owner_metadata_error": "missing_fields:" + ",".join(missing)})
+        return evidence
+
+    if owner_host != hostname:
+        evidence.update({"lock_classification": "foreign_active_lock", "owner_state": "foreign_host"})
+        return evidence
+
+    pid_live = _pid_is_running(owner_pid)
+    process_command = _read_process_command(owner_pid) if pid_live else ""
+    evidence.update({"owner_pid_live": pid_live, "process_command": process_command})
+    if not pid_live:
+        evidence.update({"lock_classification": "stale_lock", "owner_state": "dead_pid"})
+        evidence["forensic_bundle_path"] = _write_stale_lock_forensics(
+            lock_path=path,
+            owner_file=owner_file,
+            owner_payload=owner_payload,
+            owner_raw=owner_raw,
+            release_sha=release_sha,
+            evidence=evidence,
+        )
+        return evidence
+
+    if not process_command or process_identity not in process_command:
+        evidence.update({"lock_classification": "ambiguous_lock", "owner_state": "process_identity_mismatch"})
+        return evidence
+
+    expected_owner_token = str(expected_owner_token or "").strip()
+    expected_target_sha = str(expected_target_sha or "").strip()
+    expected_mode = str(expected_mode or "").strip()
+    expected_target_ref = str(expected_target_ref or "").strip()
+    if expected_owner_token and owner_id != expected_owner_token:
+        evidence.update({"lock_classification": "foreign_active_lock", "owner_state": "owner_token_mismatch"})
+        return evidence
+    if expected_target_sha and target_sha != expected_target_sha:
+        evidence.update({"lock_classification": "foreign_active_lock", "owner_state": "target_sha_mismatch"})
+        return evidence
+    if expected_mode and owner_mode != expected_mode:
+        evidence.update({"lock_classification": "foreign_active_lock", "owner_state": "mode_mismatch"})
+        return evidence
+    if expected_target_ref and target_ref != expected_target_ref:
+        evidence.update({"lock_classification": "foreign_active_lock", "owner_state": "target_ref_mismatch"})
+        return evidence
+
+    self_owned = bool(expected_owner_token and owner_id == expected_owner_token)
+    evidence.update({"lock_classification": "self_owned_active_lock" if self_owned else "foreign_active_lock", "owner_state": "live_owner", "self_owned": self_owned})
+    return evidence
 
 
 def _check_rate_limit_status(*, operation: str, release_sha: str, channel_id: str, job_id: str) -> ProductionSafetyCheckResult:
@@ -858,6 +1107,7 @@ def evaluate_production_safety_gate(
     required_env_vars: list[str] | None = None,
     release_metadata_path: str | Path | None = None,
     deployment_lock_path: str | Path | None = None,
+    expected_deployment_lock_owner_token: str = "",
     job_id: str = "",
 ) -> ProductionSafetyGateResult:
     release_sha = _resolve_git_head()
@@ -914,7 +1164,16 @@ def evaluate_production_safety_gate(
         checks.append(queue_warning)
 
     checks.append(_check_release_integrity(release_metadata_path=release_metadata_path, release_sha=release_sha, channel_id=channel_id, job_id=job_id))
-    checks.append(_check_active_deployment_lock(deployment_lock_path=deployment_lock_path, release_sha=release_sha, channel_id=channel_id, job_id=job_id))
+    checks.append(
+        _check_active_deployment_lock(
+            operation=operation,
+            deployment_lock_path=deployment_lock_path,
+            expected_owner_token=expected_deployment_lock_owner_token,
+            release_sha=release_sha,
+            channel_id=channel_id,
+            job_id=job_id,
+        )
+    )
     checks.append(_check_clock_sanity(release_sha=release_sha, channel_id=channel_id, job_id=job_id))
     checks.append(_check_rate_limit_status(operation=operation, release_sha=release_sha, channel_id=channel_id, job_id=job_id))
     observation_check = _check_observation_mode(operation=operation, release_sha=release_sha, channel_id=channel_id, job_id=job_id)
@@ -952,3 +1211,24 @@ def ensure_production_safety_gate(**kwargs: Any) -> ProductionSafetyGateResult:
     if not result.allowed:
         raise ProductionSafetyGateBlocked(result)
     return result
+
+
+def _main(argv: list[str]) -> int:
+    if not argv or argv[0] != "--classify-deployment-lock":
+        print("usage: python -m src.production_safety_gate --classify-deployment-lock [lock_path]", file=sys.stderr)
+        return 2
+    lock_path = argv[1] if len(argv) > 1 else None
+    payload = classify_deployment_lock(
+        lock_path,
+        expected_owner_token=os.getenv("IMMUTABLE_V2_EXPECTED_LOCK_OWNER_TOKEN", ""),
+        expected_target_sha=os.getenv("IMMUTABLE_V2_EXPECTED_LOCK_TARGET_SHA", ""),
+        expected_mode=os.getenv("IMMUTABLE_V2_EXPECTED_LOCK_MODE", ""),
+        expected_target_ref=os.getenv("IMMUTABLE_V2_EXPECTED_LOCK_TARGET_REF", ""),
+        release_sha=os.getenv("IMMUTABLE_RELEASE_SHA", ""),
+    )
+    print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main(sys.argv[1:]))

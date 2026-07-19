@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import socket
 import subprocess
+import sys
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -38,8 +42,20 @@ def _init_repo(
         (
             "import json\n"
             "import os\n"
+            "from pathlib import Path\n"
             "import sys\n"
             "if '--health-check' in sys.argv or '--startup-preflight' in sys.argv:\n"
+            "    lock_dir = os.environ.get('IMMUTABLE_V2_LOCK_DIR', '')\n"
+            "    expected_owner = os.environ.get('IMMUTABLE_V2_EXPECTED_LOCK_OWNER_TOKEN', '')\n"
+            "    owner_payload = {}\n"
+            "    owner_error = ''\n"
+            "    self_owned = False\n"
+            "    if expected_owner:\n"
+            "        try:\n"
+            "            owner_payload = json.loads((Path(lock_dir) / '.active_lock' / 'owner.json').read_text(encoding='utf-8'))\n"
+            "            self_owned = owner_payload.get('owner_id') == expected_owner\n"
+            "        except Exception as exc:\n"
+            "            owner_error = exc.__class__.__name__\n"
             "    capture_path = os.environ.get('CAPTURE_HEALTH_ENV_FILE')\n"
             "    if capture_path:\n"
             "        payload = {\n"
@@ -47,12 +63,25 @@ def _init_repo(
             "            'argv': sys.argv[1:],\n"
             "            'PREPROD_ISOLATION_MODE': os.environ.get('PREPROD_ISOLATION_MODE', ''),\n"
             "            'PREPROD_STATE_ROOT': os.environ.get('PREPROD_STATE_ROOT', ''),\n"
+            "            'IMMUTABLE_V2_LOCK_DIR': lock_dir,\n"
             "            'RUNTIME_OUTPUT_ROOT': os.environ.get('RUNTIME_OUTPUT_ROOT', ''),\n"
+            "            'IMMUTABLE_V2_EXPECTED_LOCK_OWNER_TOKEN': os.environ.get('IMMUTABLE_V2_EXPECTED_LOCK_OWNER_TOKEN', ''),\n"
+            "            'owner_json_exists': (Path(lock_dir) / '.active_lock' / 'owner.json').exists(),\n"
+            "            'owner_id': owner_payload.get('owner_id', ''),\n"
+            "            'owner_metadata_error': owner_error,\n"
+            "            'active_deployment_lock': {\n"
+            "                'reason_code': 'self_owned_deployment_lock' if self_owned else ('active_deployment_lock' if expected_owner else 'no_active_deployment_lock'),\n"
+            "                'evidence': {'self_owned': self_owned},\n"
+            "            },\n"
             "            'PRODUCTION_DASHBOARD_MD_PATH': os.environ.get('PRODUCTION_DASHBOARD_MD_PATH', ''),\n"
             "            'ACTIVATION_CONTROLLER_REPORT_ARCHIVE_DIR': os.environ.get('ACTIVATION_CONTROLLER_REPORT_ARCHIVE_DIR', ''),\n"
             "        }\n"
             "        with open(capture_path, 'w', encoding='utf-8') as fh:\n"
             "            json.dump(payload, fh, ensure_ascii=False, indent=2)\n"
+            "    if expected_owner and not self_owned:\n"
+            "        print('Health check: FAIL')\n"
+            "        print('- Production safety gate failed: active_deployment_lock')\n"
+            "        sys.exit(46)\n"
             "    expected = os.environ.get('EXPECT_SCHEDULER_CWD')\n"
             "    if expected and os.getcwd() != expected:\n"
             "        sys.exit(19)\n"
@@ -233,6 +262,95 @@ def _fake_bin(tmp_path: Path, *, active_service: bool = True) -> tuple[Path, Pat
     return bindir, log
 
 
+def _watchdog_fake_bin(tmp_path: Path, *, active_service: bool = False, start_succeeds: bool = True) -> tuple[Path, Path, Path, Path]:
+    bindir = tmp_path / "watchdog-fakebin"
+    bindir.mkdir(parents=True, exist_ok=True)
+    systemctl_log = tmp_path / "watchdog-systemctl.log"
+    curl_log = tmp_path / "watchdog-curl.log"
+    service_state = tmp_path / "watchdog-service-state"
+    service_state.write_text("active\n" if active_service else "inactive\n", encoding="utf-8")
+    _write(
+        bindir / "systemctl",
+        (
+            "#!/usr/bin/env bash\n"
+            f"echo \"$@\" >> '{systemctl_log}'\n"
+            "if [[ \"$1\" == \"is-active\" ]]; then\n"
+            f"  if [[ \"$(cat '{service_state}')\" == \"active\" ]]; then exit 0; else exit 3; fi\n"
+            "fi\n"
+            "if [[ \"$1\" == \"start\" ]]; then\n"
+            f"  if [[ '{'1' if start_succeeds else '0'}' == '1' ]]; then echo active > '{service_state}'; fi\n"
+            "  exit 0\n"
+            "fi\n"
+            "exit 0\n"
+        ),
+    )
+    _write(
+        bindir / "curl",
+        (
+            "#!/usr/bin/env bash\n"
+            f"echo \"$@\" >> '{curl_log}'\n"
+            "exit 0\n"
+        ),
+    )
+    for file in bindir.iterdir():
+        file.chmod(0o755)
+    return bindir, systemctl_log, curl_log, service_state
+
+
+def _watchdog_env(tmp_path: Path, fakebin: Path, *, app_root: Path | None = None) -> dict[str, str]:
+    operator = tmp_path / "watchdog-operator"
+    operator.mkdir(parents=True, exist_ok=True)
+    _write(operator / ".env", 'TELEGRAM_BOT_TOKEN="token"\nTELEGRAM_CHAT_ID="chat"\n')
+    return {
+        "PATH": f"{fakebin}:{os.environ['PATH']}",
+        "WATCHDOG_OPERATOR_ROOT": str(operator),
+        "WATCHDOG_APP_ROOT": str(app_root or Path(__file__).resolve().parents[1]),
+        "WATCHDOG_LOCK_DIR": str(tmp_path / "watchdog-deploy.lock"),
+        "WATCHDOG_STATE_DIR": str(tmp_path / "watchdog-state"),
+        "WATCHDOG_PYTHON_BIN": sys.executable,
+        "WATCHDOG_RESTART_SETTLE_SECONDS": "0",
+        "WATCHDOG_MAX_RESTART_ATTEMPTS": "1",
+    }
+
+
+def _classifier_app(tmp_path: Path, *, classification: str, owner_state: str = "test_owner_state") -> Path:
+    app = tmp_path / f"classifier-{classification}"
+    _write(app / "src" / "__init__.py", "")
+    _write(
+        app / "src" / "production_safety_gate.py",
+        (
+            "import json\n"
+            "import sys\n"
+            "payload = {\n"
+            f"    'lock_classification': '{classification}',\n"
+            f"    'owner_state': '{owner_state}',\n"
+            "}\n"
+            "print(json.dumps(payload))\n"
+            "sys.exit(0)\n"
+        ),
+    )
+    return app
+
+
+def _classifier_app_with_source(tmp_path: Path, name: str, source: str) -> Path:
+    app = tmp_path / name
+    _write(app / "src" / "__init__.py", "")
+    _write(app / "src" / "production_safety_gate.py", source)
+    return app
+
+
+def _install_venv_python(app: Path, log_path: Path) -> None:
+    _write(
+        app / ".venv-2" / "bin" / "python",
+        (
+            "#!/usr/bin/env bash\n"
+            f"echo \"$@\" >> '{log_path}'\n"
+            f"exec '{sys.executable}' \"$@\"\n"
+        ),
+    )
+    (app / ".venv-2" / "bin" / "python").chmod(0o755)
+
+
 def _base_env(layout: dict[str, Path], fakebin: Path | None = None) -> dict[str, str]:
     env = {
         "IMMUTABLE_V2_ALLOW_NON_OPT_ROOTS": "1",
@@ -252,6 +370,24 @@ def _base_env(layout: dict[str, Path], fakebin: Path | None = None) -> dict[str,
     if fakebin is not None:
         env["PATH"] = f"{fakebin}:{os.environ['PATH']}"
     return env
+
+
+def _write_owner(active_lock: Path, *, owner_id: str = "owner-123", pid: int = 999999, process_identity: str = "immutable_release_v2.sh") -> None:
+    _write(
+        active_lock / "owner.json",
+        json.dumps(
+            {
+                "owner_id": owner_id,
+                "pid": pid,
+                "host": socket.gethostname(),
+                "started_at_utc": datetime.now(timezone.utc).isoformat(),
+                "mode": "cutover",
+                "target_sha": "b" * 40,
+                "target_ref": "origin/release/test",
+                "process_identity": process_identity,
+            }
+        ),
+    )
 
 
 def _invoke(repo: Path, sha: str, mode: str, env: dict[str, str], extra: list[str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -1772,6 +1908,143 @@ def test_cutover_writes_rollback_metadata_file(tmp_path: Path) -> None:
     assert payload["new_target"].endswith(sha)
 
 
+def test_prepare_startup_preflight_does_not_receive_owner_token(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    env.pop("IMMUTABLE_V2_SKIP_HEALTHCHECK")
+    capture_file = tmp_path / "prepare_health_env.json"
+    env["CAPTURE_HEALTH_ENV_FILE"] = str(capture_file)
+
+    prep = _invoke(repo, sha, "prepare", env)
+
+    assert prep.returncode == 0
+    payload = json.loads(capture_file.read_text(encoding="utf-8"))
+    expected_state_root = layout["deploy_state"] / "preprod-health" / sha
+    assert payload["argv"][-1] == "--startup-preflight"
+    assert payload["IMMUTABLE_V2_LOCK_DIR"] == str(expected_state_root / "state" / "deploy.lock")
+    assert payload["IMMUTABLE_V2_EXPECTED_LOCK_OWNER_TOKEN"] == ""
+    assert payload["owner_json_exists"] is False
+
+
+def test_cutover_startup_preflight_validates_real_owner_token_and_cleans_lock(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    fakebin, _ = _fake_bin(tmp_path)
+    env = _base_env(layout, fakebin)
+    env.pop("IMMUTABLE_V2_SKIP_HEALTHCHECK")
+    capture_file = tmp_path / "cutover_health_env.json"
+    env["CAPTURE_HEALTH_ENV_FILE"] = str(capture_file)
+
+    prep = _invoke(repo, sha, "prepare", env)
+    assert prep.returncode == 0
+
+    cut = _invoke(repo, sha, "cutover", env)
+
+    assert cut.returncode == 0
+    payload = json.loads(capture_file.read_text(encoding="utf-8"))
+    assert payload["argv"][-1] == "--startup-preflight"
+    assert payload["IMMUTABLE_V2_LOCK_DIR"] == str(layout["lock_dir"])
+    assert payload["owner_json_exists"] is True
+    assert payload["owner_id"]
+    assert payload["IMMUTABLE_V2_EXPECTED_LOCK_OWNER_TOKEN"] == payload["owner_id"]
+    assert payload["active_deployment_lock"]["reason_code"] == "self_owned_deployment_lock"
+    assert payload["active_deployment_lock"]["evidence"]["self_owned"] is True
+    assert not layout["lock_dir"].exists()
+
+
+def test_cutover_startup_preflight_blocks_owner_token_mismatch_and_cleans_lock(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    fakebin, _ = _fake_bin(tmp_path)
+    env = _base_env(layout, fakebin)
+    env.pop("IMMUTABLE_V2_SKIP_HEALTHCHECK")
+    capture_file = tmp_path / "cutover_mismatch_health_env.json"
+    env["CAPTURE_HEALTH_ENV_FILE"] = str(capture_file)
+    owner_file = layout["lock_dir"] / ".active_lock" / "owner.json"
+    env["IMMUTABLE_V2_TEST_HOOK_AFTER_LOCK_ACQUIRE"] = (
+        "python3 -c "
+        + repr(
+            "import json; "
+            f"from pathlib import Path; Path({str(owner_file)!r}).write_text(json.dumps({{'owner_id': 'foreign-owner'}}), encoding='utf-8')"
+        )
+    )
+
+    prep = _invoke(repo, sha, "prepare", env)
+    assert prep.returncode == 0
+
+    cut = _invoke(repo, sha, "cutover", env)
+
+    assert cut.returncode != 0
+    payload = json.loads(capture_file.read_text(encoding="utf-8"))
+    assert payload["IMMUTABLE_V2_LOCK_DIR"] == str(layout["lock_dir"])
+    assert payload["owner_json_exists"] is True
+    assert payload["owner_id"] == "foreign-owner"
+    assert payload["IMMUTABLE_V2_EXPECTED_LOCK_OWNER_TOKEN"]
+    assert payload["IMMUTABLE_V2_EXPECTED_LOCK_OWNER_TOKEN"] != payload["owner_id"]
+    assert payload["active_deployment_lock"]["reason_code"] == "active_deployment_lock"
+    assert payload["active_deployment_lock"]["evidence"]["self_owned"] is False
+    assert not (layout["lock_dir"] / ".active_lock").exists()
+
+
+def test_cutover_preflight_failure_cleans_owned_lock(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    fakebin, _ = _fake_bin(tmp_path)
+    env = _base_env(layout, fakebin)
+    env.pop("IMMUTABLE_V2_SKIP_HEALTHCHECK")
+    env["SIMULATE_HEALTH_ERRORS_JSON"] = json.dumps(["forced startup preflight failure"])
+
+    prep_env = dict(env)
+    prep_env["IMMUTABLE_V2_SKIP_HEALTHCHECK"] = "1"
+    prep = _invoke(repo, sha, "prepare", prep_env)
+    assert prep.returncode == 0
+
+    cut = _invoke(repo, sha, "cutover", env)
+
+    assert cut.returncode != 0
+    assert not layout["lock_dir"].exists()
+    assert "Preflight scheduler health check failed" in (cut.stderr + cut.stdout)
+
+
+def test_cutover_partial_lock_initialization_failure_removes_self_created_marker(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    fakebin, _ = _fake_bin(tmp_path)
+    env = _base_env(layout, fakebin)
+    env["IMMUTABLE_V2_TEST_HOOK_FAIL_AFTER_LOCK_MARKER"] = "1"
+
+    prep = _invoke(repo, sha, "prepare", env)
+    assert prep.returncode == 0
+
+    cut = _invoke(repo, sha, "cutover", env)
+
+    assert cut.returncode != 0
+    assert "Deployment lock initialization failed after marker creation" in (cut.stderr + cut.stdout)
+    assert not (layout["lock_dir"] / ".active_lock").exists()
+
+
+def test_cutover_partial_lock_initialization_failure_never_removes_foreign_lock(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    fakebin, _ = _fake_bin(tmp_path)
+    env = _base_env(layout, fakebin)
+    env["IMMUTABLE_V2_TEST_HOOK_FAIL_AFTER_LOCK_MARKER"] = "1"
+    foreign_owner = layout["lock_dir"] / ".active_lock" / "owner.json"
+    foreign_owner.parent.mkdir(parents=True, exist_ok=True)
+    foreign_owner.write_text(json.dumps({"owner_id": "foreign-owner"}), encoding="utf-8")
+
+    prep = _invoke(repo, sha, "prepare", env)
+    assert prep.returncode == 0
+
+    cut = _invoke(repo, sha, "cutover", env)
+
+    assert cut.returncode != 0
+    assert "classification=malformed_lock" in (cut.stderr + cut.stdout)
+    assert foreign_owner.exists()
+    assert json.loads(foreign_owner.read_text(encoding="utf-8"))["owner_id"] == "foreign-owner"
+
+
 def test_watchdog_is_tracked_executable_in_prepared_release(tmp_path: Path) -> None:
     repo, sha = _init_repo(tmp_path)
     layout = _runtime_layout(tmp_path)
@@ -1842,6 +2115,204 @@ def test_watchdog_exits_without_restart_when_service_healthy(tmp_path: Path) -> 
     assert "start parapusulasi" not in calls
 
 
+def test_watchdog_restarts_normal_crash_when_no_deployment_lock(tmp_path: Path) -> None:
+    fakebin, systemctl_log, curl_log, service_state = _watchdog_fake_bin(tmp_path, active_service=False, start_succeeds=True)
+    env = _watchdog_env(tmp_path, fakebin)
+
+    res = _run([str(Path(__file__).resolve().parents[1] / "watchdog.sh")], cwd=Path(__file__).resolve().parents[1], env=env)
+
+    assert res.returncode == 0
+    calls = systemctl_log.read_text(encoding="utf-8")
+    notifications = curl_log.read_text(encoding="utf-8")
+    assert "is-active --quiet parapusulasi" in calls
+    assert "start parapusulasi" in calls
+    assert service_state.read_text(encoding="utf-8").strip() == "active"
+    assert "deployment lock yok" in notifications
+    assert "Scheduler yeniden baslatildi" in notifications
+
+
+def test_watchdog_uses_release_virtualenv_without_python_override(tmp_path: Path) -> None:
+    app = _classifier_app(tmp_path, classification="no_lock")
+    python_log = tmp_path / "venv-python.log"
+    _install_venv_python(app, python_log)
+    fakebin, systemctl_log, _curl_log, _service_state = _watchdog_fake_bin(tmp_path, active_service=False, start_succeeds=True)
+    env = _watchdog_env(tmp_path, fakebin, app_root=app)
+    env.pop("WATCHDOG_PYTHON_BIN")
+
+    res = _run([str(Path(__file__).resolve().parents[1] / "watchdog.sh")], cwd=Path(__file__).resolve().parents[1], env=env)
+
+    assert res.returncode == 0
+    assert "start parapusulasi" in systemctl_log.read_text(encoding="utf-8")
+    python_calls = python_log.read_text(encoding="utf-8")
+    assert "src.production_safety_gate" in python_calls
+    assert str(app / ".venv-2" / "bin" / "python") in python_calls
+
+
+def test_watchdog_classifier_timeout_fails_closed(tmp_path: Path) -> None:
+    app = _classifier_app_with_source(
+        tmp_path,
+        "classifier-timeout",
+        "import time\ntime.sleep(2)\nprint('{\"lock_classification\":\"no_lock\"}')\n",
+    )
+    fakebin, systemctl_log, curl_log, _service_state = _watchdog_fake_bin(tmp_path, active_service=False)
+    env = _watchdog_env(tmp_path, fakebin, app_root=app)
+    env["WATCHDOG_CLASSIFIER_TIMEOUT_SECONDS"] = "0.1"
+
+    res = _run([str(Path(__file__).resolve().parents[1] / "watchdog.sh")], cwd=Path(__file__).resolve().parents[1], env=env)
+
+    assert res.returncode == 0
+    assert "start parapusulasi" not in systemctl_log.read_text(encoding="utf-8")
+    assert "owner_state=classifier_timeout" in curl_log.read_text(encoding="utf-8")
+
+
+def test_watchdog_revalidates_lock_immediately_before_restart(tmp_path: Path) -> None:
+    counter = tmp_path / "classifier-count"
+    app = _classifier_app_with_source(
+        tmp_path,
+        "classifier-revalidate",
+        (
+            "import json\n"
+            "from pathlib import Path\n"
+            f"counter = Path({str(counter)!r})\n"
+            "count = int(counter.read_text() or '0') if counter.exists() else 0\n"
+            "counter.write_text(str(count + 1))\n"
+            "classification = 'no_lock' if count == 0 else 'foreign_active_lock'\n"
+            "owner_state = 'none' if count == 0 else 'lock_created_after_initial_check'\n"
+            "print(json.dumps({'lock_classification': classification, 'owner_state': owner_state}))\n"
+        ),
+    )
+    fakebin, systemctl_log, curl_log, _service_state = _watchdog_fake_bin(tmp_path, active_service=False)
+    env = _watchdog_env(tmp_path, fakebin, app_root=app)
+
+    res = _run([str(Path(__file__).resolve().parents[1] / "watchdog.sh")], cwd=Path(__file__).resolve().parents[1], env=env)
+
+    assert res.returncode == 0
+    assert "start parapusulasi" not in systemctl_log.read_text(encoding="utf-8")
+    notifications = curl_log.read_text(encoding="utf-8")
+    assert "restart revalidation ile bastirildi" in notifications
+    assert "classification=foreign_active_lock" in notifications
+
+
+def test_watchdog_execution_lock_prevents_concurrent_restart_race(tmp_path: Path) -> None:
+    app = _classifier_app_with_source(
+        tmp_path,
+        "classifier-slow-no-lock",
+        "import json, time\ntime.sleep(1)\nprint(json.dumps({'lock_classification': 'no_lock', 'owner_state': 'none'}))\n",
+    )
+    fakebin, systemctl_log, _curl_log, _service_state = _watchdog_fake_bin(tmp_path, active_service=False, start_succeeds=True)
+    env = _watchdog_env(tmp_path, fakebin, app_root=app)
+    watchdog = str(Path(__file__).resolve().parents[1] / "watchdog.sh")
+
+    first = subprocess.Popen([watchdog], cwd=Path(__file__).resolve().parents[1], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env={**os.environ, **env})
+    time.sleep(0.2)
+    second = _run([watchdog], cwd=Path(__file__).resolve().parents[1], env=env)
+    first_stdout, first_stderr = first.communicate(timeout=10)
+
+    assert first.returncode == 0, first_stdout + first_stderr
+    assert second.returncode == 0
+    calls = systemctl_log.read_text(encoding="utf-8")
+    assert calls.count("start parapusulasi") == 1
+
+
+def test_watchdog_state_writes_are_atomic() -> None:
+    text = (Path(__file__).resolve().parents[1] / "watchdog.sh").read_text(encoding="utf-8")
+
+    assert "write_state_file" in text
+    assert 'mv -f "${tmp}" "${path}"' in text
+    assert '> "${OPEN_INCIDENT_FILE}"' not in text
+    assert '> "${ATTEMPT_FILE}"' not in text
+
+
+@pytest.mark.parametrize(
+    "classification",
+    [
+        "self_owned_active_lock",
+        "foreign_active_lock",
+        "stale_lock",
+        "malformed_lock",
+        "unreadable_lock",
+        "ambiguous_lock",
+    ],
+)
+def test_watchdog_suppresses_restart_for_deployment_lock_classifier_states(tmp_path: Path, classification: str) -> None:
+    fakebin, systemctl_log, curl_log, _service_state = _watchdog_fake_bin(tmp_path, active_service=False)
+    env = _watchdog_env(tmp_path, fakebin, app_root=_classifier_app(tmp_path, classification=classification))
+
+    res = _run([str(Path(__file__).resolve().parents[1] / "watchdog.sh")], cwd=Path(__file__).resolve().parents[1], env=env)
+
+    assert res.returncode == 0
+    calls = systemctl_log.read_text(encoding="utf-8")
+    notifications = curl_log.read_text(encoding="utf-8")
+    assert "is-active --quiet parapusulasi" in calls
+    assert "start parapusulasi" not in calls
+    assert f"classification={classification}" in notifications
+    assert "restart bastirildi" in notifications
+
+
+def test_watchdog_suppresses_duplicate_deployment_lock_incidents(tmp_path: Path) -> None:
+    fakebin, systemctl_log, curl_log, _service_state = _watchdog_fake_bin(tmp_path, active_service=False)
+    env = _watchdog_env(tmp_path, fakebin, app_root=_classifier_app(tmp_path, classification="malformed_lock", owner_state="owner_metadata_invalid_json"))
+    watchdog = str(Path(__file__).resolve().parents[1] / "watchdog.sh")
+
+    first = _run([watchdog], cwd=Path(__file__).resolve().parents[1], env=env)
+    second = _run([watchdog], cwd=Path(__file__).resolve().parents[1], env=env)
+
+    assert first.returncode == 0
+    assert second.returncode == 0
+    assert "start parapusulasi" not in systemctl_log.read_text(encoding="utf-8")
+    notifications = [line for line in curl_log.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(notifications) == 1
+    assert "classification=malformed_lock" in notifications[0]
+
+
+def test_watchdog_emits_single_recovery_notification(tmp_path: Path) -> None:
+    fakebin, _systemctl_log, curl_log, _service_state = _watchdog_fake_bin(tmp_path, active_service=True)
+    env = _watchdog_env(tmp_path, fakebin)
+    state_dir = Path(env["WATCHDOG_STATE_DIR"])
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "open_incident").write_text("deployment_lock:stale_lock:dead_pid\n", encoding="utf-8")
+    watchdog = str(Path(__file__).resolve().parents[1] / "watchdog.sh")
+
+    first = _run([watchdog], cwd=Path(__file__).resolve().parents[1], env=env)
+    second = _run([watchdog], cwd=Path(__file__).resolve().parents[1], env=env)
+
+    assert first.returncode == 0
+    assert second.returncode == 0
+    assert not (state_dir / "open_incident").exists()
+    notifications = [line for line in curl_log.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(notifications) == 1
+    assert "watchdog olayi kapatildi" in notifications[0]
+
+
+def test_watchdog_consumes_shared_classifier_without_lock_parsing() -> None:
+    text = (Path(__file__).resolve().parents[1] / "watchdog.sh").read_text(encoding="utf-8")
+
+    assert "--classify-deployment-lock" in text
+    assert "src.production_safety_gate" in text
+    assert "owner.json" not in text
+    assert ".active_lock" not in text
+
+
+def test_deploy_lock_classifier_bootstrap_exception_is_documented_and_aligned() -> None:
+    deploy_text = SCRIPT.read_text(encoding="utf-8")
+    safety_gate_text = (Path(__file__).resolve().parents[1] / "src" / "production_safety_gate.py").read_text(encoding="utf-8")
+    classifications = {
+        "no_lock",
+        "self_owned_active_lock",
+        "foreign_active_lock",
+        "stale_lock",
+        "malformed_lock",
+        "unreadable_lock",
+        "ambiguous_lock",
+    }
+
+    assert "Bootstrap exception" in deploy_text
+    assert "Keep classifications aligned with src.production_safety_gate.classify_deployment_lock" in deploy_text
+    for classification in classifications:
+        assert classification in deploy_text
+        assert classification in safety_gate_text
+
+
 def test_rollback_failure_reported_clearly(tmp_path: Path) -> None:
     repo, sha = _init_repo(tmp_path)
     layout = _runtime_layout(tmp_path)
@@ -1867,7 +2338,30 @@ def test_deployment_lock_prevents_concurrent_runs(tmp_path: Path) -> None:
     res = _invoke(repo, sha, "cutover", env)
 
     assert res.returncode != 0
-    assert "lock exists" in (res.stderr + res.stdout)
+    assert "classification=malformed_lock" in (res.stderr + res.stdout)
+
+
+def test_deployment_precheck_refuses_stale_lock_without_auto_removal(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    fakebin, _ = _fake_bin(tmp_path)
+    env = _base_env(layout, fakebin)
+
+    prep = _invoke(repo, sha, "prepare", env)
+    assert prep.returncode == 0
+    active_lock = layout["lock_dir"] / ".active_lock"
+    _write_owner(active_lock, owner_id="stale-owner", pid=999999)
+
+    res = _invoke(repo, sha, "cutover", env)
+
+    output = res.stderr + res.stdout
+    assert res.returncode != 0
+    assert "Stale deployment lock detected" in output
+    assert "explicit operator confirmation required" in output
+    assert active_lock.exists()
+    assert (active_lock / "owner.json").exists()
+    forensic_files = list((layout["deploy_state"] / "lock_forensics").glob("deployment_lock_stale_lock_*.json"))
+    assert forensic_files
 
 
 def test_empty_lock_directory_does_not_block_cutover(tmp_path: Path) -> None:

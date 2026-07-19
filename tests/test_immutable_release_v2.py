@@ -224,6 +224,35 @@ def _runtime_layout(tmp_path: Path) -> dict[str, Path]:
     }
 
 
+def _replace_active_with_git_checkout(repo: Path, sha: str, layout: dict[str, Path]) -> Path:
+    active = layout["active"]
+    if active.exists() or active.is_symlink():
+        if active.is_symlink() or active.is_file():
+            active.unlink()
+        else:
+            shutil.rmtree(active)
+
+    subprocess.run(["git", "clone", str(repo), str(active)], check=True, capture_output=True, text=True)
+    subprocess.run(["git", "checkout", "--detach", sha], cwd=active, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "update-ref", "refs/remotes/origin/release/test", sha], cwd=active, check=True)
+    return active
+
+
+def _make_active_release_runtime_dirty(repo: Path, sha: str, layout: dict[str, Path]) -> Path:
+    active = _replace_active_with_git_checkout(repo, sha, layout)
+    shutil.rmtree(active / "logs")
+    shutil.rmtree(active / "output")
+    (active / "logs").symlink_to(layout["shared"] / "logs")
+    (active / "output").symlink_to(layout["shared"] / "runtime" / "output")
+    _write(active / "deployment_preflight.json", '{"status": "pass"}\n')
+
+    status = subprocess.check_output(["git", "status", "--short"], cwd=active, text=True)
+    assert " D logs/" in status
+    assert " D output/" in status
+    assert "?? deployment_preflight.json" in status
+    return active
+
+
 def _fake_bin(tmp_path: Path, *, active_service: bool = True) -> tuple[Path, Path]:
     bindir = tmp_path / "fakebin"
     bindir.mkdir(parents=True, exist_ok=True)
@@ -416,6 +445,79 @@ def test_plan_mode_is_read_only(tmp_path: Path) -> None:
 
     assert res.returncode == 0
     assert layout["current"].readlink() == before
+
+
+def test_plan_from_dirty_active_release_uses_temporary_clean_source(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path, include_runtime_payload=True)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    active = _make_active_release_runtime_dirty(repo, sha, layout)
+
+    before = layout["current"].readlink()
+    res = _run(
+        [
+            "bash",
+            str(SCRIPT),
+            "--target-ref",
+            "origin/release/test",
+            "--target-sha",
+            sha,
+            "--mode",
+            "plan",
+        ],
+        cwd=active,
+        env=env,
+    )
+
+    assert res.returncode == 0, res.stderr + res.stdout
+    assert "Using temporary clean deployment source checkout" in (res.stderr + res.stdout)
+    assert "Dirty local repository" not in (res.stderr + res.stdout)
+    assert layout["current"].readlink() == before
+    assert not list((layout["deploy_state"] / "deploy-source-worktrees").glob("source.*"))
+
+
+def test_prepare_from_dirty_active_release_uses_temporary_clean_source(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path, include_runtime_payload=True)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    active = _make_active_release_runtime_dirty(repo, sha, layout)
+
+    res = _run(
+        [
+            "bash",
+            str(SCRIPT),
+            "--target-ref",
+            "origin/release/test",
+            "--target-sha",
+            sha,
+            "--mode",
+            "prepare",
+        ],
+        cwd=active,
+        env=env,
+    )
+
+    assert res.returncode == 0, res.stderr + res.stdout
+    assert "Using temporary clean deployment source checkout" in (res.stderr + res.stdout)
+    release = layout["releases"] / sha
+    assert (release / "logs").is_symlink()
+    assert (release / "logs").resolve() == (layout["shared"] / "logs").resolve()
+    assert (release / "output").is_symlink()
+    assert (release / "output").resolve() == (layout["shared"] / "runtime" / "output").resolve()
+    assert (release / "deployment_preflight.json").is_file()
+    assert not list((layout["deploy_state"] / "deploy-source-worktrees").glob("source.*"))
+
+
+def test_dirty_non_active_deployment_checkout_is_rejected(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+    _write(repo / "operator-note.txt", "dirty\n")
+
+    res = _invoke(repo, sha, "plan", env)
+
+    assert res.returncode != 0
+    assert "Deployment source checkout must be clean" in (res.stderr + res.stdout)
 
 
 def test_dry_run_prepare_is_read_only(tmp_path: Path) -> None:

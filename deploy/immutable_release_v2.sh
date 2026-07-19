@@ -22,6 +22,8 @@ LOCK_DIR="${IMMUTABLE_V2_LOCK_DIR:-$DEFAULT_LOCK_DIR}"
 ENFORCE_GIT_RELEASE_IDENTITY="${IMMUTABLE_V2_ENFORCE_GIT_RELEASE_IDENTITY:-$DEFAULT_ENFORCE_GIT_RELEASE_IDENTITY}"
 MIN_FREE_KB="${IMMUTABLE_V2_MIN_FREE_KB:-1048576}"
 LOCK_DIR_PREEXISTED="false"
+DEPLOY_SOURCE_ROOT=""
+DEPLOY_SOURCE_TEMP_ROOT=""
 
 TARGET_REF=""
 TARGET_SHA=""
@@ -125,11 +127,98 @@ require_binary() {
 }
 
 assert_local_repo_clean_if_present() {
-  if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  local source_root="${1:-$DEPLOY_SOURCE_ROOT}"
+  [[ -n "$source_root" ]] || die "Deployment source checkout is not initialized"
+  [[ -d "$source_root" ]] || die "Deployment source checkout missing: $source_root"
+  if git -C "$source_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     local status
-    status="$(git status --porcelain)"
-    [[ -z "$status" ]] || die "Dirty local repository is not allowed"
+    status="$(git -C "$source_root" status --porcelain)"
+    [[ -z "$status" ]] || die "Deployment source checkout must be clean: $source_root"
+  else
+    die "Deployment source is not a git worktree: $source_root"
   fi
+}
+
+cleanup_deploy_source_temp() {
+  [[ -n "$DEPLOY_SOURCE_TEMP_ROOT" ]] || return 0
+  [[ -d "$DEPLOY_SOURCE_TEMP_ROOT" ]] || return 0
+  case "$DEPLOY_SOURCE_TEMP_ROOT" in
+    "$DEPLOY_STATE_ROOT"/deploy-source-worktrees/*|/tmp/*)
+      rm -rf "$DEPLOY_SOURCE_TEMP_ROOT"
+      ;;
+    *)
+      log "Skip deploy source cleanup: path outside approved temporary roots: $DEPLOY_SOURCE_TEMP_ROOT"
+      ;;
+  esac
+}
+
+current_git_toplevel() {
+  git rev-parse --show-toplevel 2>/dev/null || true
+}
+
+clone_url_for_deploy_source() {
+  local source_root="$1"
+  local remote_url
+  remote_url="$(git -C "$source_root" config --get remote.origin.url 2>/dev/null || true)"
+  if [[ -n "$remote_url" ]]; then
+    printf '%s\n' "$remote_url"
+  else
+    printf '%s\n' "$source_root"
+  fi
+}
+
+create_temporary_deploy_source_checkout() {
+  local source_root="$1"
+  local parent clone_url
+
+  if [[ "$DRY_RUN" == "true" ]]; then
+    log "DRY-RUN: would create temporary clean deployment source checkout from $source_root"
+    DEPLOY_SOURCE_ROOT="$source_root"
+    return 0
+  fi
+
+  parent="${IMMUTABLE_V2_DEPLOY_SOURCE_WORKTREE_PARENT:-$DEPLOY_STATE_ROOT/deploy-source-worktrees}"
+  mkdir -p "$parent"
+  DEPLOY_SOURCE_TEMP_ROOT="$(mktemp -d "$parent/source.XXXXXX")"
+  clone_url="$(clone_url_for_deploy_source "$source_root")"
+
+  git clone --no-hardlinks "$clone_url" "$DEPLOY_SOURCE_TEMP_ROOT" >/dev/null 2>&1 || die "Failed to create temporary deployment source checkout from $clone_url"
+  if [[ "$clone_url" == "$source_root" || -d "$clone_url" ]]; then
+    git -C "$DEPLOY_SOURCE_TEMP_ROOT" fetch "$clone_url" '+refs/remotes/*:refs/remotes/*' '+refs/heads/*:refs/remotes/source/*' '+refs/tags/*:refs/tags/*' >/dev/null 2>&1 || die "Failed to copy local deployment refs into temporary source checkout"
+  fi
+
+  DEPLOY_SOURCE_ROOT="$DEPLOY_SOURCE_TEMP_ROOT"
+  trap cleanup_deploy_source_temp EXIT
+  assert_local_repo_clean_if_present "$DEPLOY_SOURCE_ROOT"
+  log "Using temporary clean deployment source checkout: $DEPLOY_SOURCE_ROOT"
+}
+
+initialize_deploy_source_checkout() {
+  local configured_source invocation_root active_target invocation_real active_real
+
+  configured_source="${IMMUTABLE_V2_DEPLOY_SOURCE_ROOT:-}"
+  if [[ -n "$configured_source" ]]; then
+    DEPLOY_SOURCE_ROOT="$(canon_path "$configured_source")"
+    assert_local_repo_clean_if_present "$DEPLOY_SOURCE_ROOT"
+    log "Using configured clean deployment source checkout: $DEPLOY_SOURCE_ROOT"
+    return 0
+  fi
+
+  invocation_root="$(current_git_toplevel)"
+  [[ -n "$invocation_root" ]] || die "Deployment must be launched from a git checkout or IMMUTABLE_V2_DEPLOY_SOURCE_ROOT"
+  invocation_root="$(canon_path "$invocation_root")"
+
+  active_target="$(capture_active_target)"
+  invocation_real="$(canon_path "$invocation_root")"
+  active_real="$(canon_path "$active_target")"
+  if [[ "$invocation_real" == "$active_real" ]]; then
+    create_temporary_deploy_source_checkout "$invocation_root"
+    return 0
+  fi
+
+  DEPLOY_SOURCE_ROOT="$invocation_root"
+  assert_local_repo_clean_if_present "$DEPLOY_SOURCE_ROOT"
+  log "Using clean deployment source checkout: $DEPLOY_SOURCE_ROOT"
 }
 
 assert_policy_prohibitions() {
@@ -161,23 +250,23 @@ fetch_remote_if_needed() {
     log "Skipping remote fetch due to IMMUTABLE_V2_SKIP_FETCH=1"
     return 0
   fi
-  run_cmd git fetch --all --prune
+  run_cmd git -C "$DEPLOY_SOURCE_ROOT" fetch --all --prune
 }
 
 assert_target_ref_and_sha() {
   is_full_sha "$TARGET_SHA" || die "--target-sha must be a full 40-char SHA"
   is_approved_target_ref "$TARGET_REF" || die "Unapproved target ref: $TARGET_REF"
 
-  git rev-parse --verify "$TARGET_SHA^{commit}" >/dev/null 2>&1 || die "Target SHA not found locally: $TARGET_SHA"
-  git rev-parse --verify "$TARGET_REF^{commit}" >/dev/null 2>&1 || die "Target ref not found locally after fetch: $TARGET_REF"
+  git -C "$DEPLOY_SOURCE_ROOT" rev-parse --verify "$TARGET_SHA^{commit}" >/dev/null 2>&1 || die "Target SHA not found in deployment source checkout: $TARGET_SHA"
+  git -C "$DEPLOY_SOURCE_ROOT" rev-parse --verify "$TARGET_REF^{commit}" >/dev/null 2>&1 || die "Target ref not found in deployment source checkout after fetch: $TARGET_REF"
 
   local ref_tip
-  ref_tip="$(git rev-parse "$TARGET_REF^{commit}")"
-  git merge-base --is-ancestor "$TARGET_SHA" "$ref_tip" || die "Target SHA $TARGET_SHA is not reachable from $TARGET_REF"
+  ref_tip="$(git -C "$DEPLOY_SOURCE_ROOT" rev-parse "$TARGET_REF^{commit}")"
+  git -C "$DEPLOY_SOURCE_ROOT" merge-base --is-ancestor "$TARGET_SHA" "$ref_tip" || die "Target SHA $TARGET_SHA is not reachable from $TARGET_REF"
 
   # Reject local-only commits: must exist in at least one origin/* ref.
   local contains
-  contains="$(git branch -r --contains "$TARGET_SHA" | tr -d '[:space:]')"
+  contains="$(git -C "$DEPLOY_SOURCE_ROOT" branch -r --contains "$TARGET_SHA" | tr -d '[:space:]')"
   [[ -n "$contains" ]] || die "Target SHA appears local-only (not contained in any remote branch)"
 }
 
@@ -399,7 +488,7 @@ remove_exported_runtime_payload() {
 
     [[ -d "$candidate" ]] || die "Exported runtime payload is not a directory: $candidate"
 
-    tracked_paths="$(git ls-tree -r --name-only "$TARGET_SHA" -- "$rel")"
+    tracked_paths="$(git -C "$DEPLOY_SOURCE_ROOT" ls-tree -r --name-only "$TARGET_SHA" -- "$rel")"
     if [[ -z "$tracked_paths" ]]; then
       if find "$candidate" -mindepth 1 -print -quit | grep -q .; then
         local entries
@@ -543,7 +632,7 @@ ensure_parent_dir() {
 is_target_tree_tracked_path() {
   local rel="$1"
 
-  git ls-tree -r --name-only "$TARGET_SHA" -- "$rel" >/dev/null 2>&1
+  git -C "$DEPLOY_SOURCE_ROOT" ls-tree -r --name-only "$TARGET_SHA" -- "$rel" >/dev/null 2>&1
 }
 
 json_string_from_file() {
@@ -1550,7 +1639,7 @@ write_prepare_failure_report() {
 
   mkdir -p "$DEPLOY_STATE_ROOT"
   tmp_file="${file}.tmp.$$"
-  operator_tool_sha="$(git rev-parse HEAD 2>/dev/null || printf 'unknown')"
+  operator_tool_sha="$(git -C "$DEPLOY_SOURCE_ROOT" rev-parse HEAD 2>/dev/null || printf 'unknown')"
   summary_json="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1], ensure_ascii=False))' "${PREPARE_FAILURE_SUMMARY:-prepare failed}")"
   phase_json="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1], ensure_ascii=False))' "${PREPARE_FAILURE_PHASE:-unknown}")"
   target_ref_json="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1], ensure_ascii=False))' "$TARGET_REF")"
@@ -1608,6 +1697,7 @@ on_prepare_failure() {
   write_prepare_failure_report "$code"
   cleanup_prepare_staging_if_owned
   release_lock
+  cleanup_deploy_source_temp
   trap - ERR
   exit "$code"
 }
@@ -1625,6 +1715,7 @@ on_prepare_exit() {
   write_prepare_failure_report "$code"
   cleanup_prepare_staging_if_owned
   release_lock
+  cleanup_deploy_source_temp
   exit "$code"
 }
 
@@ -1784,7 +1875,7 @@ mode_prepare() {
   release_dir="$(release_dir_for_sha "$TARGET_SHA")"
   staging_dir="$(staging_dir_for_sha "$TARGET_SHA")"
   active_target="$(capture_active_target)"
-  source_repo="$(git rev-parse --show-toplevel)"
+  source_repo="$DEPLOY_SOURCE_ROOT"
 
   PREPARE_STAGING_DIR="$staging_dir"
   PREPARE_TARGET_RELEASE="$release_dir"
@@ -1878,6 +1969,7 @@ mode_prepare() {
   set_prepare_failure_phase "release_integrity_contract"
   assert_release_integrity_contract "$release_dir" "$TARGET_SHA"
   PREPARE_FINALIZED="true"
+  cleanup_deploy_source_temp
   trap - EXIT
 
   log "Prepared immutable release: $release_dir"
@@ -2020,7 +2112,7 @@ main() {
   assert_service_name
   assert_policy_prohibitions
   assert_paths_approved
-  assert_local_repo_clean_if_present
+  initialize_deploy_source_checkout
 
   fetch_remote_if_needed
   assert_target_ref_and_sha

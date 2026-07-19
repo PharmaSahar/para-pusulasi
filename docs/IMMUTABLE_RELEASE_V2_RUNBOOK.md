@@ -40,6 +40,20 @@ Status remains: `IMPLEMENTED_NOT_DEPLOYED`.
 
 Git history may still contain runtime-owned evidence payload under `logs/` and `output/`. Prepare sanitizes only the invocation-owned staging export before persistent linking; the final prepared release must not ship Git-exported runtime payload in those paths.
 
+### Deployment Source Checkout Boundary
+
+Previous architecture treated the shell's current Git worktree as both the deployment tool source and the cleanliness boundary. When operators launched from `/opt/parapusulasi-current`, the active release repository was checked with `git status --porcelain`. That was unsafe because the active release is runtime state: it intentionally contains `logs` and `output` symlinks, generated `deployment_preflight.json`, and runtime report artifacts.
+
+Current architecture separates those roles:
+
+1. The active release is read-only runtime evidence and rollback context.
+2. Deployment Git operations use `DEPLOY_SOURCE_ROOT`, a clean deployment source checkout.
+3. If `IMMUTABLE_V2_DEPLOY_SOURCE_ROOT` is set, that configured checkout must be clean and is used as the source of target refs and release materialization.
+4. If the script is launched from a normal non-active checkout, that checkout must be clean and becomes `DEPLOY_SOURCE_ROOT`.
+5. If the script is launched from the active release, the script creates a temporary clean deployment source checkout under `${DEPLOY_STATE_ROOT}/deploy-source-worktrees`, copies local deployment refs when the source is local, uses that checkout for plan/prepare/cutover validation, and removes the temporary checkout on exit.
+
+Runtime symlinks no longer block `plan` or `prepare` because cleanliness is asserted only for the deployment source checkout. The active release may be dirty relative to Git due to runtime-owned paths, but it is never used as the deployment worktree.
+
 ## 2) Threat Model And Prohibitions
 
 The workflow is fail-closed and rejects unsafe deployment attempts.

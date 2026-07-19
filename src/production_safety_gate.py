@@ -469,6 +469,36 @@ def _load_queue_payload(path: Path) -> tuple[dict[str, Any] | None, Exception | 
     return payload if isinstance(payload, dict) else None, None
 
 
+def _queue_observability_metrics(payload: dict[str, Any], *, path: Path) -> dict[str, Any]:
+    terminal_by_status = {
+        "quarantined": 0,
+        "permanently_rejected": 0,
+    }
+    retained_total = 0
+    actionable_total = 0
+    for entries in payload.values():
+        if not isinstance(entries, list):
+            continue
+        retained_total += len(entries)
+        for entry in entries:
+            row = entry if isinstance(entry, dict) else {}
+            status = str(row.get("status") or "active").strip().lower()
+            if status in {"active", "restored"}:
+                actionable_total += 1
+            elif status in terminal_by_status:
+                terminal_by_status[status] += 1
+    return {
+        "queue_retained_total": retained_total,
+        "queue_actionable_total": actionable_total,
+        "queue_terminal_by_status": terminal_by_status,
+        "queue_source_identity": {
+            "path": str(path),
+            "exists": path.exists(),
+            "source": "production_safety_gate_queue",
+        },
+    }
+
+
 def _check_queue_health(*, queue_path: str | Path | None, channel_id: str, release_sha: str, job_id: str) -> tuple[ProductionSafetyCheckResult, ProductionSafetyCheckResult | None]:
     path = Path(queue_path) if queue_path else Path(os.getenv("SCHEDULER_QUEUE_FILE", "output/state/channel_queue.json"))
     if not path.exists():
@@ -530,10 +560,8 @@ def _check_queue_health(*, queue_path: str | Path | None, channel_id: str, relea
             )
             return primary, None
 
-    all_entries = 0
-    for value in payload.values():
-        if isinstance(value, list):
-            all_entries += len(value)
+    queue_metrics = _queue_observability_metrics(payload, path=path)
+    all_entries = int(queue_metrics["queue_retained_total"])
     backlog_threshold = int(os.getenv("PRODUCTION_SAFETY_QUEUE_BACKLOG_WARNING", "25") or "25")
 
     primary = _build_check(
@@ -545,7 +573,7 @@ def _check_queue_health(*, queue_path: str | Path | None, channel_id: str, relea
         release_sha=release_sha,
         channel_id=channel_id,
         job_id=job_id,
-        evidence={"path": str(path), "channel_id": channel_id, "entry_count": all_entries},
+        evidence={"path": str(path), "channel_id": channel_id, "entry_count": all_entries, **queue_metrics},
     )
 
     if all_entries <= backlog_threshold:
@@ -560,7 +588,7 @@ def _check_queue_health(*, queue_path: str | Path | None, channel_id: str, relea
         release_sha=release_sha,
         channel_id=channel_id,
         job_id=job_id,
-        evidence={"entry_count": all_entries, "warning_threshold": backlog_threshold},
+        evidence={"entry_count": all_entries, "warning_threshold": backlog_threshold, **queue_metrics},
     )
     return primary, warning
 

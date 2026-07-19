@@ -45,6 +45,49 @@ def test_record_event_writes_observability_and_dashboard(tmp_path, monkeypatch):
     assert PRODUCTION_DASHBOARD_MD_PATH.exists()
 
 
+def test_dashboard_queue_metrics_are_additive_and_legacy_compatible(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    queue_path = tmp_path / "output" / "queue" / "channel_queue.json"
+    queue_path.parent.mkdir(parents=True, exist_ok=True)
+    queue_path.write_text(
+        json.dumps(
+            {
+                "ch1": [
+                    {"status": "active"},
+                    {"status": "restored"},
+                    {"status": "quarantined"},
+                ],
+                "ch2": [
+                    {"status": "permanently_rejected"},
+                    {"status": "quarantined"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    from src.production_quality_platform import PRODUCTION_DASHBOARD_MD_PATH, update_production_dashboard
+
+    payload = update_production_dashboard(
+        scheduler_status="active",
+        build_sha="deadbee",
+        scheduler_pid=123,
+        last_error=None,
+    )
+    markdown = PRODUCTION_DASHBOARD_MD_PATH.read_text(encoding="utf-8")
+
+    assert payload["queue_depth"] == 5
+    assert payload["queue_retained_total"] == 5
+    assert payload["queue_actionable_total"] == 2
+    assert payload["queue_terminal_by_status"] == {"quarantined": 2, "permanently_rejected": 1}
+    assert payload["queue_source_identity"]["path"] == "output/queue/channel_queue.json"
+    assert "- Queue depth: 5" in markdown
+    assert "- Queue retained total: 5" in markdown
+    assert "- Queue actionable total: 2" in markdown
+    assert "- Queue terminal quarantined: 2" in markdown
+    assert "- Queue terminal permanently rejected: 1" in markdown
+
+
 def test_script_quality_and_automatic_qa_contract():
     from src.production_quality_platform import evaluate_automatic_qa, score_script_quality
 

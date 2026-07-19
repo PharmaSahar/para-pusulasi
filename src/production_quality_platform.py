@@ -381,19 +381,47 @@ def update_production_observability_latest() -> dict[str, Any]:
     return latest
 
 
-def _queue_depth(queue_path: Path = Path("output/queue/channel_queue.json")) -> int:
+def _queue_observability_metrics(queue_path: Path = Path("output/queue/channel_queue.json")) -> dict[str, Any]:
+    metrics: dict[str, Any] = {
+        "queue_retained_total": 0,
+        "queue_actionable_total": 0,
+        "queue_terminal_by_status": {
+            "quarantined": 0,
+            "permanently_rejected": 0,
+        },
+        "queue_source_identity": {
+            "path": str(queue_path),
+            "exists": queue_path.exists(),
+            "source": "dashboard_default_queue",
+        },
+    }
     if not queue_path.exists():
-        return 0
+        return metrics
     try:
         data = json.loads(queue_path.read_text(encoding="utf-8"))
     except Exception:
-        return 0
-    total = 0
-    if isinstance(data, dict):
-        for entries in data.values():
-            if isinstance(entries, list):
-                total += len(entries)
-    return total
+        return metrics
+    if not isinstance(data, dict):
+        return metrics
+
+    terminal_by_status = dict(metrics["queue_terminal_by_status"])
+    for entries in data.values():
+        if not isinstance(entries, list):
+            continue
+        metrics["queue_retained_total"] += len(entries)
+        for entry in entries:
+            row = entry if isinstance(entry, dict) else {}
+            status = str(row.get("status") or "active").strip().lower()
+            if status in {"active", "restored"}:
+                metrics["queue_actionable_total"] += 1
+            elif status in terminal_by_status:
+                terminal_by_status[status] += 1
+    metrics["queue_terminal_by_status"] = terminal_by_status
+    return metrics
+
+
+def _queue_depth(queue_path: Path = Path("output/queue/channel_queue.json")) -> int:
+    return int(_queue_observability_metrics(queue_path).get("queue_retained_total", 0) or 0)
 
 
 def update_production_dashboard(
@@ -443,6 +471,8 @@ def update_production_dashboard(
         elif status in {"failed", "error", "blocked"}:
             row["failed"] += 1
 
+    queue_metrics = _queue_observability_metrics()
+
     payload = {
         "generated_at": _now_iso(),
         "scheduler_status": scheduler_status,
@@ -459,7 +489,11 @@ def update_production_dashboard(
             "retries": retries,
         },
         "channel_level_health": channel_health,
-        "queue_depth": _queue_depth(),
+        "queue_depth": queue_metrics["queue_retained_total"],
+        "queue_retained_total": queue_metrics["queue_retained_total"],
+        "queue_actionable_total": queue_metrics["queue_actionable_total"],
+        "queue_terminal_by_status": queue_metrics["queue_terminal_by_status"],
+        "queue_source_identity": queue_metrics["queue_source_identity"],
         "last_error": (last_error or ""),
     }
     _safe_write_json(PRODUCTION_DASHBOARD_JSON_PATH, payload)
@@ -472,6 +506,10 @@ def update_production_dashboard(
         f"- Build SHA: {build_sha}",
         f"- Scheduler PID: {scheduler_pid}",
         f"- Queue depth: {payload['queue_depth']}",
+        f"- Queue retained total: {payload['queue_retained_total']}",
+        f"- Queue actionable total: {payload['queue_actionable_total']}",
+        f"- Queue terminal quarantined: {payload['queue_terminal_by_status']['quarantined']}",
+        f"- Queue terminal permanently rejected: {payload['queue_terminal_by_status']['permanently_rejected']}",
         f"- Last error: {payload['last_error'] or '-'}",
         "",
         "## Last 24h",

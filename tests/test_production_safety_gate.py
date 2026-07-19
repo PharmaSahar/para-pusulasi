@@ -672,6 +672,52 @@ def test_production_safety_gate_returns_warning_only_result(monkeypatch, tmp_pat
     assert events[-1]["severity"] == "WARNING"
 
 
+def test_production_safety_gate_queue_metrics_are_additive_and_legacy_compatible(monkeypatch, tmp_path: Path):
+    queue_path, events = _prepare_common(monkeypatch, tmp_path)
+    cfg = _make_cfg(tmp_path)
+    queue_path.write_text(
+        json.dumps(
+            {
+                "demo_channel": [
+                    {"status": "active"},
+                    {"status": "restored"},
+                    {"status": "quarantined"},
+                ],
+                "other_channel": [
+                    {"status": "permanently_rejected"},
+                    {"status": "quarantined"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PRODUCTION_SAFETY_QUEUE_BACKLOG_WARNING", "2")
+
+    result = production_safety_gate.evaluate_production_safety_gate(
+        operation="upload",
+        channel_id="demo_channel",
+        channel_cfg=cfg,
+        queue_path=queue_path,
+    )
+
+    queue_health = next(item for item in result.checks if item.check_name == "queue_health")
+    queue_backlog = next(item for item in result.checks if item.check_name == "queue_backlog")
+
+    assert result.allowed is True
+    assert result.status == "warning"
+    assert queue_health.evidence["entry_count"] == 5
+    assert queue_health.evidence["queue_retained_total"] == 5
+    assert queue_health.evidence["queue_actionable_total"] == 2
+    assert queue_health.evidence["queue_terminal_by_status"] == {"quarantined": 2, "permanently_rejected": 1}
+    assert queue_health.evidence["queue_source_identity"]["path"] == str(queue_path)
+    assert queue_backlog.evidence["entry_count"] == 5
+    assert queue_backlog.evidence["warning_threshold"] == 2
+    assert queue_backlog.evidence["queue_retained_total"] == 5
+    assert events[-1]["event_type"] == "production_safety_gate"
+    event_queue_backlog = next(item for item in events[-1]["checks"] if item["check_name"] == "queue_backlog")
+    assert event_queue_backlog["evidence"]["queue_actionable_total"] == 2
+
+
 def test_production_safety_gate_emits_structured_event_contents(monkeypatch, tmp_path: Path):
     queue_path, events = _prepare_common(monkeypatch, tmp_path)
     cfg = _make_cfg(tmp_path)

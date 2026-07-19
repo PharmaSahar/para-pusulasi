@@ -16,6 +16,8 @@ from src.scheduler_utils import (
     record_provider_failure,
 )
 
+TEST_TRIGGER_SOURCE = "manual_operator"
+
 
 @pytest.fixture(autouse=True)
 def _stub_scheduler_singleton_lock(monkeypatch):
@@ -214,7 +216,7 @@ def test_render_and_schedule_skips_when_provider_circuit_open(monkeypatch):
     monkeypatch.setattr(scheduler_utils, "notify_error", lambda *_args, **_kwargs: called.__setitem__("notify", called["notify"] + 1) or {})
     monkeypatch.setattr(scheduler_utils, "force_cleanup", lambda: None)
 
-    scheduler.render_and_schedule("demo_channel")
+    scheduler.render_and_schedule("demo_channel", trigger_source=TEST_TRIGGER_SOURCE)
 
     assert called["pipeline"] == 0
     assert called["notify"] == 1
@@ -256,7 +258,7 @@ def test_render_and_schedule_skips_when_global_overload_pause_open(monkeypatch):
     monkeypatch.setattr(scheduler_utils, "notify_error", lambda *_args, **_kwargs: called.__setitem__("notify", called["notify"] + 1) or {})
     monkeypatch.setattr(scheduler_utils, "force_cleanup", lambda: None)
 
-    scheduler.render_and_schedule("demo_channel")
+    scheduler.render_and_schedule("demo_channel", trigger_source=TEST_TRIGGER_SOURCE)
 
 
 def test_render_and_schedule_skips_when_production_safety_gate_blocks(monkeypatch):
@@ -293,7 +295,7 @@ def test_render_and_schedule_skips_when_production_safety_gate_blocks(monkeypatc
 
     monkeypatch.setattr(pipeline, "run_full_pipeline", _blocked_pipeline)
 
-    scheduler.render_and_schedule("demo_channel")
+    scheduler.render_and_schedule("demo_channel", trigger_source=TEST_TRIGGER_SOURCE)
 
     assert called["pipeline"] == 1
 
@@ -344,7 +346,7 @@ def test_render_and_schedule_quarantines_when_upload_precheck_blocked(monkeypatc
         },
     )
 
-    scheduler.render_and_schedule("demo_channel")
+    scheduler.render_and_schedule("demo_channel", trigger_source=TEST_TRIGGER_SOURCE)
 
     data = json.loads(queue_file.read_text(encoding="utf-8"))
     entry = data["demo_channel"][0]
@@ -418,7 +420,7 @@ def test_render_and_schedule_does_not_outer_retry_provider_handled_exception(mon
     monkeypatch.setattr(scheduler_utils, "force_cleanup", lambda: None)
     monkeypatch.setattr(pipeline, "run_full_pipeline", _provider_handled_error)
 
-    scheduler.render_and_schedule("demo_channel")
+    scheduler.render_and_schedule("demo_channel", trigger_source=TEST_TRIGGER_SOURCE)
 
     assert calls["pipeline"] == 1
     assert calls["notify"] == 1
@@ -451,7 +453,7 @@ def test_render_and_schedule_continues_when_provider_circuit_open_in_fail_open_m
     monkeypatch.setattr(scheduler_utils, "force_cleanup", lambda: None)
     monkeypatch.setattr(scheduler_utils, "save_used_topic", lambda *_args, **_kwargs: None)
 
-    scheduler.render_and_schedule("demo_channel")
+    scheduler.render_and_schedule("demo_channel", trigger_source=TEST_TRIGGER_SOURCE)
 
     assert called["pipeline"] == 0
     assert called["notify"] == 1

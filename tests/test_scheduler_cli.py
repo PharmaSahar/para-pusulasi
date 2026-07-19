@@ -411,7 +411,7 @@ def test_scheduler_default_startup_path_unchanged(monkeypatch):
         scheduler.main()
 
     assert calls["setup"] == 1
-    assert calls["thread_start"] == 1
+    assert calls["thread_start"] == 0
     assert calls["cleanup"] == 1
     assert calls["notify"] == 1
 

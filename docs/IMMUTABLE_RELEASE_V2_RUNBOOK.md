@@ -4,12 +4,25 @@ Status: IMPLEMENTED_NOT_EXECUTED
 
 ## 1) Architecture
 
-`deploy/immutable_release_v2.sh` implements a config-preserving immutable release workflow with four modes:
+`deploy/deploy.sh` is the supported public deployment entrypoint. `deploy/immutable_release_v2.sh` remains only as a temporary compatibility wrapper; it emits a deprecation warning and delegates to the same internal implementation.
+
+The current workflow is transaction-based. Each deployment has a deployment ID, an append-only event trail, and one final immutable JSON journal. Supported modes are:
 
 - `plan`: read-only validation and operation preview
 - `prepare`: build immutable release directory for exact Git SHA
 - `cutover`: atomically switch `/opt/parapusulasi-current` and restart `parapusulasi`
-- `rollback`: atomically switch back to an explicit prior release SHA and restart `parapusulasi`
+- `deploy`: run prepare and cutover as one deployment transaction
+- `verify`: verify an immutable journal against the active release by deployment ID
+- `rollback`: atomically switch back by deployment ID, resolving the previous release from the journal; explicit prior release SHA remains a deprecated compatibility path
+
+Transaction artifacts:
+
+- Canonical lock: `${IMMUTABLE_V2_DEPLOY_STATE_ROOT:-/opt/parapusulasi/deploy-state}/deploy.lock` unless `IMMUTABLE_V2_LOCK_DIR` is explicitly set for compatibility or tests.
+- Final journal: `${DEPLOY_STATE_ROOT}/journal/<deployment-id>.json`.
+- Mutable in-progress transaction state: `${DEPLOY_STATE_ROOT}/transactions/<deployment-id>.state.json`.
+- Append-only event log: `${DEPLOY_STATE_ROOT}/deployment_events.jsonl`.
+- Lock owner metadata includes the active deployment ID.
+- Journals are written only at final success or final failure. Operators should treat existing journal files as immutable evidence.
 
 Automatic rollback policy:
 
@@ -112,9 +125,11 @@ Repository-discovered contract (read-only evidence from docs/scripts):
    - bounded post-switch health loop
    - post-switch health loop uses the same isolated preprod state root contract as prepare preflight (`PREPROD_ISOLATION_MODE=true` plus `PREPROD_STATE_ROOT` and the mutable path redirects required by scheduler preprod isolation)
 10. Rollback contract:
-    - explicit rollback SHA required
+   - deployment ID identifies the completed deployment to roll back
+   - prior release SHA is resolved from that deployment journal
     - atomic symlink restoration
     - service restart and health verification
+   - explicit `--rollback-sha` remains available only as a deprecated compatibility path
 
 ## 4) Persistent Asset Classification
 
@@ -159,46 +174,78 @@ Any unclassified secret-like file results in `UNKNOWN_BLOCKER` and abort.
 ## 5) CLI
 
 ```bash
-deploy/immutable_release_v2.sh \
+deploy/deploy.sh \
   --target-ref <remote-branch-or-tag> \
   --target-sha <full-sha> \
-  --mode plan|prepare|cutover|rollback \
-  [--rollback-sha <full-sha>] \
+   --mode plan|prepare|cutover|deploy|rollback|verify \
+   [--deployment-id <deployment-id>] \
+   [--rollback-sha <full-sha>] \
    [--auto-rollback] \
+   [--json] \
   [--dry-run]
 ```
+
+Canonical deployment path:
+
+1. Run `plan` for read-only confirmation.
+2. Run `deploy` for one transaction that prepares, locks, cuts over, restarts, verifies health, and writes a final journal.
+3. Capture the emitted `deployment_id=<id>` from output.
+4. Run `verify --deployment-id <id>` for active-release verification.
+5. If rollback is required, run `rollback --deployment-id <id>`; do not manually look up a prior SHA.
 
 Examples:
 
 ```bash
 # Read-only plan
-bash deploy/immutable_release_v2.sh \
+bash deploy/deploy.sh \
   --target-ref origin/release/analytics-readonly-smoke-68529058 \
   --target-sha 849fc57265395889fc23dde2986b21428ef03c6c \
   --mode plan
 
-# Prepare immutable release (no symlink switch)
-bash deploy/immutable_release_v2.sh \
+# Transactional deployment: prepare + cutover under one deployment ID
+bash deploy/deploy.sh \
   --target-ref origin/release/analytics-readonly-smoke-68529058 \
   --target-sha 849fc57265395889fc23dde2986b21428ef03c6c \
-  --mode prepare
+   --mode deploy
+
+# Verify active release by deployment ID
+bash deploy/deploy.sh \
+   --mode verify \
+   --deployment-id 20260719T120000Z-849fc5726539-a1b2c3d4
+
+# Verify with machine-readable output
+bash deploy/deploy.sh \
+   --mode verify \
+   --deployment-id 20260719T120000Z-849fc5726539-a1b2c3d4 \
+   --json
+
+# Rollback by deployment ID; previous release is resolved from the journal
+bash deploy/deploy.sh \
+   --mode rollback \
+   --deployment-id 20260719T120000Z-849fc5726539-a1b2c3d4
+
+# Deprecated compatibility: prepare immutable release (no symlink switch)
+bash deploy/deploy.sh \
+   --target-ref origin/release/analytics-readonly-smoke-68529058 \
+   --target-sha 849fc57265395889fc23dde2986b21428ef03c6c \
+   --mode prepare
 
 # Dry-run cutover preview (no mutation)
-bash deploy/immutable_release_v2.sh \
+bash deploy/deploy.sh \
   --target-ref origin/release/analytics-readonly-smoke-68529058 \
   --target-sha 849fc57265395889fc23dde2986b21428ef03c6c \
   --mode cutover \
   --dry-run
 
 # Optional: enable automatic rollback for cutover
-bash deploy/immutable_release_v2.sh \
+bash deploy/deploy.sh \
    --target-ref origin/release/analytics-readonly-smoke-68529058 \
    --target-sha 849fc57265395889fc23dde2986b21428ef03c6c \
    --mode cutover \
    --auto-rollback
 
-# Rollback to explicit SHA
-bash deploy/immutable_release_v2.sh \
+# Deprecated compatibility: rollback to explicit SHA
+bash deploy/deploy.sh \
   --target-ref origin/release/analytics-readonly-smoke-68529058 \
   --target-sha 849fc57265395889fc23dde2986b21428ef03c6c \
   --mode rollback \
@@ -345,14 +392,12 @@ readlink -f /opt/parapusulasi-current
 ls -la /opt/parapusulasi/releases/<sha>
 ```
 
-- Controlled rollback with explicit SHA:
+- Controlled rollback by deployment ID:
 
 ```bash
-bash deploy/immutable_release_v2.sh \
-  --target-ref origin/release/analytics-readonly-smoke-68529058 \
-  --target-sha 849fc57265395889fc23dde2986b21428ef03c6c \
+bash deploy/deploy.sh \
   --mode rollback \
-  --rollback-sha 68529058e386661d19eaa2dfe510523d7c6cd47a
+   --deployment-id 20260719T120000Z-849fc5726539-a1b2c3d4
 ```
 
 Operational warning for no-auto-rollback cutover failures:

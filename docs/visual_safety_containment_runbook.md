@@ -12,7 +12,7 @@ The tool is scoped to incident `PROJECT003` and pause reason `visual_safety_inci
 
 - Production must be on the expected immutable release SHA.
 - `parapusulasi` service must be active and running.
-- `/opt/parapusulasi/deploy.lock/.active_lock` must be absent.
+- `/opt/parapusulasi/deploy-state/deploy.lock/.active_lock` must be absent.
 - Production Observation Mode must be enabled by the official CLI for the first observation window.
 - Uploads, Shorts uploads, final renders, queue mutation, registry writes, analytics writes, and publication actions must be blocked by `PRODUCTION_OBSERVATION_MODE`.
 - Fresh release eligibility evidence must pass schema validation.

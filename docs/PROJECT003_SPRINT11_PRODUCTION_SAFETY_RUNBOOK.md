@@ -45,7 +45,7 @@ cat output/state/channel_queue.json
 ## Deployment-Lock Inspection
 
 ```bash
-test -e /opt/parapusulasi/deploy.lock && echo LOCKED || echo CLEAR
+test -e /opt/parapusulasi/deploy-state/deploy.lock/.active_lock && echo LOCKED || echo CLEAR
 ```
 
 ## Release-Integrity Inspection

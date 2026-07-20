@@ -102,10 +102,6 @@ die() {
   exit 1
 }
 
-now_utc() {
-  date -u +%Y-%m-%dT%H:%M:%SZ
-}
-
 generate_deployment_id() {
   local short_sha timestamp suffix
   timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -256,14 +252,6 @@ event["sequence"] = sequence
 with event_log.open("a", encoding="utf-8") as handle:
     handle.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
 PY
-}
-
-active_release_sha() {
-  local active_target
-  active_target="$(capture_active_target 2>/dev/null || true)"
-  if [[ -n "$active_target" ]]; then
-    basename "$active_target"
-  fi
 }
 
 transaction_begin() {
@@ -1961,17 +1949,6 @@ cleanup_prepare_staging_if_owned() {
   rm -rf "$PREPARE_STAGING_DIR"
 }
 
-on_prepare_failure() {
-  local code="$1"
-  set +e
-  write_prepare_failure_report "$code"
-  cleanup_prepare_staging_if_owned
-  release_lock
-  cleanup_deploy_source_temp
-  trap - ERR
-  exit "$code"
-}
-
 on_prepare_exit() {
   local code="$1"
   trap - EXIT
@@ -2356,9 +2333,6 @@ resolve_rollback_sha_from_deployment_id() {
 }
 
 mode_rollback() {
-  if [[ -n "$ROLLBACK_DEPLOYMENT_ID" ]]; then
-    resolve_rollback_sha_from_deployment_id "$ROLLBACK_DEPLOYMENT_ID"
-  fi
   is_full_sha "$ROLLBACK_SHA" || die "--rollback-sha must be a full 40-char SHA in rollback mode"
   local rollback_release
   rollback_release="$(release_dir_for_sha "$ROLLBACK_SHA")"

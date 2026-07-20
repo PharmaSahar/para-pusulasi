@@ -24,6 +24,18 @@ Transaction artifacts:
 - Lock owner metadata includes the active deployment ID.
 - Journals are written only at final success or final failure. Operators should treat existing journal files as immutable evidence.
 
+```mermaid
+flowchart LR
+   CLI[deploy/deploy.sh] --> Impl[deploy/internal/immutable_release_v2_impl.sh]
+   Compat[deploy/immutable_release_v2.sh] --> Impl
+   Impl --> Txn[deployment transaction]
+   Txn --> Events[deploy-state/deployment_events.jsonl]
+   Txn --> Journal[deploy-state/journal/<deployment-id>.json]
+   Txn --> Lock[deploy-state/deploy.lock/.active_lock]
+   Journal --> Verify[verify --deployment-id]
+   Journal --> Rollback[rollback --deployment-id]
+```
+
 Automatic rollback policy:
 
 - Default is disabled for cutover (`AUTO_ROLLBACK=false`).
@@ -127,8 +139,8 @@ Repository-discovered contract (read-only evidence from docs/scripts):
 10. Rollback contract:
    - deployment ID identifies the completed deployment to roll back
    - prior release SHA is resolved from that deployment journal
-    - atomic symlink restoration
-    - service restart and health verification
+   - atomic symlink restoration
+   - service restart and health verification
    - explicit `--rollback-sha` remains available only as a deprecated compatibility path
 
 ## 4) Persistent Asset Classification
@@ -315,29 +327,56 @@ Staged scheduler health contract:
 
 ## 7) Locking Behavior
 
-A lock-holder marker prevents concurrent mutation attempts.
-Default lock path:
+A lock-holder marker prevents concurrent mutation attempts in mutating lock-protected phases.
+Default canonical lock path:
 
-- `/opt/parapusulasi/deploy.lock`
+- `${IMMUTABLE_V2_DEPLOY_STATE_ROOT:-/opt/parapusulasi/deploy-state}/deploy.lock`
 
 Active lock representation:
 
-- `/opt/parapusulasi/deploy.lock/.active_lock/`
-- owner metadata file: `/opt/parapusulasi/deploy.lock/.active_lock/owner.json`
+- `${DEPLOY_STATE_ROOT}/deploy.lock/.active_lock/`
+- owner metadata file: `${DEPLOY_STATE_ROOT}/deploy.lock/.active_lock/owner.json`
 
 Lock semantics:
 
-- If `.active_lock` exists, cutover/rollback/prepare abort with `lock exists`.
+- Cutover and rollback acquire the deployment lock before mutating the active symlink or service.
+- Prepare does not acquire the deployment lock; prepare failures are still journaled and cleaned up through the transaction exit path.
+- If `.active_lock` exists during a lock-protected phase, the command aborts with `lock exists`.
 - If `deploy.lock` exists but is empty, it is treated as unlocked.
 - On lock release, `.active_lock` is removed; pre-provisioned `deploy.lock` directories are preserved.
 
-## 8) Auto-Rollback Behavior
+## 8) Verify Behavior
+
+`verify` is read-only. It requires `--deployment-id`, loads the immutable journal for that ID, compares the journal target SHA with the active release SHA, and exits non-zero on mismatch.
+
+Machine-readable verification is available with `--json`:
+
+```bash
+bash deploy/deploy.sh \
+   --mode verify \
+   --deployment-id 20260719T120000Z-849fc5726539-a1b2c3d4 \
+   --json
+```
+
+## 9) Rollback Behavior
+
+Preferred rollback uses the completed deployment ID. The rollback command resolves the prior release SHA from the immutable deployment journal and creates a separate rollback transaction with its own deployment ID, journal, and events.
+
+Rollback failures are finalized exactly once: one failed journal, one failed event, original non-zero exit code preserved, and lock released.
+
+```bash
+bash deploy/deploy.sh \
+   --mode rollback \
+   --deployment-id 20260719T120000Z-849fc5726539-a1b2c3d4
+```
+
+## 10) Auto-Rollback Behavior
 
 If cutover fails after switch attempt and `--auto-rollback` is enabled, V2 restores previous symlink target and restarts service.
 If cutover fails after switch attempt and `--auto-rollback` is not enabled, V2 does not perform automatic rollback and exits non-zero for explicit operator diagnosis.
 Failure remains non-zero and rollback metadata is preserved under deploy-state.
 
-## 9) Failure Classes
+## 11) Failure Classes
 
 Common fail-closed blockers:
 
@@ -370,7 +409,7 @@ Prepare cleanup guarantees on failure:
 - missing rollback target release
 - concurrent lock present
 
-## 10) Audit Evidence To Capture During Real Operation
+## 12) Audit Evidence To Capture During Real Operation
 
 - `deployment_preflight.json` from prepared release
 - deploy-state rollback metadata
@@ -378,7 +417,40 @@ Prepare cleanup guarantees on failure:
 - service restart timestamps and status
 - bounded health loop result
 
-## 11) Recovery Commands
+## 13) Migration Notes
+
+- Use `bash deploy/deploy.sh` for all operator commands.
+- Existing automation that still calls `deploy/immutable_release_v2.sh` continues to work through the compatibility wrapper, but should be migrated to `deploy/deploy.sh`.
+- Replace prepare-plus-cutover runbooks with `--mode deploy` where a single transaction journal is desired.
+- Replace manual rollback SHA lookup with `rollback --deployment-id <completed-deployment-id>`.
+- Replace legacy lock checks under `/opt/parapusulasi/deploy.lock` with deploy-state lock checks under `${DEPLOY_STATE_ROOT}/deploy.lock`.
+
+## 14) Operator Examples
+
+- Capture the latest deployment ID from command output:
+
+```bash
+bash deploy/deploy.sh \
+   --target-ref origin/release/example \
+   --target-sha 849fc57265395889fc23dde2986b21428ef03c6c \
+   --mode deploy 2>&1 | tee /tmp/parapusulasi-deploy.log
+
+grep 'deployment_id=' /tmp/parapusulasi-deploy.log | tail -1
+```
+
+- Inspect immutable journal evidence:
+
+```bash
+python3 -m json.tool /opt/parapusulasi/deploy-state/journal/<deployment-id>.json
+```
+
+- Inspect append-only event evidence:
+
+```bash
+grep '"deployment_id":"<deployment-id>"' /opt/parapusulasi/deploy-state/deployment_events.jsonl
+```
+
+## 15) Recovery Commands
 
 - Inspect active target:
 
@@ -404,7 +476,20 @@ Operational warning for no-auto-rollback cutover failures:
 
 - When cutover fails after symlink switch and `--auto-rollback` is not set, inspect active target and service state before deciding and authorizing a separate rollback command.
 
-## 12) Explicit Non-Claims
+## 16) Release Readiness Checklist
+
+- [x] Canonical deployment entrypoint: `deploy/deploy.sh`
+- [x] Deployment transaction model: deployment IDs wrap deploy/prepare/cutover/rollback transactions
+- [x] Immutable journals: final journal written once per completed transaction outcome
+- [x] Append-only events: transaction events append to deploy-state JSONL
+- [x] Deployment IDs: generated, propagated to logs, locks, events, journals, verify, and rollback
+- [x] Verify command: `verify --deployment-id` validates journal target against active release
+- [x] Rollback by deployment ID: prior SHA resolved from journal without manual lookup
+- [x] Canonical locking: default lock under deploy-state, with owner metadata including deployment ID
+- [x] Documentation complete: canonical commands, lock paths, migration notes, operator examples
+- [x] Tests complete: focused coverage for transaction success/failure, verify, rollback, lock metadata, wrapper compatibility, and safety prohibitions
+
+## 17) Explicit Non-Claims
 
 - This runbook does not assert any deployment occurred.
 - This runbook does not authorize production mutation by itself.

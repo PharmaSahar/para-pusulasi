@@ -450,7 +450,7 @@ def _invoke_script(script: Path, repo: Path, sha: str, mode: str, env: dict[str,
 
 
 def _invoke(repo: Path, sha: str, mode: str, env: dict[str, str], extra: list[str] | None = None) -> subprocess.CompletedProcess[str]:
-    return _invoke_script(SCRIPT, repo, sha, mode, env, extra)
+    return _invoke_script(CANONICAL_SCRIPT, repo, sha, mode, env, extra)
 
 
 def _deployment_id_from_output(output: str) -> str:
@@ -459,6 +459,33 @@ def _deployment_id_from_output(output: str) -> str:
         if marker in line:
             return line.split(marker, 1)[1].strip().split()[0]
     raise AssertionError(f"deployment_id not found in output: {output}")
+
+
+def _deployment_events(layout: dict[str, Path], deployment_id: str) -> list[dict[str, object]]:
+    events_path = layout["deploy_state"] / "deployment_events.jsonl"
+    events = []
+    for line in events_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        event = json.loads(line)
+        if event.get("deployment_id") == deployment_id:
+            events.append(event)
+    return events
+
+
+def _deployment_journal(layout: dict[str, Path], deployment_id: str) -> dict[str, object]:
+    journal_path = layout["deploy_state"] / "journal" / f"{deployment_id}.json"
+    matching_journals = list((layout["deploy_state"] / "journal").glob(f"{deployment_id}.json"))
+    assert matching_journals == [journal_path]
+    return json.loads(journal_path.read_text(encoding="utf-8"))
+
+
+def _assert_journal_events_match_log(layout: dict[str, Path], journal: dict[str, object]) -> None:
+    deployment_id = str(journal["deployment_id"])
+    journal_events = journal["events"]
+    log_events = _deployment_events(layout, deployment_id)
+    assert journal_events == log_events
+    assert len({(event["phase"], event["state"], event["message"]) for event in log_events}) == len(log_events)
 
 
 def _invoke_mode_without_target(script: Path, repo: Path, mode: str, env: dict[str, str], extra: list[str]) -> subprocess.CompletedProcess[str]:
@@ -518,7 +545,7 @@ def test_plan_from_dirty_active_release_uses_temporary_clean_source(tmp_path: Pa
     res = _run(
         [
             "bash",
-            str(SCRIPT),
+            str(CANONICAL_SCRIPT),
             "--target-ref",
             "origin/release/test",
             "--target-sha",
@@ -546,7 +573,7 @@ def test_prepare_from_dirty_active_release_uses_temporary_clean_source(tmp_path:
     res = _run(
         [
             "bash",
-            str(SCRIPT),
+            str(CANONICAL_SCRIPT),
             "--target-ref",
             "origin/release/test",
             "--target-sha",
@@ -600,7 +627,7 @@ def test_full_sha_required(tmp_path: Path) -> None:
     res = _run(
         [
             "bash",
-            str(SCRIPT),
+            str(CANONICAL_SCRIPT),
             "--target-ref",
             "origin/release/test",
             "--target-sha",
@@ -2093,12 +2120,19 @@ def test_deploy_mode_writes_immutable_journal_and_append_only_events(tmp_path: P
     assert journal["previous_sha"] == layout["active"].name
     assert journal["result"] == "success"
     assert journal["journal_immutable"] is True
-    assert journal["events"][0]["state"] == "started"
-    assert journal["events"][-1]["state"] == "completed"
-    events_path = layout["deploy_state"] / "deployment_events.jsonl"
-    events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]
+    assert [(event["phase"], event["state"], event["message"]) for event in journal["events"]] == [
+        ("deploy", "started", "deployment transaction started"),
+        ("prepare", "started", "prepare phase started"),
+        ("prepare", "completed", "release prepared"),
+        ("cutover", "started", "cutover phase started"),
+        ("switch", "started", "atomic symlink switch started"),
+        ("cutover", "completed", "cutover completed"),
+        ("cutover", "completed", "deployment transaction completed"),
+    ]
+    events = _deployment_events(layout, deployment_id)
     assert [event["sequence"] for event in events] == list(range(1, len(events) + 1))
     assert {event["deployment_id"] for event in events} == {deployment_id}
+    _assert_journal_events_match_log(layout, journal)
     captured = json.loads(capture_file.read_text(encoding="utf-8"))
     assert captured["deployment_id"] == deployment_id
     assert layout["current"].resolve() == (layout["releases"] / sha).resolve()
@@ -2157,17 +2191,16 @@ def test_rollback_symlink_switch_failure_records_failed_transaction_once(tmp_pat
 
     assert rollback.returncode == 42
     rollback_id = _deployment_id_from_output(rollback.stderr + rollback.stdout)
-    journal = json.loads((layout["deploy_state"] / "journal" / f"{rollback_id}.json").read_text(encoding="utf-8"))
+    journal = _deployment_journal(layout, rollback_id)
     failed_journal_events = [event for event in journal["events"] if event["state"] == "failed"]
     assert journal["deployment_id"] == rollback_id
     assert journal["rollback_deployment_id"] == deployed_id
     assert journal["result"] == "failed"
     assert len(failed_journal_events) == 1
-    event_log = [json.loads(line) for line in (layout["deploy_state"] / "deployment_events.jsonl").read_text(encoding="utf-8").splitlines()]
-    rollback_events = [event for event in event_log if event["deployment_id"] == rollback_id]
+    rollback_events = _deployment_events(layout, rollback_id)
     failed_log_events = [event for event in rollback_events if event["state"] == "failed"]
     assert len(failed_log_events) == 1
-    assert len({(event["phase"], event["state"], event["message"]) for event in rollback_events}) == len(rollback_events)
+    _assert_journal_events_match_log(layout, journal)
     assert not (layout["lock_dir"] / ".active_lock").exists()
     assert layout["current"].resolve() == (layout["releases"] / sha).resolve()
 
@@ -2188,17 +2221,16 @@ def test_rollback_service_restart_failure_records_failed_transaction_once(tmp_pa
 
     assert rollback.returncode == 43
     rollback_id = _deployment_id_from_output(rollback.stderr + rollback.stdout)
-    journal = json.loads((layout["deploy_state"] / "journal" / f"{rollback_id}.json").read_text(encoding="utf-8"))
+    journal = _deployment_journal(layout, rollback_id)
     failed_journal_events = [event for event in journal["events"] if event["state"] == "failed"]
     assert journal["deployment_id"] == rollback_id
     assert journal["rollback_deployment_id"] == deployed_id
     assert journal["result"] == "failed"
     assert len(failed_journal_events) == 1
-    event_log = [json.loads(line) for line in (layout["deploy_state"] / "deployment_events.jsonl").read_text(encoding="utf-8").splitlines()]
-    rollback_events = [event for event in event_log if event["deployment_id"] == rollback_id]
+    rollback_events = _deployment_events(layout, rollback_id)
     failed_log_events = [event for event in rollback_events if event["state"] == "failed"]
     assert len(failed_log_events) == 1
-    assert len({(event["phase"], event["state"], event["message"]) for event in rollback_events}) == len(rollback_events)
+    _assert_journal_events_match_log(layout, journal)
     assert not (layout["lock_dir"] / ".active_lock").exists()
     assert layout["current"].resolve() == layout["active"].resolve()
 
@@ -2216,12 +2248,14 @@ def test_failed_deploy_transaction_writes_failed_immutable_journal(tmp_path: Pat
 
     assert res.returncode != 0
     deployment_id = _deployment_id_from_output(res.stderr + res.stdout)
-    journal = json.loads((layout["deploy_state"] / "journal" / f"{deployment_id}.json").read_text(encoding="utf-8"))
+    journal = _deployment_journal(layout, deployment_id)
     assert journal["deployment_id"] == deployment_id
     assert journal["result"] == "failed"
     assert journal["failure_reason"]
     assert journal["journal_immutable"] is True
     assert journal["events"][-1]["state"] == "failed"
+    assert len([event for event in journal["events"] if event["state"] == "failed"]) == 1
+    _assert_journal_events_match_log(layout, journal)
 
 
 def test_default_lock_path_is_canonical_deploy_state_lock(tmp_path: Path) -> None:
@@ -2790,7 +2824,7 @@ def test_plan_mode_rejects_unapproved_ref(tmp_path: Path) -> None:
     res = _run(
         [
             "bash",
-            str(SCRIPT),
+            str(CANONICAL_SCRIPT),
             "--target-ref",
             "feature/unsafe",
             "--target-sha",

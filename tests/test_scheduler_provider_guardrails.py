@@ -341,7 +341,7 @@ def test_render_and_schedule_quarantines_when_upload_precheck_blocked(monkeypatc
                 "status": "blocked",
                 "quarantine_reason": "channel_dna_mismatch",
                 "guard_reason_codes": ["channel_dna_mismatch", "upload_precheck_final_guard"],
-                "recoverable": True,
+                "recoverable": False,
             },
         },
     )
@@ -352,7 +352,7 @@ def test_render_and_schedule_quarantines_when_upload_precheck_blocked(monkeypatc
     entry = data["demo_channel"][0]
     assert entry["status"] == "quarantined"
     assert entry["quarantine_reason"] == "channel_dna_mismatch"
-    assert entry["recoverable"] is True
+    assert entry["recoverable"] is False
     assert entry.get("video_id") is None
 
 

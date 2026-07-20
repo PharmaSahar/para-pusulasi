@@ -162,6 +162,8 @@ def test_upload_precheck_blocks_tuple_mismatch(tmp_path, monkeypatch):
     )
 
     assert res["status"] == "blocked"
+    assert res["quarantine_reason"] == "upload_precheck_tuple_mismatch"
+    assert res["recoverable"] is False
     assert "upload_precheck_tuple_mismatch" in res["guard_reason_codes"]
 
 

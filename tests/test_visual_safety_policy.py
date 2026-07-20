@@ -170,6 +170,8 @@ def test_upload_precheck_blocks_unsafe_final_asset_manifest(tmp_path, monkeypatc
     )
 
     assert res["status"] == "blocked"
+    assert res["quarantine_reason"] == "visual_safety_policy_blocked"
+    assert res["recoverable"] is False
     assert "visual_asset_not_approved" in res["guard_reason_codes"]
     assert res["details"]["visual_quarantine"]["prevent_upload"] is True
 

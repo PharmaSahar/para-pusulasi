@@ -75,6 +75,21 @@ def _is_channel_scoped_path(channel_id: str, path: str | Path) -> bool:
     return marker in rel
 
 
+def _select_quarantine_reason(reason_codes: list[str]) -> str:
+    priority = [
+        "channel_dna_mismatch",
+        "visual_safety_policy_blocked",
+        "upload_precheck_quarantine_state_blocked",
+        "upload_precheck_duplicate_upload_prevented",
+        "upload_precheck_tuple_mismatch",
+        "upload_precheck_manifest_unreadable",
+    ]
+    for reason in priority:
+        if reason in reason_codes:
+            return reason
+    return "upload_precheck_blocked"
+
+
 def _artifact_record(path: str | Path | None) -> dict[str, Any]:
     path_value = str(path or "").strip()
     record: dict[str, Any] = {
@@ -248,6 +263,7 @@ def evaluate_upload_precheck(
         final_assets=final_visual_assets,
     )
     details["visual_safety"] = visual_decision.to_dict()
+    visual_quarantine_reason = ""
     if not visual_decision.allowed:
         reason_codes.extend(visual_decision.failed_rules)
         details["visual_quarantine"] = build_upload_quarantine_result(
@@ -258,6 +274,7 @@ def evaluate_upload_precheck(
             evidence_paths=[resolved_visual_manifest_path] if resolved_visual_manifest_path else [],
             unsafe_assets=list(visual_decision.evidence.get("unsafe_assets") or []),
         )
+        visual_quarantine_reason = str(details["visual_quarantine"].get("quarantine_reason") or "")
 
     def _validate_artifact(label: str, path_value: str | None, *, required: bool = True):
         artifact_path = str(path_value or "").strip()
@@ -348,11 +365,14 @@ def evaluate_upload_precheck(
         details["forbidden_keyword_hits"] = forbidden_hits[:12]
 
     if reason_codes:
+        quarantine_reason = _select_quarantine_reason(reason_codes)
+        if quarantine_reason == "upload_precheck_blocked" and visual_quarantine_reason:
+            quarantine_reason = visual_quarantine_reason
         return PrecheckResult(
             status="blocked",
-            quarantine_reason="channel_dna_mismatch" if "channel_dna_mismatch" in reason_codes else "upload_precheck_blocked",
+            quarantine_reason=quarantine_reason,
             guard_reason_codes=sorted(set(reason_codes + ["upload_precheck_final_guard"])),
-            recoverable=True,
+            recoverable=False,
             details=details,
         ).to_dict()
 

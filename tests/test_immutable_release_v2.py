@@ -13,6 +13,8 @@ from pathlib import Path
 import pytest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "deploy" / "immutable_release_v2.sh"
+CANONICAL_SCRIPT = Path(__file__).resolve().parents[1] / "deploy" / "deploy.sh"
+IMPLEMENTATION_SCRIPT = Path(__file__).resolve().parents[1] / "deploy" / "internal" / "immutable_release_v2_impl.sh"
 
 
 def _run(cmd: list[str], cwd: Path, env: dict[str, str], check: bool = False) -> subprocess.CompletedProcess[str]:
@@ -68,6 +70,7 @@ def _init_repo(
             "            'IMMUTABLE_V2_EXPECTED_LOCK_OWNER_TOKEN': os.environ.get('IMMUTABLE_V2_EXPECTED_LOCK_OWNER_TOKEN', ''),\n"
             "            'owner_json_exists': (Path(lock_dir) / '.active_lock' / 'owner.json').exists(),\n"
             "            'owner_id': owner_payload.get('owner_id', ''),\n"
+            "            'deployment_id': owner_payload.get('deployment_id', ''),\n"
             "            'owner_metadata_error': owner_error,\n"
             "            'active_deployment_lock': {\n"
             "                'reason_code': 'self_owned_deployment_lock' if self_owned else ('active_deployment_lock' if expected_owner else 'no_active_deployment_lock'),\n"
@@ -253,7 +256,13 @@ def _make_active_release_runtime_dirty(repo: Path, sha: str, layout: dict[str, P
     return active
 
 
-def _fake_bin(tmp_path: Path, *, active_service: bool = True) -> tuple[Path, Path]:
+def _fake_bin(
+    tmp_path: Path,
+    *,
+    active_service: bool = True,
+    mv_exit_code: int = 0,
+    restart_exit_code: int = 0,
+) -> tuple[Path, Path]:
     bindir = tmp_path / "fakebin"
     bindir.mkdir(parents=True, exist_ok=True)
     log = tmp_path / "fakebin.log"
@@ -265,6 +274,9 @@ def _fake_bin(tmp_path: Path, *, active_service: bool = True) -> tuple[Path, Pat
             f"echo \"$@\" >> '{log}'\n"
             "if [[ \"$1\" == \"is-active\" ]]; then\n"
             f"  if [[ '{'1' if active_service else '0'}' == '1' ]]; then exit 0; else exit 3; fi\n"
+            "fi\n"
+            "if [[ \"$1\" == \"restart\" ]]; then\n"
+            f"  exit {restart_exit_code}\n"
             "fi\n"
             "exit 0\n"
         ),
@@ -278,6 +290,7 @@ def _fake_bin(tmp_path: Path, *, active_service: bool = True) -> tuple[Path, Pat
             "  [[ \"$a\" == \"-T\" || \"$a\" == \"-f\" || \"$a\" == \"-Tf\" ]] && continue\n"
             "  args+=(\"$a\")\n"
             "done\n"
+            f"if [[ {mv_exit_code} -ne 0 ]]; then exit {mv_exit_code}; fi\n"
             "python3 - \"${args[0]}\" \"${args[1]}\" <<'PY'\n"
             "import os, sys\n"
             "os.replace(sys.argv[1], sys.argv[2])\n"
@@ -407,6 +420,7 @@ def _write_owner(active_lock: Path, *, owner_id: str = "owner-123", pid: int = 9
         json.dumps(
             {
                 "owner_id": owner_id,
+                "deployment_id": "20260719T000000Z-bbbbbbbbbbbb-testlock",
                 "pid": pid,
                 "host": socket.gethostname(),
                 "started_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -419,10 +433,10 @@ def _write_owner(active_lock: Path, *, owner_id: str = "owner-123", pid: int = 9
     )
 
 
-def _invoke(repo: Path, sha: str, mode: str, env: dict[str, str], extra: list[str] | None = None) -> subprocess.CompletedProcess[str]:
+def _invoke_script(script: Path, repo: Path, sha: str, mode: str, env: dict[str, str], extra: list[str] | None = None) -> subprocess.CompletedProcess[str]:
     args = [
         "bash",
-        str(SCRIPT),
+        str(script),
         "--target-ref",
         "origin/release/test",
         "--target-sha",
@@ -433,6 +447,80 @@ def _invoke(repo: Path, sha: str, mode: str, env: dict[str, str], extra: list[st
     if extra:
         args.extend(extra)
     return _run(args, cwd=repo, env=env)
+
+
+def _invoke(repo: Path, sha: str, mode: str, env: dict[str, str], extra: list[str] | None = None) -> subprocess.CompletedProcess[str]:
+    return _invoke_script(CANONICAL_SCRIPT, repo, sha, mode, env, extra)
+
+
+def _deployment_id_from_output(output: str) -> str:
+    for line in output.splitlines():
+        marker = "deployment_id="
+        if marker in line:
+            return line.split(marker, 1)[1].strip().split()[0]
+    raise AssertionError(f"deployment_id not found in output: {output}")
+
+
+def _deployment_events(layout: dict[str, Path], deployment_id: str) -> list[dict[str, object]]:
+    events_path = layout["deploy_state"] / "deployment_events.jsonl"
+    events = []
+    for line in events_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        event = json.loads(line)
+        if event.get("deployment_id") == deployment_id:
+            events.append(event)
+    return events
+
+
+def _deployment_journal(layout: dict[str, Path], deployment_id: str) -> dict[str, object]:
+    journal_path = layout["deploy_state"] / "journal" / f"{deployment_id}.json"
+    matching_journals = list((layout["deploy_state"] / "journal").glob(f"{deployment_id}.json"))
+    assert matching_journals == [journal_path]
+    return json.loads(journal_path.read_text(encoding="utf-8"))
+
+
+def _assert_journal_events_match_log(layout: dict[str, Path], journal: dict[str, object]) -> None:
+    deployment_id = str(journal["deployment_id"])
+    journal_events = journal["events"]
+    log_events = _deployment_events(layout, deployment_id)
+    assert journal_events == log_events
+    assert len({(event["phase"], event["state"], event["message"]) for event in log_events}) == len(log_events)
+
+
+def _invoke_mode_without_target(script: Path, repo: Path, mode: str, env: dict[str, str], extra: list[str]) -> subprocess.CompletedProcess[str]:
+    return _run(["bash", str(script), "--mode", mode, *extra], cwd=repo, env=env)
+
+
+def test_canonical_deploy_entrypoint_supports_plan_mode(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    env = _base_env(layout)
+
+    before = layout["current"].readlink()
+    res = _invoke_script(CANONICAL_SCRIPT, repo, sha, "plan", env)
+
+    assert res.returncode == 0, res.stderr + res.stdout
+    assert layout["current"].readlink() == before
+    assert "deploy/deploy.sh" in subprocess.run(
+        ["bash", str(CANONICAL_SCRIPT), "--help"],
+        text=True,
+        capture_output=True,
+        check=True,
+    ).stdout
+
+
+def test_immutable_release_v2_wrapper_warns_and_delegates() -> None:
+    res = subprocess.run(
+        ["bash", str(SCRIPT), "--help"],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    assert "DEPRECATED" in res.stderr
+    assert "deploy/deploy.sh" in res.stderr
+    assert "deploy/immutable_release_v2.sh" in res.stdout
 
 
 def test_plan_mode_is_read_only(tmp_path: Path) -> None:
@@ -457,7 +545,7 @@ def test_plan_from_dirty_active_release_uses_temporary_clean_source(tmp_path: Pa
     res = _run(
         [
             "bash",
-            str(SCRIPT),
+            str(CANONICAL_SCRIPT),
             "--target-ref",
             "origin/release/test",
             "--target-sha",
@@ -485,7 +573,7 @@ def test_prepare_from_dirty_active_release_uses_temporary_clean_source(tmp_path:
     res = _run(
         [
             "bash",
-            str(SCRIPT),
+            str(CANONICAL_SCRIPT),
             "--target-ref",
             "origin/release/test",
             "--target-sha",
@@ -539,7 +627,7 @@ def test_full_sha_required(tmp_path: Path) -> None:
     res = _run(
         [
             "bash",
-            str(SCRIPT),
+            str(CANONICAL_SCRIPT),
             "--target-ref",
             "origin/release/test",
             "--target-sha",
@@ -1622,14 +1710,14 @@ def test_temporary_topology_integration_simulation(tmp_path: Path) -> None:
 
 
 def test_systemd_file_writes_impossible_by_contract() -> None:
-    text = SCRIPT.read_text(encoding="utf-8")
+    text = IMPLEMENTATION_SCRIPT.read_text(encoding="utf-8")
     assert "systemctl edit" not in text
     assert "daemon-reload" not in text
     assert "/etc/systemd/system" not in text
 
 
 def test_env_append_write_impossible_by_contract() -> None:
-    text = SCRIPT.read_text(encoding="utf-8")
+    text = IMPLEMENTATION_SCRIPT.read_text(encoding="utf-8")
     assert ">> .env" not in text
     assert ".env" in text  # referenced only as linked persistent asset
 
@@ -1762,7 +1850,7 @@ def test_cutover_defaults_auto_rollback_false(tmp_path: Path) -> None:
 
 
 def test_usage_documents_auto_rollback_flag(tmp_path: Path) -> None:
-    text = SCRIPT.read_text(encoding="utf-8")
+    text = IMPLEMENTATION_SCRIPT.read_text(encoding="utf-8")
     assert "--auto-rollback" in text
 
 
@@ -2010,6 +2098,184 @@ def test_cutover_writes_rollback_metadata_file(tmp_path: Path) -> None:
     assert payload["new_target"].endswith(sha)
 
 
+def test_deploy_mode_writes_immutable_journal_and_append_only_events(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    fakebin, _ = _fake_bin(tmp_path)
+    env = _base_env(layout, fakebin)
+    env.pop("IMMUTABLE_V2_SKIP_HEALTHCHECK")
+    capture_file = tmp_path / "deploy_health_env.json"
+    env["CAPTURE_HEALTH_ENV_FILE"] = str(capture_file)
+
+    res = _invoke_script(CANONICAL_SCRIPT, repo, sha, "deploy", env)
+
+    assert res.returncode == 0, res.stderr + res.stdout
+    deployment_id = _deployment_id_from_output(res.stderr + res.stdout)
+    journal_path = layout["deploy_state"] / "journal" / f"{deployment_id}.json"
+    assert journal_path.exists()
+    journal = json.loads(journal_path.read_text(encoding="utf-8"))
+    assert journal["deployment_id"] == deployment_id
+    assert journal["mode"] == "deploy"
+    assert journal["target_sha"] == sha
+    assert journal["previous_sha"] == layout["active"].name
+    assert journal["result"] == "success"
+    assert journal["journal_immutable"] is True
+    assert [(event["phase"], event["state"], event["message"]) for event in journal["events"]] == [
+        ("deploy", "started", "deployment transaction started"),
+        ("prepare", "started", "prepare phase started"),
+        ("prepare", "completed", "release prepared"),
+        ("cutover", "started", "cutover phase started"),
+        ("switch", "started", "atomic symlink switch started"),
+        ("cutover", "completed", "cutover completed"),
+        ("cutover", "completed", "deployment transaction completed"),
+    ]
+    events = _deployment_events(layout, deployment_id)
+    assert [event["sequence"] for event in events] == list(range(1, len(events) + 1))
+    assert {event["deployment_id"] for event in events} == {deployment_id}
+    _assert_journal_events_match_log(layout, journal)
+    captured = json.loads(capture_file.read_text(encoding="utf-8"))
+    assert captured["deployment_id"] == deployment_id
+    assert layout["current"].resolve() == (layout["releases"] / sha).resolve()
+
+
+def test_verify_deployment_id_json_reports_active_release(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    fakebin, _ = _fake_bin(tmp_path)
+    env = _base_env(layout, fakebin)
+
+    deploy = _invoke_script(CANONICAL_SCRIPT, repo, sha, "deploy", env)
+    assert deploy.returncode == 0, deploy.stderr + deploy.stdout
+    deployment_id = _deployment_id_from_output(deploy.stderr + deploy.stdout)
+
+    verify = _invoke_mode_without_target(CANONICAL_SCRIPT, repo, "verify", env, ["--deployment-id", deployment_id, "--json"])
+
+    assert verify.returncode == 0, verify.stderr + verify.stdout
+    payload = json.loads(verify.stdout.strip().splitlines()[-1])
+    assert payload["deployment_id"] == deployment_id
+    assert payload["target_sha"] == sha
+    assert payload["active_sha"] == sha
+    assert payload["status"] == "verified"
+
+
+def test_rollback_by_deployment_id_restores_previous_release_without_manual_sha(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    fakebin, _ = _fake_bin(tmp_path)
+    env = _base_env(layout, fakebin)
+
+    deploy = _invoke_script(CANONICAL_SCRIPT, repo, sha, "deploy", env)
+    assert deploy.returncode == 0, deploy.stderr + deploy.stdout
+    deployment_id = _deployment_id_from_output(deploy.stderr + deploy.stdout)
+
+    rollback = _invoke_mode_without_target(CANONICAL_SCRIPT, repo, "rollback", env, ["--deployment-id", deployment_id])
+
+    assert rollback.returncode == 0, rollback.stderr + rollback.stdout
+    assert "--rollback-sha" not in " ".join(rollback.args)
+    assert layout["current"].resolve() == layout["active"].resolve()
+
+
+def test_rollback_symlink_switch_failure_records_failed_transaction_once(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    fakebin, _ = _fake_bin(tmp_path)
+    env = _base_env(layout, fakebin)
+
+    deploy = _invoke_script(CANONICAL_SCRIPT, repo, sha, "deploy", env)
+    assert deploy.returncode == 0, deploy.stderr + deploy.stdout
+    deployed_id = _deployment_id_from_output(deploy.stderr + deploy.stdout)
+
+    failing_fakebin, _ = _fake_bin(tmp_path, mv_exit_code=42)
+    env["PATH"] = f"{failing_fakebin}:{os.environ['PATH']}"
+    rollback = _invoke_mode_without_target(CANONICAL_SCRIPT, repo, "rollback", env, ["--deployment-id", deployed_id])
+
+    assert rollback.returncode == 42
+    rollback_id = _deployment_id_from_output(rollback.stderr + rollback.stdout)
+    journal = _deployment_journal(layout, rollback_id)
+    failed_journal_events = [event for event in journal["events"] if event["state"] == "failed"]
+    assert journal["deployment_id"] == rollback_id
+    assert journal["rollback_deployment_id"] == deployed_id
+    assert journal["result"] == "failed"
+    assert len(failed_journal_events) == 1
+    rollback_events = _deployment_events(layout, rollback_id)
+    failed_log_events = [event for event in rollback_events if event["state"] == "failed"]
+    assert len(failed_log_events) == 1
+    _assert_journal_events_match_log(layout, journal)
+    assert not (layout["lock_dir"] / ".active_lock").exists()
+    assert layout["current"].resolve() == (layout["releases"] / sha).resolve()
+
+
+def test_rollback_service_restart_failure_records_failed_transaction_once(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    fakebin, _ = _fake_bin(tmp_path)
+    env = _base_env(layout, fakebin)
+
+    deploy = _invoke_script(CANONICAL_SCRIPT, repo, sha, "deploy", env)
+    assert deploy.returncode == 0, deploy.stderr + deploy.stdout
+    deployed_id = _deployment_id_from_output(deploy.stderr + deploy.stdout)
+
+    failing_fakebin, _ = _fake_bin(tmp_path, restart_exit_code=43)
+    env["PATH"] = f"{failing_fakebin}:{os.environ['PATH']}"
+    rollback = _invoke_mode_without_target(CANONICAL_SCRIPT, repo, "rollback", env, ["--deployment-id", deployed_id])
+
+    assert rollback.returncode == 43
+    rollback_id = _deployment_id_from_output(rollback.stderr + rollback.stdout)
+    journal = _deployment_journal(layout, rollback_id)
+    failed_journal_events = [event for event in journal["events"] if event["state"] == "failed"]
+    assert journal["deployment_id"] == rollback_id
+    assert journal["rollback_deployment_id"] == deployed_id
+    assert journal["result"] == "failed"
+    assert len(failed_journal_events) == 1
+    rollback_events = _deployment_events(layout, rollback_id)
+    failed_log_events = [event for event in rollback_events if event["state"] == "failed"]
+    assert len(failed_log_events) == 1
+    _assert_journal_events_match_log(layout, journal)
+    assert not (layout["lock_dir"] / ".active_lock").exists()
+    assert layout["current"].resolve() == layout["active"].resolve()
+
+
+def test_failed_deploy_transaction_writes_failed_immutable_journal(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path, health_ok=False)
+    layout = _runtime_layout(tmp_path)
+    fakebin, _ = _fake_bin(tmp_path, active_service=True)
+    env = _base_env(layout, fakebin)
+    env.pop("IMMUTABLE_V2_SKIP_RUNTIME_HEALTH_LOOP")
+    env["IMMUTABLE_V2_HEALTH_LOOP_ATTEMPTS"] = "1"
+    env["IMMUTABLE_V2_HEALTH_LOOP_SLEEP_SECONDS"] = "0"
+
+    res = _invoke_script(CANONICAL_SCRIPT, repo, sha, "deploy", env)
+
+    assert res.returncode != 0
+    deployment_id = _deployment_id_from_output(res.stderr + res.stdout)
+    journal = _deployment_journal(layout, deployment_id)
+    assert journal["deployment_id"] == deployment_id
+    assert journal["result"] == "failed"
+    assert journal["failure_reason"]
+    assert journal["journal_immutable"] is True
+    assert journal["events"][-1]["state"] == "failed"
+    assert len([event for event in journal["events"] if event["state"] == "failed"]) == 1
+    _assert_journal_events_match_log(layout, journal)
+
+
+def test_default_lock_path_is_canonical_deploy_state_lock(tmp_path: Path) -> None:
+    repo, sha = _init_repo(tmp_path)
+    layout = _runtime_layout(tmp_path)
+    fakebin, _ = _fake_bin(tmp_path)
+    env = _base_env(layout, fakebin)
+    env.pop("IMMUTABLE_V2_LOCK_DIR")
+    env.pop("IMMUTABLE_V2_SKIP_HEALTHCHECK")
+    capture_file = tmp_path / "canonical_lock_health_env.json"
+    env["CAPTURE_HEALTH_ENV_FILE"] = str(capture_file)
+
+    res = _invoke_script(CANONICAL_SCRIPT, repo, sha, "deploy", env)
+
+    assert res.returncode == 0, res.stderr + res.stdout
+    captured = json.loads(capture_file.read_text(encoding="utf-8"))
+    assert captured["IMMUTABLE_V2_LOCK_DIR"] == str(layout["deploy_state"] / "deploy.lock")
+    assert not layout["lock_dir"].exists()
+
+
 def test_prepare_startup_preflight_does_not_receive_owner_token(tmp_path: Path) -> None:
     repo, sha = _init_repo(tmp_path)
     layout = _runtime_layout(tmp_path)
@@ -2218,8 +2484,9 @@ def test_watchdog_exits_without_restart_when_service_healthy(tmp_path: Path) -> 
 
 
 def test_watchdog_restarts_normal_crash_when_no_deployment_lock(tmp_path: Path) -> None:
+    app = _classifier_app(tmp_path, classification="no_lock")
     fakebin, systemctl_log, curl_log, service_state = _watchdog_fake_bin(tmp_path, active_service=False, start_succeeds=True)
-    env = _watchdog_env(tmp_path, fakebin)
+    env = _watchdog_env(tmp_path, fakebin, app_root=app)
 
     res = _run([str(Path(__file__).resolve().parents[1] / "watchdog.sh")], cwd=Path(__file__).resolve().parents[1], env=env)
 
@@ -2396,7 +2663,7 @@ def test_watchdog_consumes_shared_classifier_without_lock_parsing() -> None:
 
 
 def test_deploy_lock_classifier_bootstrap_exception_is_documented_and_aligned() -> None:
-    deploy_text = SCRIPT.read_text(encoding="utf-8")
+    deploy_text = IMPLEMENTATION_SCRIPT.read_text(encoding="utf-8")
     safety_gate_text = (Path(__file__).resolve().parents[1] / "src" / "production_safety_gate.py").read_text(encoding="utf-8")
     classifications = {
         "no_lock",
@@ -2464,6 +2731,8 @@ def test_deployment_precheck_refuses_stale_lock_without_auto_removal(tmp_path: P
     assert (active_lock / "owner.json").exists()
     forensic_files = list((layout["deploy_state"] / "lock_forensics").glob("deployment_lock_stale_lock_*.json"))
     assert forensic_files
+    forensic = json.loads(forensic_files[0].read_text(encoding="utf-8"))
+    assert forensic["deployment_metadata"]["deployment_id"] == "20260719T000000Z-bbbbbbbbbbbb-testlock"
 
 
 def test_empty_lock_directory_does_not_block_cutover(tmp_path: Path) -> None:
@@ -2510,25 +2779,25 @@ def test_cutover_health_loop_uses_preprod_isolation_contract(tmp_path: Path) -> 
 
 
 def test_wrapper_never_executes_automatically(tmp_path: Path) -> None:
-    text = SCRIPT.read_text(encoding="utf-8")
+    text = IMPLEMENTATION_SCRIPT.read_text(encoding="utf-8")
     assert "youtube_analytics_smoke" in text
     assert "--sync-analytics-now" not in text
 
 
 def test_no_analytics_api_call_command_present(tmp_path: Path) -> None:
-    text = SCRIPT.read_text(encoding="utf-8")
+    text = IMPLEMENTATION_SCRIPT.read_text(encoding="utf-8")
     assert "youtubeAnalytics" not in text
     assert "collect_analytics" not in text
 
 
 def test_no_oauth_action_present(tmp_path: Path) -> None:
-    text = SCRIPT.read_text(encoding="utf-8")
+    text = IMPLEMENTATION_SCRIPT.read_text(encoding="utf-8")
     assert "run_local_server" not in text
     assert "token refresh" not in text.lower()
 
 
 def test_no_youtube_mutation_command_present(tmp_path: Path) -> None:
-    text = SCRIPT.read_text(encoding="utf-8")
+    text = IMPLEMENTATION_SCRIPT.read_text(encoding="utf-8")
     assert "youtube.upload" not in text
     assert "videos().insert" not in text
 
@@ -2555,7 +2824,7 @@ def test_plan_mode_rejects_unapproved_ref(tmp_path: Path) -> None:
     res = _run(
         [
             "bash",
-            str(SCRIPT),
+            str(CANONICAL_SCRIPT),
             "--target-ref",
             "feature/unsafe",
             "--target-sha",
@@ -2571,7 +2840,7 @@ def test_plan_mode_rejects_unapproved_ref(tmp_path: Path) -> None:
     assert "Unapproved target ref" in (res.stderr + res.stdout)
 
 
-def test_rollback_mode_requires_explicit_sha(tmp_path: Path) -> None:
+def test_rollback_mode_requires_explicit_sha_or_deployment_id(tmp_path: Path) -> None:
     repo, sha = _init_repo(tmp_path)
     layout = _runtime_layout(tmp_path)
     env = _base_env(layout)
@@ -2579,4 +2848,4 @@ def test_rollback_mode_requires_explicit_sha(tmp_path: Path) -> None:
     res = _invoke(repo, sha, "rollback", env)
 
     assert res.returncode != 0
-    assert "--rollback-sha is required" in (res.stderr + res.stdout)
+    assert "--rollback-sha or --deployment-id is required" in (res.stderr + res.stdout)

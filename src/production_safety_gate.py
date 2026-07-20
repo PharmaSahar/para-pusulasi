@@ -755,6 +755,14 @@ def _read_process_command(raw_pid: str) -> str:
         return ""
 
 
+def _process_identity_matches(process_identity: str, process_command: str) -> bool:
+    identity = str(process_identity or "").strip()
+    command = str(process_command or "").strip()
+    if not identity or not command:
+        return False
+    return identity.casefold() in command.casefold()
+
+
 def _owner_age_seconds(started_at_utc: str) -> int | None:
     raw = str(started_at_utc or "").strip()
     if not raw:
@@ -932,7 +940,7 @@ def classify_deployment_lock(
         )
         return evidence
 
-    if not process_command or process_identity not in process_command:
+    if not _process_identity_matches(process_identity, process_command):
         evidence.update({"lock_classification": "ambiguous_lock", "owner_state": "process_identity_mismatch"})
         return evidence
 

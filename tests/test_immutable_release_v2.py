@@ -414,7 +414,7 @@ def _base_env(layout: dict[str, Path], fakebin: Path | None = None) -> dict[str,
     return env
 
 
-def _write_owner(active_lock: Path, *, owner_id: str = "owner-123", pid: int = 999999, process_identity: str = "immutable_release_v2.sh") -> None:
+def _write_owner(active_lock: Path, *, owner_id: str = "owner-123", pid: int = 999999, process_identity: str = "deploy/deploy.sh") -> None:
     _write(
         active_lock / "owner.json",
         json.dumps(

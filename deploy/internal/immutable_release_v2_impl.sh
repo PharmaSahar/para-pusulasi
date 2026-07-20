@@ -1854,7 +1854,7 @@ print(json.dumps({
     "target_sha": "${TARGET_SHA}",
     "target_ref": "${TARGET_REF}",
     "owner_id": "${DEPLOYMENT_LOCK_OWNER_TOKEN}",
-  "process_identity": "immutable_release_v2.sh",
+  "process_identity": "${DEPLOY_PUBLIC_COMMAND}",
 }, ensure_ascii=False))
 PY
 )"; then

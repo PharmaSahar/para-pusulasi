@@ -31,7 +31,7 @@ import sys
 import threading
 import time
 import uuid
-from contextlib import redirect_stdout
+from contextlib import contextmanager, redirect_stdout
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -46,7 +46,7 @@ from src.production_quality_platform import (
 )
 from src.production_observation import production_observation_mode_enabled
 from src.production_safety_gate import evaluate_production_safety_gate
-from src.retry_policy import classify_retry_decision
+from src.retry_policy import classify_retry_decision, consume_retry_budget, get_retry_budget_state, retry_budget_context
 from src.runtime_storage import runtime_path
 try:
     import fcntl
@@ -483,7 +483,7 @@ def _acquire_scheduler_singleton_lock() -> None:
     if fcntl is None:
         raise RuntimeError("scheduler_singleton_lock_unavailable:fcntl_missing")
     if _SCHEDULER_SINGLETON_HANDLE is not None:
-        return
+        raise RuntimeError("scheduler_singleton_lock_conflict:already_acquired_in_process")
 
     lock_path = _scheduler_singleton_lock_path()
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1023,100 +1023,117 @@ def render_and_schedule(channel_id: str, *, trigger_source: str):
         last_error = None
         result = None
         max_attempts = 3
-        for attempt in range(1, max_attempts + 1):  # Maks 3 deneme
-            try:
-                result = run_full_pipeline(
-                    channel_cfg=cfg,
-                    privacy="private",
-                    publish_at=publish_at,
-                    trigger_source=trigger_source,
-                )
-                break  # Başarılı
-            except Exception as e:
-                last_error = e
-                error_text = str(getattr(e, "_provider_error_text", str(e)))
-                error_str = error_text.lower()
-                failure_class = _classify_pipeline_failure(error_text, e)
-                provider_failure_tokens = (
-                    "anthropic",
-                    "credit balance",
-                    "quota",
-                    "invalid_request",
-                    "http 400",
-                    "http 401",
-                    "http 403",
-                    "http 429",
-                    "http 529",
-                    "rate limit",
-                    "overloaded",
-                    "overloaded_error",
-                    "service unavailable",
-                    "internal server error",
-                )
-                provider_related = any(token in error_str for token in provider_failure_tokens)
-                overloaded_signal = any(token in error_str for token in ("overloaded", "overloaded_error", "529"))
-                if provider_related and (overloaded_signal or not getattr(e, "_provider_failure_recorded", False)):
-                    record_provider_failure("anthropic", error_text)
+        existing_budget = get_retry_budget_state()
 
-                # 529 overload dalgasinda kanal-icinde tekrar denemek yerine global circuit'e birak.
-                if overloaded_signal:
-                    setattr(e, "_skip_scheduler_pipeline_retry", True)
+        @contextmanager
+        def _scheduler_retry_budget_if_needed():
+            if existing_budget is not None:
+                yield
+                return
+            with retry_budget_context(total_retries=max(0, max_attempts - 1), scope=f"scheduler_render:{channel_id}"):
+                yield
 
-                setattr(e, "_retry_count", attempt)
-                setattr(e, "_retry_reason", str(failure_class.get("retry_reason") or "unknown"))
+        with _scheduler_retry_budget_if_needed():
+            for attempt in range(1, max_attempts + 1):  # Maks 3 deneme
+                try:
+                    result = run_full_pipeline(
+                        channel_cfg=cfg,
+                        privacy="private",
+                        publish_at=publish_at,
+                        trigger_source=trigger_source,
+                    )
+                    break  # Başarılı
+                except Exception as e:
+                    last_error = e
+                    error_text = str(getattr(e, "_provider_error_text", str(e)))
+                    error_str = error_text.lower()
+                    failure_class = _classify_pipeline_failure(error_text, e)
+                    provider_failure_tokens = (
+                        "anthropic",
+                        "credit balance",
+                        "quota",
+                        "invalid_request",
+                        "http 400",
+                        "http 401",
+                        "http 403",
+                        "http 429",
+                        "http 529",
+                        "rate limit",
+                        "overloaded",
+                        "overloaded_error",
+                        "service unavailable",
+                        "internal server error",
+                    )
+                    provider_related = any(token in error_str for token in provider_failure_tokens)
+                    overloaded_signal = any(token in error_str for token in ("overloaded", "overloaded_error", "529"))
+                    if provider_related and (overloaded_signal or not getattr(e, "_provider_failure_recorded", False)):
+                        record_provider_failure("anthropic", error_text)
 
-                if failure_class["classification"] == NON_RETRYABLE_QUARANTINE:
-                    setattr(e, "_skip_scheduler_pipeline_retry", True)
-                    setattr(e, "_guard_reason_codes", list(failure_class.get("guard_reason_codes") or []))
-                    setattr(e, "_quarantine_reason", str(failure_class.get("quarantine_reason") or "topic_domain_blocked"))
-                    raise
+                    # 529 overload dalgasinda kanal-icinde tekrar denemek yerine global circuit'e birak.
+                    if overloaded_signal:
+                        setattr(e, "_skip_scheduler_pipeline_retry", True)
 
-                # Kesinlikle retry yapma
-                if failure_class["classification"] == TERMINAL_FAILURE:
-                    logger.error(f"[{cfg.name}] Fatal hata (retry yok): {e}")
-                    if "failed_fact_check" not in error_str:
-                        decision = notify_error(
-                            cfg.name,
-                            error_text,
-                            context={
-                                "run_id": str(getattr(e, "_run_id", "") or ""),
-                                "content_id": str(getattr(e, "_content_id", "") or ""),
-                                "pipeline_stage": str(getattr(e, "_pipeline_stage", "content_generation") or "content_generation"),
-                                "retry_count": attempt,
-                                "retry_limit": max_attempts,
-                                "regeneration_count": int(getattr(e, "_regeneration_count", 0) or 0),
-                                "regeneration_limit": int(getattr(e, "_regeneration_limit", 1) or 1),
-                                "error_type": str(getattr(e, "_error_type", "") or ""),
-                                "guard_reason_codes": list(getattr(e, "_guard_reason_codes", []) or []),
-                                "triggering_validator": str(getattr(e, "_triggering_validator", "") or ""),
-                                "selected_topic": str(getattr(e, "_topic", "") or ""),
-                                "collision_path": str(getattr(e, "_collision_path", "") or ""),
-                                "expected_channel": channel_id,
-                                "detected_channel": str(getattr(e, "_detected_channel", "") or channel_id),
-                                "original_topic_source": str(getattr(e, "_original_topic_source", "") or ""),
-                                "provenance_score": getattr(e, "_provenance_score", None),
-                                "confidence_score": getattr(e, "_confidence_score", None),
-                            },
+                    setattr(e, "_retry_count", attempt)
+                    setattr(e, "_retry_reason", str(failure_class.get("retry_reason") or "unknown"))
+
+                    if failure_class["classification"] == NON_RETRYABLE_QUARANTINE:
+                        setattr(e, "_skip_scheduler_pipeline_retry", True)
+                        setattr(e, "_guard_reason_codes", list(failure_class.get("guard_reason_codes") or []))
+                        setattr(e, "_quarantine_reason", str(failure_class.get("quarantine_reason") or "topic_domain_blocked"))
+                        raise
+
+                    # Kesinlikle retry yapma
+                    if failure_class["classification"] == TERMINAL_FAILURE:
+                        logger.error(f"[{cfg.name}] Fatal hata (retry yok): {e}")
+                        if "failed_fact_check" not in error_str:
+                            decision = notify_error(
+                                cfg.name,
+                                error_text,
+                                context={
+                                    "run_id": str(getattr(e, "_run_id", "") or ""),
+                                    "content_id": str(getattr(e, "_content_id", "") or ""),
+                                    "pipeline_stage": str(getattr(e, "_pipeline_stage", "content_generation") or "content_generation"),
+                                    "retry_count": attempt,
+                                    "retry_limit": max_attempts,
+                                    "regeneration_count": int(getattr(e, "_regeneration_count", 0) or 0),
+                                    "regeneration_limit": int(getattr(e, "_regeneration_limit", 1) or 1),
+                                    "error_type": str(getattr(e, "_error_type", "") or ""),
+                                    "guard_reason_codes": list(getattr(e, "_guard_reason_codes", []) or []),
+                                    "triggering_validator": str(getattr(e, "_triggering_validator", "") or ""),
+                                    "selected_topic": str(getattr(e, "_topic", "") or ""),
+                                    "collision_path": str(getattr(e, "_collision_path", "") or ""),
+                                    "expected_channel": channel_id,
+                                    "detected_channel": str(getattr(e, "_detected_channel", "") or channel_id),
+                                    "original_topic_source": str(getattr(e, "_original_topic_source", "") or ""),
+                                    "provenance_score": getattr(e, "_provenance_score", None),
+                                    "confidence_score": getattr(e, "_confidence_score", None),
+                                },
+                            )
+                            logger.info(
+                                "[%s] Telegram karar feedback: %s incident_id=%s lifecycle=%s",
+                                cfg.name,
+                                decision.get("decision"),
+                                decision.get("incident_id", ""),
+                                decision.get("incident_lifecycle", ""),
+                            )
+                            setattr(e, "_scheduler_notify_sent", True)
+                        raise
+
+                    retry_decision = classify_retry_decision(error_text=error_text, exc=e, stage="scheduler_render")
+                    if getattr(e, "_skip_scheduler_pipeline_retry", False) or not retry_decision.retryable:
+                        raise
+                    if attempt < 3:
+                        can_retry, remaining_budget = consume_retry_budget(reason_code=retry_decision.reason_code)
+                        if not can_retry:
+                            logger.error("[%s] Retry budget exhausted during scheduler retry gate", cfg.name)
+                            raise
+                        wait = 30 * attempt
+                        logger.warning(
+                            f"[{cfg.name}] Deneme {attempt}/3 başarısız, {wait}s bekleniyor... ({e}) budget_remaining={remaining_budget}"
                         )
-                        logger.info(
-                            "[%s] Telegram karar feedback: %s incident_id=%s lifecycle=%s",
-                            cfg.name,
-                            decision.get("decision"),
-                            decision.get("incident_id", ""),
-                            decision.get("incident_lifecycle", ""),
-                        )
-                        setattr(e, "_scheduler_notify_sent", True)
-                    raise
-
-                retry_decision = classify_retry_decision(error_text=error_text, exc=e, stage="scheduler_render")
-                if getattr(e, "_skip_scheduler_pipeline_retry", False) or not retry_decision.retryable:
-                    raise
-                if attempt < 3:
-                    wait = 30 * attempt
-                    logger.warning(f"[{cfg.name}] Deneme {attempt}/3 başarısız, {wait}s bekleniyor... ({e})")
-                    time.sleep(wait)
-                else:
-                    raise
+                        time.sleep(wait)
+                    else:
+                        raise
 
         if result and result.get("video_id"):
             record_provider_success("anthropic", note=f"render_ok:{channel_id}")
@@ -2329,15 +2346,83 @@ def _run_startup_preflight(*, skip_provider_preflight: bool):
     provider_ok, provider_detail = _run_provider_preflight_check(
         skip_preflight=skip_provider_preflight,
     )
+    provider_degraded_mode_active = False
     if not provider_ok:
         detail = str(provider_detail or "")
-        return startup_health, False, detail, [], [f"Anthropic preflight failed: {detail}"]
+        degrade_mode_enabled = _is_enabled(os.getenv("PROVIDER_PREFLIGHT_DEGRADED_MODE_ENABLED", "false"))
+        if degrade_mode_enabled:
+            try:
+                from src.scheduler_utils import classify_provider_preflight_degraded_mode_error
+
+                classification = classify_provider_preflight_degraded_mode_error(detail)
+            except Exception:
+                classification = {
+                    "eligible": False,
+                    "error_type": "unknown",
+                    "reason_code": "provider_preflight_classifier_unavailable",
+                    "summary": detail[:240],
+                }
+
+            if bool(classification.get("eligible", False)):
+                provider_degraded_mode_active = True
+                provider_ok = True
+                provider_detail = (
+                    f"degraded_mode_active:{classification.get('error_type', 'unknown')}:"
+                    f"{classification.get('summary', detail[:240])}"
+                )
+                logger.warning(
+                    "STARTUP_PROVIDER_PREFLIGHT_DEGRADED %s",
+                    json.dumps(
+                        {
+                            "provider": "anthropic",
+                            "mode": "degraded",
+                            "reason_code": classification.get("reason_code"),
+                            "error_type": classification.get("error_type"),
+                            "provider_detail": classification.get("summary"),
+                        },
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                )
+
+        if not provider_ok:
+            return startup_health, False, detail, [], [f"Anthropic preflight failed: {detail}"]
 
     ready = get_ready_channels()
     if not ready:
         return startup_health, True, str(provider_detail or ""), [], ["Hiçbir kanalın token'i yok! Önce setup_channel.py çalıştırın."]
 
     return startup_health, True, str(provider_detail or ""), ready, []
+
+
+def _provider_circuit_only_block(payload: dict[str, Any] | None) -> bool:
+    checks = list((payload or {}).get("checks") or [])
+    fail_reasons = [str(item.get("reason") or "") for item in checks if str(item.get("status") or "") == "fail"]
+    if fail_reasons:
+        return all(reason == "provider_circuit_open" for reason in fail_reasons)
+    return str((payload or {}).get("blocking_reason") or "") == "provider_circuit_open"
+
+
+def _apply_provider_degraded_startup_gate_override(payload: dict[str, Any] | None) -> dict[str, Any]:
+    gate_payload = dict(payload or {})
+    checks = []
+    for item in list(gate_payload.get("checks") or []):
+        check = dict(item)
+        if str(check.get("status") or "") == "fail" and str(check.get("reason") or "") == "provider_circuit_open":
+            check["status"] = "warn"
+            check["severity"] = "warning"
+            check["reason"] = "provider_circuit_open_degraded_mode"
+            check["message"] = (
+                "Provider circuit is open after eligible startup preflight failure; "
+                "scheduler startup continues in degraded mode while provider-dependent generation remains blocked."
+            )
+        checks.append(check)
+    gate_payload["checks"] = checks
+    gate_payload["ok"] = True
+    gate_payload["status"] = "warning"
+    gate_payload["blocking_reason"] = ""
+    gate_payload["degraded"] = True
+    return gate_payload
 
 
 def _evaluate_scheduler_startup_production_safety_gate(*, startup_health, ready_channels: list[str]) -> dict[str, Any]:
@@ -3735,11 +3820,27 @@ def main():
     startup_health, provider_ok, provider_detail, ready, errors = _run_startup_preflight(
         skip_provider_preflight=skip_provider_preflight,
     )
+    provider_degraded_mode_active = str(provider_detail or "").startswith("degraded_mode_active:")
     gate_payload = {"ok": False, "blocking_reason": "not_run_due_to_health_check_fail", "checks": []}
     if startup_health.ok and provider_ok and ready:
         gate_payload = _evaluate_scheduler_startup_production_safety_gate(
             startup_health=startup_health,
             ready_channels=ready,
+        )
+    if provider_degraded_mode_active and not bool(gate_payload.get("ok", True)) and _provider_circuit_only_block(gate_payload):
+        gate_payload = _apply_provider_degraded_startup_gate_override(gate_payload)
+        logger.warning(
+            "STARTUP_PROVIDER_PREFLIGHT_DEGRADED_GATE_OVERRIDE %s",
+            json.dumps(
+                {
+                    "provider": "anthropic",
+                    "provider_preflight_detail": provider_detail,
+                    "gate_status": gate_payload.get("status"),
+                    "degraded": True,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
         )
     if not startup_health.ok or not provider_ok or not ready or not bool(gate_payload.get("ok", True)):
         _record_safety_gate_result(

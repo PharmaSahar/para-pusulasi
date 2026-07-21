@@ -47,13 +47,20 @@ from .video_creator_pro import VideoCreator
 from .upload_precheck import evaluate_upload_precheck, persist_ownership_manifest
 from .visual_safety_policy import build_visual_manifest, evaluate_visual_query
 from .youtube_uploader import YouTubeUploader
+from .retry_policy import consume_retry_budget, get_retry_budget_state, retry_budget_context
 from .production_quality_platform import (
     build_idempotency_key,
+    claim_upload_before_side_effect,
+    commit_upload_claim,
     evaluate_automatic_qa,
     evaluate_thumbnail_intelligence,
+    fail_upload_claim,
     get_registered_upload,
-    record_production_event,
+    mark_upload_pending_commit,
+    mark_upload_in_progress,
     register_upload,
+    record_production_event,
+    rollback_upload_claim,
     run_stage_with_recovery,
     score_script_quality,
     update_production_dashboard,
@@ -499,6 +506,14 @@ def run_full_pipeline(
     result["final_status"] = "in_progress"
     result["dry_run"] = bool(dry_run)
     result["trigger_source"] = str(trigger_source or "")
+
+    def _consume_pipeline_retry_budget(reason_code: str) -> tuple[bool, int | None]:
+        current_budget = get_retry_budget_state()
+        if current_budget is not None:
+            return consume_retry_budget(reason_code=reason_code)
+        with retry_budget_context(total_retries=1, scope=f"pipeline_ephemeral:{reason_code}"):
+            return consume_retry_budget(reason_code=reason_code)
+
     _invoke_fact_bundle_pipeline_adapter(cfg, result)
     shadow_mode_enabled = _content_quality_shadow_mode_enabled()
     script_lineage_enabled = _script_lineage_evidence_runtime_enabled()
@@ -1504,6 +1519,9 @@ def run_full_pipeline(
                 raise RuntimeError(
                     f"script_quality_blocked: score={script_quality.get('overall_score')} threshold={script_quality.get('threshold')}"
                 )
+            can_retry, _remaining_budget = _consume_pipeline_retry_budget(reason_code="pipeline_script_quality_regeneration")
+            if not can_retry:
+                raise RuntimeError("retry_budget_exhausted:pipeline_script_quality_regeneration")
             _script_quality_regeneration_count += 1
             result["pipeline_retry_count"] = int(result.get("pipeline_retry_count", 0)) + 1
             retry_guidance = (
@@ -2316,6 +2334,9 @@ def run_full_pipeline(
         reason = str(error)
         if _is_unverifiable_claim_failure(reason):
             logger.warning("Fact check unverifiable claim detected; regenerating content once with stricter guidance")
+            can_retry, _remaining_budget = _consume_pipeline_retry_budget(reason_code="pipeline_fact_check_regeneration")
+            if not can_retry:
+                raise RuntimeError("retry_budget_exhausted:pipeline_fact_check_regeneration")
             result["fact_check_regeneration_attempted"] = True
             retry_topic = _build_retry_topic(topic, content.title, reason)
             retry_guidance = _build_retry_guidance(reason)
@@ -2496,6 +2517,9 @@ def run_full_pipeline(
                     break
                 if _qa_regeneration_count >= 1:
                     raise RuntimeError(f"automatic_qa_blocked: {', '.join(automatic_qa.get('blocked_checks') or [])}")
+                can_retry, _remaining_budget = _consume_pipeline_retry_budget(reason_code="pipeline_automatic_qa_regeneration")
+                if not can_retry:
+                    raise RuntimeError("retry_budget_exhausted:pipeline_automatic_qa_regeneration")
                 _qa_regeneration_count += 1
                 result["pipeline_retry_count"] = int(result.get("pipeline_retry_count", 0)) + 1
                 retry_guidance = (
@@ -2842,6 +2866,67 @@ def run_full_pipeline(
                             "dry_run": True,
                         }
                     else:
+                        claim = claim_upload_before_side_effect(
+                            idempotency_key=idempotency_key,
+                            claim_payload={
+                                "channel": result.get("channel"),
+                                "content_id": result.get("content_id"),
+                                "run_id": result.get("run_id"),
+                                "title": getattr(content, "title", ""),
+                            },
+                        )
+                        claim_status = str(claim.get("status") or "")
+                        claim_token = str(claim.get("claim_token") or "")
+                        if claim_status == "already_committed":
+                            committed_entry = dict(claim.get("entry") or {})
+                            committed_video = str(committed_entry.get("video_id") or "").strip()
+                            if not committed_video:
+                                raise RuntimeError("upload_registry_committed_missing_video_id")
+                            video_id = committed_video
+                            result["upload_recovery"] = {
+                                "stage": "upload",
+                                "attempts": 0,
+                                "max_attempts": 0,
+                                "recovered": False,
+                                "ok": True,
+                                "idempotent_reuse": True,
+                            }
+                        elif claim_status == "already_claimed":
+                            raise RuntimeError("upload_claim_already_in_progress")
+                        elif claim_status == "already_failed":
+                            raise RuntimeError("upload_claim_failed_needs_operator")
+                        elif claim_status == "already_rolled_back_needs_operator":
+                            raise RuntimeError("upload_claim_rolled_back_after_upload_needs_operator")
+                        elif claim_status == "already_uploaded_pending_commit":
+                            pending_entry = dict(claim.get("entry") or {})
+                            pending_video = str(pending_entry.get("video_id") or "").strip()
+                            pending_token = str(pending_entry.get("claim_token") or "").strip()
+                            if not pending_video:
+                                raise RuntimeError("upload_registry_pending_commit_missing_video_id")
+                            if not pending_token:
+                                raise RuntimeError("upload_registry_pending_commit_missing_claim_token")
+                            commit_upload_claim(
+                                idempotency_key=idempotency_key,
+                                claim_token=pending_token,
+                                payload={
+                                    "video_id": pending_video,
+                                    "channel": result.get("channel"),
+                                    "title": getattr(content, "title", ""),
+                                    "youtube_url": f"https://youtube.com/watch?v={pending_video}",
+                                },
+                            )
+                            video_id = pending_video
+                            result["upload_recovery"] = {
+                                "stage": "upload",
+                                "attempts": 0,
+                                "max_attempts": 0,
+                                "recovered": True,
+                                "ok": True,
+                                "pending_commit_reconciled": True,
+                            }
+                        elif claim_status != "claimed" or not claim_token:
+                            raise RuntimeError("upload_claim_failed")
+
                         def _upload_once():
                             return uploader.upload_video(
                                 video_path=video_path,
@@ -2854,25 +2939,58 @@ def run_full_pipeline(
                         def _on_upload_retry(attempt: int, _exc: Exception) -> None:
                             result["upload_retry_count"] = int(result.get("upload_retry_count", 0)) + 1
 
-                        video_id, recovery = run_stage_with_recovery(
-                            stage="upload",
-                            fn=_upload_once,
-                            max_attempts=2,
-                            base_backoff_seconds=4.0,
-                            on_retry=_on_upload_retry,
-                        )
-                        if not str(video_id or "").strip():
-                            raise RuntimeError("upload_response_missing_id")
-                        result["upload_recovery"] = recovery
-                        register_upload(
-                            idempotency_key,
-                            {
-                                "video_id": video_id,
-                                "channel": result.get("channel"),
-                                "title": getattr(content, "title", ""),
-                                "youtube_url": f"https://youtube.com/watch?v={video_id}",
-                            },
-                        )
+                        if claim_status == "claimed":
+                            try:
+                                mark_upload_in_progress(
+                                    idempotency_key=idempotency_key,
+                                    claim_token=claim_token,
+                                    payload={
+                                        "channel": result.get("channel"),
+                                        "title": getattr(content, "title", ""),
+                                    },
+                                )
+                                video_id, recovery = run_stage_with_recovery(
+                                    stage="upload",
+                                    fn=_upload_once,
+                                    max_attempts=2,
+                                    base_backoff_seconds=4.0,
+                                    on_retry=_on_upload_retry,
+                                )
+                                if not str(video_id or "").strip():
+                                    raise RuntimeError("upload_response_missing_id")
+                                mark_upload_pending_commit(
+                                    idempotency_key=idempotency_key,
+                                    claim_token=claim_token,
+                                    payload={
+                                        "video_id": video_id,
+                                        "channel": result.get("channel"),
+                                        "title": getattr(content, "title", ""),
+                                        "youtube_url": f"https://youtube.com/watch?v={video_id}",
+                                    },
+                                )
+                                commit_upload_claim(
+                                    idempotency_key=idempotency_key,
+                                    claim_token=claim_token,
+                                    payload={
+                                        "video_id": video_id,
+                                        "channel": result.get("channel"),
+                                        "title": getattr(content, "title", ""),
+                                        "youtube_url": f"https://youtube.com/watch?v={video_id}",
+                                    },
+                                )
+                                result["upload_recovery"] = recovery
+                            except Exception as upload_exc:
+                                fail_upload_claim(
+                                    idempotency_key=idempotency_key,
+                                    claim_token=claim_token,
+                                    error_text=str(upload_exc),
+                                )
+                                rollback_upload_claim(
+                                    idempotency_key=idempotency_key,
+                                    claim_token=claim_token,
+                                    error_text=str(upload_exc),
+                                )
+                                raise
                 result["video_id"] = None if dry_run else video_id
                 result["youtube_url"] = "" if dry_run else f"https://youtube.com/watch?v={video_id}"
                 if script_lineage_enabled and script_lineage_recorder is not None:

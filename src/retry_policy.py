@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 
 
@@ -13,12 +15,75 @@ NON_RETRYABLE_CONTENT_QUALITY = "non_retryable_content_quality_failure"
 EXHAUSTED_RETRY = "exhausted_retry"
 
 
+_RETRY_BUDGET_CTX: ContextVar[dict | None] = ContextVar("retry_budget_ctx", default=None)
+
+
 @dataclass(frozen=True, slots=True)
 class RetryDecision:
     classification: str
     retryable: bool
     reason_code: str
     message: str
+
+
+@contextmanager
+def retry_budget_context(*, total_retries: int, scope: str = "default"):
+    payload = {
+        "scope": str(scope or "default"),
+        "total_retries": max(0, int(total_retries)),
+        "remaining_retries": max(0, int(total_retries)),
+    }
+    token = _RETRY_BUDGET_CTX.set(payload)
+    try:
+        yield payload
+    finally:
+        _RETRY_BUDGET_CTX.reset(token)
+
+
+def get_retry_budget_state() -> dict | None:
+    current = _RETRY_BUDGET_CTX.get()
+    if not isinstance(current, dict):
+        return None
+    return {
+        "scope": str(current.get("scope") or "default"),
+        "total_retries": int(current.get("total_retries", 0) or 0),
+        "remaining_retries": int(current.get("remaining_retries", 0) or 0),
+    }
+
+
+def ensure_retry_budget(*, total_retries: int, scope: str = "default") -> dict:
+    current = _RETRY_BUDGET_CTX.get()
+    if isinstance(current, dict):
+        return {
+            "scope": str(current.get("scope") or "default"),
+            "total_retries": int(current.get("total_retries", 0) or 0),
+            "remaining_retries": int(current.get("remaining_retries", 0) or 0),
+        }
+
+    payload = {
+        "scope": str(scope or "default"),
+        "total_retries": max(0, int(total_retries)),
+        "remaining_retries": max(0, int(total_retries)),
+    }
+    _RETRY_BUDGET_CTX.set(payload)
+    return {
+        "scope": payload["scope"],
+        "total_retries": payload["total_retries"],
+        "remaining_retries": payload["remaining_retries"],
+    }
+
+
+def consume_retry_budget(*, reason_code: str = "") -> tuple[bool, int | None]:
+    current = _RETRY_BUDGET_CTX.get()
+    if not isinstance(current, dict):
+        return True, None
+
+    remaining = int(current.get("remaining_retries", 0) or 0)
+    if remaining <= 0:
+        return False, 0
+
+    current["remaining_retries"] = remaining - 1
+    return True, int(current["remaining_retries"])
 
 
 def classify_retry_decision(*, error_text: str, exc: Exception | None = None, stage: str = "unknown") -> RetryDecision:

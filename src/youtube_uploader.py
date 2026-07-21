@@ -27,7 +27,7 @@ from .channel_capabilities import (
 from .production_safety_gate import ensure_production_safety_gate
 from .youtube_auth import get_authenticated_service
 from .quality_scoring import build_quality_scores
-from .retry_policy import classify_retry_decision
+from .retry_policy import classify_retry_decision, consume_retry_budget, get_retry_budget_state
 from .chapter_validation_trail import (
     append_chapter_validation_event,
     write_latest_chapter_validator_artifact,
@@ -589,6 +589,16 @@ class YouTubeUploader:
         response = None
         retry = 0
 
+        def _reserve_retry(reason_code: str) -> tuple[bool, int | None]:
+            nonlocal retry
+            if retry >= MAX_RETRIES:
+                return False, get_retry_budget_state().get("remaining_retries") if get_retry_budget_state() else None
+            allowed, remaining = consume_retry_budget(reason_code=reason_code)
+            if not allowed:
+                return False, remaining
+            retry += 1
+            return True, remaining
+
         while response is None:
             try:
                 status, response = request.next_chunk()
@@ -599,16 +609,17 @@ class YouTubeUploader:
                 reason, retryable = self._classify_http_error(e)
                 status = getattr(getattr(e, "resp", None), "status", "unknown")
                 detail = self._http_error_detail(e)
-                if retryable and retry < MAX_RETRIES:
-                    retry += 1
+                can_retry, remaining_budget = _reserve_retry(f"youtube_http_{reason}") if retryable else (False, None)
+                if can_retry:
                     wait = 2 ** retry
                     logger.warning(
-                        "Transient upload HTTP hatası (%s, status=%s), %ss sonra yeniden denenecek (%s/%s). detail=%s",
+                        "Transient upload HTTP hatası (%s, status=%s), %ss sonra yeniden denenecek (%s/%s). budget_remaining=%s detail=%s",
                         reason,
                         status,
                         wait,
                         retry,
                         MAX_RETRIES,
+                        remaining_budget,
                         detail,
                     )
                     time.sleep(wait)
@@ -621,39 +632,43 @@ class YouTubeUploader:
                     )
                     raise
             except ServerNotFoundError as e:
-                if retry < MAX_RETRIES:
-                    retry += 1
+                can_retry, remaining_budget = _reserve_retry("youtube_dns_error")
+                if can_retry:
                     wait = 2 ** retry
                     self._log_dns_resolution(YOUTUBE_API_HOST)
-                    logger.warning(f"DNS/ağ hatası, {wait}s sonra yeniden denenecek ({retry}/{MAX_RETRIES}): {e}")
+                    logger.warning(
+                        f"DNS/ağ hatası, {wait}s sonra yeniden denenecek ({retry}/{MAX_RETRIES}), budget_remaining={remaining_budget}: {e}"
+                    )
                     time.sleep(wait)
                 else:
                     raise
             except RETRY_EXCEPTIONS as e:
-                if retry < MAX_RETRIES:
-                    retry += 1
+                can_retry, remaining_budget = _reserve_retry(type(e).__name__.lower())
+                if can_retry:
                     wait = 2 ** retry
                     logger.warning(
-                        "Transient upload hatası (%s), %ss sonra yeniden denenecek (%s/%s)",
+                        "Transient upload hatası (%s), %ss sonra yeniden denenecek (%s/%s), budget_remaining=%s",
                         type(e).__name__,
                         wait,
                         retry,
                         MAX_RETRIES,
+                        remaining_budget,
                     )
                     time.sleep(wait)
                 else:
                     raise
             except Exception as e:
                 decision = classify_retry_decision(error_text=str(e), exc=e, stage="youtube_upload")
-                if retry < MAX_RETRIES and decision.retryable:
-                    retry += 1
+                can_retry, remaining_budget = _reserve_retry(decision.reason_code) if decision.retryable else (False, None)
+                if can_retry:
                     wait = 2 ** retry
                     logger.warning(
-                        "Retryable upload hatası (%s), %ss sonra yeniden denenecek (%s/%s)",
+                        "Retryable upload hatası (%s), %ss sonra yeniden denenecek (%s/%s), budget_remaining=%s",
                         decision.reason_code,
                         wait,
                         retry,
                         MAX_RETRIES,
+                        remaining_budget,
                     )
                     time.sleep(wait)
                 else:

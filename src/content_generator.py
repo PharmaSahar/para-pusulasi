@@ -22,6 +22,7 @@ from .channel_manager import resolve_allow_market_language
 from .config import config
 from .prompt_registry import build_prompt_metadata
 from .quality_scoring import build_quality_scores
+from .retry_policy import consume_retry_budget, get_retry_budget_state, retry_budget_context
 
 logger = logging.getLogger(__name__)
 _ANTHROPIC_GATE_LOCK = threading.Lock()
@@ -936,43 +937,56 @@ class ContentGenerator:
         except ValueError:
             max_attempts = 3
 
+        existing_budget = get_retry_budget_state()
+
+        @contextmanager
+        def _budget_context_if_needed():
+            if existing_budget is not None:
+                yield
+                return
+            with retry_budget_context(total_retries=max(0, max_attempts - 1), scope="anthropic_create"):
+                yield
+
         last_error: Exception | None = None
-        for attempt in range(1, max_attempts + 1):
-            circuit = get_provider_circuit_status("anthropic")
-            if circuit.get("is_open"):
-                retry_after = max(1, int(circuit.get("retry_after_seconds", 0) or 0))
-                circuit_error = RuntimeError(f"Anthropic circuit open; retry after {retry_after}s")
-                raise _mark_provider_exception(
-                    circuit_error,
-                    error_text=str(circuit_error),
-                    recorded=False,
-                    skip_scheduler_retry=True,
-                )
+        with _budget_context_if_needed():
+            for attempt in range(1, max_attempts + 1):
+                circuit = get_provider_circuit_status("anthropic")
+                if circuit.get("is_open"):
+                    retry_after = max(1, int(circuit.get("retry_after_seconds", 0) or 0))
+                    circuit_error = RuntimeError(f"Anthropic circuit open; retry after {retry_after}s")
+                    raise _mark_provider_exception(
+                        circuit_error,
+                        error_text=str(circuit_error),
+                        recorded=False,
+                        skip_scheduler_retry=True,
+                    )
 
-            try:
-                with _acquire_anthropic_rate_gate(min_interval):
-                    response = self.client.messages.create(**kwargs)
-                record_provider_success("anthropic", note=f"messages_create_ok_attempt_{attempt}")
-                return response
-            except Exception as exc:
-                error_text = _anthropic_error_text(exc)
-                retryable = _is_retryable_anthropic_exception(exc, error_text=error_text)
-                last_error = exc
-                if retryable and attempt < max_attempts:
-                    continue
+                try:
+                    with _acquire_anthropic_rate_gate(min_interval):
+                        response = self.client.messages.create(**kwargs)
+                    record_provider_success("anthropic", note=f"messages_create_ok_attempt_{attempt}")
+                    return response
+                except Exception as exc:
+                    error_text = _anthropic_error_text(exc)
+                    retryable = _is_retryable_anthropic_exception(exc, error_text=error_text)
+                    last_error = exc
+                    if retryable and attempt < max_attempts:
+                        can_retry, _remaining_budget = consume_retry_budget(reason_code="anthropic_request_retry")
+                        if can_retry:
+                            continue
 
-                recorded = False
-                skip_scheduler_retry = retryable
-                if retryable or not getattr(exc, "_provider_failure_recorded", False):
-                    record_provider_failure("anthropic", error_text)
-                    recorded = True
+                    recorded = False
+                    skip_scheduler_retry = retryable
+                    if retryable or not getattr(exc, "_provider_failure_recorded", False):
+                        record_provider_failure("anthropic", error_text)
+                        recorded = True
 
-                raise _mark_provider_exception(
-                    exc,
-                    error_text=error_text,
-                    recorded=recorded,
-                    skip_scheduler_retry=skip_scheduler_retry,
-                )
+                    raise _mark_provider_exception(
+                        exc,
+                        error_text=error_text,
+                        recorded=recorded,
+                        skip_scheduler_retry=skip_scheduler_retry,
+                    )
 
         if last_error is not None:
             raise last_error

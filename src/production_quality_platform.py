@@ -14,6 +14,8 @@ import os
 import time
 import threading
 import traceback
+import fcntl
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -24,7 +26,14 @@ from .runtime_storage import (
     env_or_runtime_path,
     validate_runtime_write_path,
 )
-from .retry_policy import EXHAUSTED_RETRY, classify_retry_decision, compute_backoff_delay
+from .retry_policy import (
+    EXHAUSTED_RETRY,
+    classify_retry_decision,
+    compute_backoff_delay,
+    consume_retry_budget,
+    get_retry_budget_state,
+    retry_budget_context,
+)
 from .visual_diversity import topic_similarity
 
 
@@ -77,6 +86,7 @@ THUMBNAIL_INTELLIGENCE_LATEST_PATH = env_or_runtime_path(
 )
 PRODUCTION_EVIDENCE_DIR = env_or_runtime_path("PRODUCTION_EVIDENCE_DIR", "evidence")
 UPLOAD_REGISTRY_PATH = env_or_runtime_path("UPLOAD_REGISTRY_PATH", "state/production_upload_registry.json")
+UPLOAD_REGISTRY_LOCK_PATH = env_or_runtime_path("UPLOAD_REGISTRY_LOCK_PATH", "state/production_upload_registry.lock")
 DEAD_LETTER_QUEUE_PATH = env_or_runtime_path("DEAD_LETTER_QUEUE_PATH", "telemetry/production_dead_letter_queue.jsonl")
 CANARY_STATE_PATH = env_or_runtime_path("CANARY_STATE_PATH", "state/production_canary_state.json")
 
@@ -141,6 +151,29 @@ def _safe_write_json(path: Path, payload: dict[str, Any]) -> None:
     _trace_dashboard_write(target=tmp, write_mode="overwrite", atomic=False, bytes_written=len(encoded.encode("utf-8")))
     tmp.replace(path)
     _trace_dashboard_write(target=path, write_mode="replace", atomic=True, bytes_written=len(encoded.encode("utf-8")))
+
+
+def _fsync_directory(path: Path) -> None:
+    try:
+        fd = os.open(str(path), os.O_RDONLY)
+    except Exception:
+        return
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _atomic_write_json_with_fsync(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    encoded = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+    with tmp.open("w", encoding="utf-8") as handle:
+        handle.write(encoded)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp, path)
+    _fsync_directory(path.parent)
 
 
 def _append_jsonl(path: Path, payload: dict[str, Any]) -> None:
@@ -568,23 +601,438 @@ def build_idempotency_key(*, channel: str, generation_id: str, publish_at: str |
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def get_registered_upload(idempotency_key: str) -> dict[str, Any] | None:
+def _upload_registry_empty() -> dict[str, Any]:
+    return {
+        "entries": {},
+        "updated_at": _now_iso(),
+    }
+
+
+def _read_upload_registry_unlocked() -> dict[str, Any]:
     registry = _safe_read_json(UPLOAD_REGISTRY_PATH)
-    entries = registry.get("entries") if isinstance(registry.get("entries"), dict) else {}
-    found = entries.get(idempotency_key)
-    return found if isinstance(found, dict) else None
+    if not isinstance(registry, dict):
+        registry = _upload_registry_empty()
+    entries = registry.get("entries")
+    if not isinstance(entries, dict):
+        registry["entries"] = {}
+    return registry
+
+
+def _write_upload_registry_unlocked(registry: dict[str, Any]) -> None:
+    payload = dict(registry or {})
+    entries = payload.get("entries")
+    payload["entries"] = dict(entries or {})
+    payload["updated_at"] = _now_iso()
+    if not validate_runtime_write_path(UPLOAD_REGISTRY_PATH, purpose="upload_registry_write", logger=logger):
+        raise RuntimeError("upload_registry_path_invalid")
+    _atomic_write_json_with_fsync(UPLOAD_REGISTRY_PATH, payload)
+
+
+UPLOAD_STATE_CLAIMED = "claimed"
+UPLOAD_STATE_UPLOADING = "uploading"
+UPLOAD_STATE_UPLOADED_PENDING_COMMIT = "uploaded_pending_commit"
+UPLOAD_STATE_COMMITTED = "committed"
+UPLOAD_STATE_ROLLED_BACK = "rolled_back"
+UPLOAD_STATE_FAILED = "failed"
+
+_UPLOAD_ALLOWED_TRANSITIONS: dict[str | None, set[str]] = {
+    None: {UPLOAD_STATE_CLAIMED},
+    UPLOAD_STATE_CLAIMED: {
+        UPLOAD_STATE_UPLOADING,
+        UPLOAD_STATE_COMMITTED,
+        UPLOAD_STATE_FAILED,
+        UPLOAD_STATE_ROLLED_BACK,
+    },
+    UPLOAD_STATE_UPLOADING: {
+        UPLOAD_STATE_UPLOADED_PENDING_COMMIT,
+        UPLOAD_STATE_COMMITTED,
+        UPLOAD_STATE_FAILED,
+        UPLOAD_STATE_ROLLED_BACK,
+    },
+    UPLOAD_STATE_UPLOADED_PENDING_COMMIT: {
+        UPLOAD_STATE_COMMITTED,
+        UPLOAD_STATE_FAILED,
+        UPLOAD_STATE_ROLLED_BACK,
+    },
+    UPLOAD_STATE_FAILED: {UPLOAD_STATE_ROLLED_BACK},
+    UPLOAD_STATE_ROLLED_BACK: {UPLOAD_STATE_CLAIMED},
+    UPLOAD_STATE_COMMITTED: set(),
+}
+
+
+def _normalize_upload_state(value: Any) -> str | None:
+    if value is None:
+        return None
+    state = str(value).strip().lower()
+    if not state:
+        return None
+    if state not in _UPLOAD_ALLOWED_TRANSITIONS:
+        raise RuntimeError(f"upload_state_invalid:{state}")
+    return state
+
+
+def _assert_upload_transition(*, current_state: str | None, next_state: str, op: str) -> None:
+    current = _normalize_upload_state(current_state)
+    target = _normalize_upload_state(next_state)
+    if target is None:
+        raise RuntimeError(f"upload_state_invalid_target:{op}")
+    if current == target:
+        return
+    allowed = _UPLOAD_ALLOWED_TRANSITIONS.get(current, set())
+    if target not in allowed:
+        raise RuntimeError(f"upload_state_transition_invalid:{current or 'none'}->{target}:{op}")
+
+
+@contextmanager
+def _upload_registry_lock():
+    if not validate_runtime_write_path(UPLOAD_REGISTRY_LOCK_PATH, purpose="upload_registry_lock", logger=logger):
+        raise RuntimeError("upload_registry_lock_path_invalid")
+    UPLOAD_REGISTRY_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with UPLOAD_REGISTRY_LOCK_PATH.open("a+", encoding="utf-8") as lock_handle:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+
+
+def claim_upload_before_side_effect(
+    *,
+    idempotency_key: str,
+    claim_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    key = str(idempotency_key or "").strip()
+    if not key:
+        raise ValueError("idempotency_key_missing")
+
+    token = hashlib.sha256(
+        f"{key}|{os.getpid()}|{threading.get_ident()}|{time.time_ns()}".encode("utf-8")
+    ).hexdigest()[:24]
+    now = _now_iso()
+
+    with _upload_registry_lock():
+        registry = _read_upload_registry_unlocked()
+        entries = registry.setdefault("entries", {})
+        existing = entries.get(key)
+        if isinstance(existing, dict):
+            status = str(existing.get("status") or "").strip().lower()
+            _normalize_upload_state(status)
+            if status == UPLOAD_STATE_COMMITTED and str(existing.get("video_id") or "").strip():
+                return {
+                    "status": "already_committed",
+                    "idempotency_key": key,
+                    "entry": dict(existing),
+                }
+            if status == UPLOAD_STATE_UPLOADED_PENDING_COMMIT and str(existing.get("video_id") or "").strip():
+                return {
+                    "status": "already_uploaded_pending_commit",
+                    "idempotency_key": key,
+                    "entry": dict(existing),
+                }
+            if status in {UPLOAD_STATE_CLAIMED, UPLOAD_STATE_UPLOADING} and str(existing.get("claim_token") or "").strip():
+                return {
+                    "status": "already_claimed",
+                    "idempotency_key": key,
+                    "entry": dict(existing),
+                }
+            if status == UPLOAD_STATE_FAILED:
+                return {
+                    "status": "already_failed",
+                    "idempotency_key": key,
+                    "entry": dict(existing),
+                }
+            if status == UPLOAD_STATE_ROLLED_BACK and str(existing.get("rollback_from_state") or "").strip().lower() == UPLOAD_STATE_UPLOADED_PENDING_COMMIT:
+                return {
+                    "status": "already_rolled_back_needs_operator",
+                    "idempotency_key": key,
+                    "entry": dict(existing),
+                }
+
+        _assert_upload_transition(current_state=status if isinstance(existing, dict) else None, next_state=UPLOAD_STATE_CLAIMED, op="claim")
+        claim_entry = {
+            "status": UPLOAD_STATE_CLAIMED,
+            "claim_token": token,
+            "claimed_at": now,
+            "claim_owner": {
+                "pid": os.getpid(),
+                "thread_id": threading.get_ident(),
+            },
+            "claim_payload": dict(claim_payload or {}),
+        }
+        entries[key] = claim_entry
+        _write_upload_registry_unlocked(registry)
+
+    return {
+        "status": "claimed",
+        "idempotency_key": key,
+        "claim_token": token,
+        "entry": claim_entry,
+    }
+
+
+def commit_upload_claim(
+    *,
+    idempotency_key: str,
+    claim_token: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    key = str(idempotency_key or "").strip()
+    token = str(claim_token or "").strip()
+    if not key:
+        raise ValueError("idempotency_key_missing")
+    if not token:
+        raise ValueError("claim_token_missing")
+
+    with _upload_registry_lock():
+        registry = _read_upload_registry_unlocked()
+        entries = registry.setdefault("entries", {})
+        existing = entries.get(key)
+        if not isinstance(existing, dict):
+            raise RuntimeError("upload_claim_missing")
+
+        status = _normalize_upload_state(existing.get("status"))
+        existing_video = str(existing.get("video_id") or "").strip()
+        if status == UPLOAD_STATE_COMMITTED and existing_video:
+            return dict(existing)
+
+        if str(existing.get("claim_token") or "").strip() != token:
+            raise RuntimeError("upload_claim_mismatch")
+        _assert_upload_transition(current_state=status, next_state=UPLOAD_STATE_COMMITTED, op="commit")
+
+        resolved_video_id = str((payload or {}).get("video_id") or existing.get("video_id") or "").strip()
+        if not resolved_video_id:
+            raise RuntimeError("upload_commit_missing_video_id")
+
+        committed = {
+            **dict(existing),
+            **dict(payload or {}),
+            "video_id": resolved_video_id,
+            "status": UPLOAD_STATE_COMMITTED,
+            "committed_at": _now_iso(),
+            "registered_at": _now_iso(),
+            "claim_token": token,
+        }
+        entries[key] = committed
+        _write_upload_registry_unlocked(registry)
+        return committed
+
+
+def mark_upload_in_progress(
+    *,
+    idempotency_key: str,
+    claim_token: str,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    key = str(idempotency_key or "").strip()
+    token = str(claim_token or "").strip()
+    if not key:
+        raise ValueError("idempotency_key_missing")
+    if not token:
+        raise ValueError("claim_token_missing")
+
+    with _upload_registry_lock():
+        registry = _read_upload_registry_unlocked()
+        entries = registry.setdefault("entries", {})
+        existing = entries.get(key)
+        if not isinstance(existing, dict):
+            raise RuntimeError("upload_claim_missing")
+
+        status = _normalize_upload_state(existing.get("status"))
+        if status == UPLOAD_STATE_COMMITTED and str(existing.get("video_id") or "").strip():
+            return dict(existing)
+
+        if str(existing.get("claim_token") or "").strip() != token:
+            raise RuntimeError("upload_claim_mismatch")
+        _assert_upload_transition(current_state=status, next_state=UPLOAD_STATE_UPLOADING, op="mark_upload_in_progress")
+
+        uploading = {
+            **dict(existing),
+            **dict(payload or {}),
+            "status": UPLOAD_STATE_UPLOADING,
+            "upload_started_at": _now_iso(),
+            "claim_token": token,
+        }
+        entries[key] = uploading
+        _write_upload_registry_unlocked(registry)
+        return uploading
+
+
+def mark_upload_pending_commit(
+    *,
+    idempotency_key: str,
+    claim_token: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    key = str(idempotency_key or "").strip()
+    token = str(claim_token or "").strip()
+    if not key:
+        raise ValueError("idempotency_key_missing")
+    if not token:
+        raise ValueError("claim_token_missing")
+
+    with _upload_registry_lock():
+        registry = _read_upload_registry_unlocked()
+        entries = registry.setdefault("entries", {})
+        existing = entries.get(key)
+        if not isinstance(existing, dict):
+            raise RuntimeError("upload_claim_missing")
+
+        status = _normalize_upload_state(existing.get("status"))
+        existing_video = str(existing.get("video_id") or "").strip()
+        if status == UPLOAD_STATE_COMMITTED and existing_video:
+            return dict(existing)
+
+        if str(existing.get("claim_token") or "").strip() != token:
+            raise RuntimeError("upload_claim_mismatch")
+        _assert_upload_transition(current_state=status, next_state=UPLOAD_STATE_UPLOADED_PENDING_COMMIT, op="mark_upload_pending_commit")
+
+        resolved_video_id = str((payload or {}).get("video_id") or existing_video).strip()
+        if not resolved_video_id:
+            raise RuntimeError("upload_pending_commit_missing_video_id")
+
+        pending_commit = {
+            **dict(existing),
+            **dict(payload or {}),
+            "video_id": resolved_video_id,
+            "status": UPLOAD_STATE_UPLOADED_PENDING_COMMIT,
+            "uploaded_at": _now_iso(),
+            "claim_token": token,
+        }
+        entries[key] = pending_commit
+        _write_upload_registry_unlocked(registry)
+        return pending_commit
+
+
+def fail_upload_claim(
+    *,
+    idempotency_key: str,
+    claim_token: str,
+    error_text: str,
+) -> dict[str, Any]:
+    key = str(idempotency_key or "").strip()
+    token = str(claim_token or "").strip()
+    if not key:
+        raise ValueError("idempotency_key_missing")
+    if not token:
+        raise ValueError("claim_token_missing")
+
+    with _upload_registry_lock():
+        registry = _read_upload_registry_unlocked()
+        entries = registry.setdefault("entries", {})
+        existing = entries.get(key)
+        if not isinstance(existing, dict):
+            return {"status": "missing", "idempotency_key": key}
+
+        status = _normalize_upload_state(existing.get("status"))
+        if status == UPLOAD_STATE_COMMITTED and str(existing.get("video_id") or "").strip():
+            return {"status": "already_committed", "idempotency_key": key, "entry": dict(existing)}
+
+        if str(existing.get("claim_token") or "").strip() != token:
+            return {"status": "not_owner", "idempotency_key": key, "entry": dict(existing)}
+
+        _assert_upload_transition(current_state=status, next_state=UPLOAD_STATE_FAILED, op="fail_upload_claim")
+
+        failed = {
+            **dict(existing),
+            "status": UPLOAD_STATE_FAILED,
+            "failed_at": _now_iso(),
+            "last_error": str(error_text or "")[:400],
+            "failed_from_state": status,
+            "claim_token": token,
+        }
+        entries[key] = failed
+        _write_upload_registry_unlocked(registry)
+        return {"status": UPLOAD_STATE_FAILED, "idempotency_key": key, "entry": failed}
+
+
+def rollback_upload_claim(
+    *,
+    idempotency_key: str,
+    claim_token: str,
+    error_text: str,
+) -> dict[str, Any]:
+    key = str(idempotency_key or "").strip()
+    token = str(claim_token or "").strip()
+    if not key:
+        raise ValueError("idempotency_key_missing")
+    if not token:
+        raise ValueError("claim_token_missing")
+
+    with _upload_registry_lock():
+        registry = _read_upload_registry_unlocked()
+        entries = registry.setdefault("entries", {})
+        existing = entries.get(key)
+        if not isinstance(existing, dict):
+            return {"status": "missing", "idempotency_key": key}
+
+        status = _normalize_upload_state(existing.get("status"))
+        if status == UPLOAD_STATE_COMMITTED and str(existing.get("video_id") or "").strip():
+            return {"status": "already_committed", "idempotency_key": key, "entry": dict(existing)}
+
+        if str(existing.get("claim_token") or "").strip() != token:
+            return {"status": "not_owner", "idempotency_key": key, "entry": dict(existing)}
+
+        _assert_upload_transition(current_state=status, next_state=UPLOAD_STATE_ROLLED_BACK, op="rollback")
+
+        released = {
+            **dict(existing),
+            "status": UPLOAD_STATE_ROLLED_BACK,
+            "released_at": _now_iso(),
+            "last_error": str(error_text or "")[:400],
+            "rollback_from_state": status,
+            "claim_token": "",
+        }
+        entries[key] = released
+        _write_upload_registry_unlocked(registry)
+        return {"status": UPLOAD_STATE_ROLLED_BACK, "idempotency_key": key, "entry": released}
+
+
+def get_registered_upload(idempotency_key: str) -> dict[str, Any] | None:
+    with _upload_registry_lock():
+        registry = _read_upload_registry_unlocked()
+        entries = registry.get("entries") if isinstance(registry.get("entries"), dict) else {}
+        found = entries.get(idempotency_key)
+        if not isinstance(found, dict):
+            return None
+        status = _normalize_upload_state(found.get("status"))
+        if status == UPLOAD_STATE_COMMITTED and str(found.get("video_id") or "").strip():
+            return found
+        return None
+
+
+def get_registered_upload_compat(idempotency_key: str) -> dict[str, Any] | None:
+    with _upload_registry_lock():
+        registry = _read_upload_registry_unlocked()
+        entries = registry.get("entries") if isinstance(registry.get("entries"), dict) else {}
+        found = entries.get(idempotency_key)
+        if not isinstance(found, dict):
+            return None
+        status = _normalize_upload_state(found.get("status"))
+        if status == UPLOAD_STATE_COMMITTED and str(found.get("video_id") or "").strip():
+            return found
+        if str(found.get("video_id") or "").strip():
+            return found
+        return None
 
 
 def register_upload(idempotency_key: str, payload: dict[str, Any]) -> None:
-    registry = _safe_read_json(UPLOAD_REGISTRY_PATH)
-    entries = registry.get("entries") if isinstance(registry.get("entries"), dict) else {}
-    entries[idempotency_key] = {
-        **payload,
-        "registered_at": _now_iso(),
-    }
-    registry["entries"] = entries
-    registry["updated_at"] = _now_iso()
-    _safe_write_json(UPLOAD_REGISTRY_PATH, registry)
+    with _upload_registry_lock():
+        registry = _read_upload_registry_unlocked()
+        entries = registry.setdefault("entries", {})
+        existing = entries.get(idempotency_key)
+        if isinstance(existing, dict):
+            _assert_upload_transition(
+                current_state=existing.get("status"),
+                next_state=UPLOAD_STATE_COMMITTED,
+                op="register_upload",
+            )
+        entries[idempotency_key] = {
+            **dict(payload or {}),
+            "status": UPLOAD_STATE_COMMITTED,
+            "registered_at": _now_iso(),
+            "committed_at": _now_iso(),
+        }
+        _write_upload_registry_unlocked(registry)
 
 
 def run_stage_with_recovery(
@@ -596,39 +1044,62 @@ def run_stage_with_recovery(
     on_retry: Callable[[int, Exception], None] | None = None,
 ) -> tuple[Any, dict[str, Any]]:
     last_error: Exception | None = None
-    for attempt in range(1, max(1, max_attempts) + 1):
-        try:
-            value = fn()
-            return value, {
-                "stage": stage,
-                "attempts": attempt,
-                "max_attempts": max_attempts,
-                "recovered": attempt > 1,
-                "ok": True,
-            }
-        except Exception as exc:
-            last_error = exc
-            decision = classify_retry_decision(error_text=str(exc), exc=exc, stage=stage)
-            if on_retry is not None:
-                on_retry(attempt, exc)
-            if attempt < max_attempts and decision.retryable:
-                delay = compute_backoff_delay(base_delay_seconds=base_backoff_seconds, attempt=attempt, stage=stage)
-                record_production_event(
-                    {
-                        "event_type": "retry_scheduled",
-                        "timestamp": _now_iso(),
-                        "severity": "WARNING",
-                        "status": "scheduled",
-                        "reason": decision.reason_code,
-                        "operation": stage,
-                        "attempt": attempt,
-                        "source_component": "run_stage_with_recovery",
-                        "evidence": {"classification": decision.classification, "delay_seconds": delay},
-                    }
-                )
-                time.sleep(delay)
-            else:
-                break
+    max_attempts = max(1, int(max_attempts))
+    existing_budget = get_retry_budget_state()
+
+    @contextmanager
+    def _budget_context_if_needed():
+        if existing_budget is not None:
+            yield
+            return
+        with retry_budget_context(total_retries=max(0, max_attempts - 1), scope=stage):
+            yield
+
+    with _budget_context_if_needed():
+        for attempt in range(1, max_attempts + 1):
+            try:
+                value = fn()
+                budget_state = get_retry_budget_state()
+                return value, {
+                    "stage": stage,
+                    "attempts": attempt,
+                    "max_attempts": max_attempts,
+                    "recovered": attempt > 1,
+                    "ok": True,
+                    "retry_budget": budget_state,
+                }
+            except Exception as exc:
+                last_error = exc
+                decision = classify_retry_decision(error_text=str(exc), exc=exc, stage=stage)
+                if on_retry is not None:
+                    on_retry(attempt, exc)
+                can_retry = False
+                remaining_budget = None
+                if attempt < max_attempts and decision.retryable:
+                    can_retry, remaining_budget = consume_retry_budget(reason_code=decision.reason_code)
+
+                if can_retry:
+                    delay = compute_backoff_delay(base_delay_seconds=base_backoff_seconds, attempt=attempt, stage=stage)
+                    record_production_event(
+                        {
+                            "event_type": "retry_scheduled",
+                            "timestamp": _now_iso(),
+                            "severity": "WARNING",
+                            "status": "scheduled",
+                            "reason": decision.reason_code,
+                            "operation": stage,
+                            "attempt": attempt,
+                            "source_component": "run_stage_with_recovery",
+                            "evidence": {
+                                "classification": decision.classification,
+                                "delay_seconds": delay,
+                                "retry_budget_remaining": remaining_budget,
+                            },
+                        }
+                    )
+                    time.sleep(delay)
+                else:
+                    break
 
     failure = {
         "stage": stage,
@@ -637,6 +1108,7 @@ def run_stage_with_recovery(
         "recovered": False,
         "ok": False,
         "error": str(last_error) if last_error else "unknown_error",
+        "retry_budget": get_retry_budget_state(),
     }
     record_production_event(
         {

@@ -24,6 +24,7 @@ import fcntl
 
 from dotenv import dotenv_values
 from .channel_manager import resolve_allow_market_language
+from .retry_policy import classify_retry_decision, consume_retry_budget, get_retry_budget_state, retry_budget_context
 
 logger = logging.getLogger("SchedulerUtils")
 STARTUP_BANNER_NAME = "Parapusulasi"
@@ -36,11 +37,15 @@ QUEUE_FORBIDDEN_MARKET_RE = re.compile(
 )
 
 PROVIDER_HEALTH_FILE = "output/state/provider_health.json"
+PROVIDER_HEALTH_LOCK_FILE = "output/state/provider_health.lock"
+PROVIDER_HEALTH_DIAGNOSTICS_FILE = Path("output/state/provider_health_diagnostics.jsonl")
+PROVIDER_HEALTH_CORRUPTION_FILE = Path("output/state/provider_health_corruption.json")
 INCIDENT_STATE_FILE = Path("output/state/incident_state.json")
 INCIDENT_EVENTS_FILE = Path("logs/production_incidents.jsonl")
 INCIDENT_METRICS_FILE = Path("output/state/incident_metrics_latest.json")
 INCIDENT_LOCK_FILE = Path("output/state/incident_state.lock")
 _INCIDENT_THREAD_LOCK = threading.Lock()
+_PROVIDER_HEALTH_THREAD_LOCK = threading.Lock()
 
 
 def _incident_debug_mode_enabled() -> bool:
@@ -752,43 +757,6 @@ def force_cleanup():
     gc.collect()
 
 
-# ─── AKILLI RETRY ────────────────────────────────────────────────────────────
-
-def with_retry(func, max_attempts: int = 3, base_delay: float = 30.0, *args, **kwargs):
-    """
-    Fonksiyonu en fazla max_attempts kez dene.
-    Başarısız olursa üstel geri çekilme (exponential backoff) uygula.
-    """
-    last_error = None
-    for attempt in range(1, max_attempts + 1):
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            last_error = e
-            error_str = str(e).lower()
-
-            # Kesinlikle tekrar denenmeyecek hatalar
-            fatal_errors = [
-                "invalid_request_error",
-                "invalid video keywords",
-                "authentication",
-                "quota",
-                "credit balance",
-            ]
-            if any(fe in error_str for fe in fatal_errors):
-                logger.error(f"Fatal hata (retry yok): {e}")
-                raise
-
-            if attempt < max_attempts:
-                delay = base_delay * (2 ** (attempt - 1))  # 30s, 60s, 120s
-                logger.warning(f"Deneme {attempt}/{max_attempts} başarısız. {delay:.0f}s bekliyor... Hata: {e}")
-                time.sleep(delay)
-            else:
-                logger.error(f"Tüm {max_attempts} deneme başarısız: {e}")
-
-    raise last_error
-
-
 # ─── TELEGRAM BİLDİRİMLERİ ───────────────────────────────────────────────────
 
 def send_telegram(message: str):
@@ -1031,28 +999,178 @@ def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _load_provider_health_state() -> dict:
-    path = Path(PROVIDER_HEALTH_FILE)
-    if not path.exists():
-        return {"providers": {}}
+def _provider_health_path() -> Path:
+    return Path(PROVIDER_HEALTH_FILE)
+
+
+def _provider_health_lock_path() -> Path:
+    return Path(PROVIDER_HEALTH_LOCK_FILE)
+
+
+def _emit_provider_health_diagnostic(event: str, payload: dict) -> None:
+    row = {
+        "event": str(event or "unknown"),
+        "timestamp": _format_iso_utc(_now_utc()),
+        "payload": dict(payload or {}),
+    }
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        PROVIDER_HEALTH_DIAGNOSTICS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with PROVIDER_HEALTH_DIAGNOSTICS_FILE.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
     except Exception:
-        return {"providers": {}}
-    if not isinstance(data, dict):
-        return {"providers": {}}
-    data.setdefault("providers", {})
-    return data
+        pass
 
 
-def _save_provider_health_state(state: dict) -> None:
-    path = Path(PROVIDER_HEALTH_FILE)
+def _fsync_directory(path: Path) -> None:
+    try:
+        fd = os.open(str(path), os.O_RDONLY)
+    except Exception:
+        return
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _atomic_write_json_with_fsync(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    blob = json.dumps(payload, ensure_ascii=False, indent=2)
+    with tmp.open("w", encoding="utf-8") as handle:
+        handle.write(blob)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp, path)
+    _fsync_directory(path.parent)
+
+
+@contextmanager
+def _provider_health_io_lock():
+    lock_path = _provider_health_lock_path()
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with _PROVIDER_HEALTH_THREAD_LOCK:
+        with lock_path.open("a+", encoding="utf-8") as lock_handle:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+
+
+def _mark_provider_health_corruption(*, path: Path, raw: str, error: str) -> dict:
+    details = {
+        "status": "corrupt",
+        "detected_at": _format_iso_utc(_now_utc()),
+        "provider_health_path": str(path),
+        "error": str(error or "provider_health_parse_error"),
+        "raw_size": len(raw.encode("utf-8", errors="ignore")),
+        "raw_sha256": hashlib.sha256(raw.encode("utf-8", errors="ignore")).hexdigest(),
+    }
+    try:
+        _atomic_write_json_with_fsync(PROVIDER_HEALTH_CORRUPTION_FILE, details)
+    except Exception:
+        pass
+    _emit_provider_health_diagnostic("provider_health_corruption_detected", details)
+    return details
+
+
+def _clear_provider_health_corruption_if_recovered(*, path: Path) -> None:
+    if not PROVIDER_HEALTH_CORRUPTION_FILE.exists():
+        return
+    try:
+        previous = json.loads(PROVIDER_HEALTH_CORRUPTION_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        previous = {}
+    try:
+        PROVIDER_HEALTH_CORRUPTION_FILE.unlink(missing_ok=True)
+    except Exception:
+        return
+    _emit_provider_health_diagnostic(
+        "provider_health_corruption_recovered",
+        {
+            "provider_health_path": str(path),
+            "previous_corruption": previous,
+        },
+    )
+
+
+def _load_provider_health_state_unlocked() -> tuple[dict | None, dict | None]:
+    path = _provider_health_path()
+    if not path.exists():
+        _clear_provider_health_corruption_if_recovered(path=path)
+        return {"providers": {}}, None
+
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except Exception as exc:
+        return None, _mark_provider_health_corruption(path=path, raw="", error=f"read_error:{exc}")
+
+    try:
+        data = json.loads(raw)
+    except Exception as exc:
+        return None, _mark_provider_health_corruption(path=path, raw=raw, error=f"json_parse_error:{exc}")
+
+    if not isinstance(data, dict):
+        return None, _mark_provider_health_corruption(path=path, raw=raw, error="json_root_not_object")
+
+    providers = data.get("providers")
+    if providers is None:
+        data["providers"] = {}
+    elif not isinstance(providers, dict):
+        return None, _mark_provider_health_corruption(path=path, raw=raw, error="providers_not_object")
+
+    _clear_provider_health_corruption_if_recovered(path=path)
+    return data, None
+
+
+def _provider_health_corruption_state(corruption: dict) -> dict:
+    base = {
+        "providers": {},
+        "corruption": {
+            "active": True,
+            "diagnostic": dict(corruption or {}),
+        },
+    }
+    return base
+
+
+def _load_provider_health_state(*, fail_closed: bool = True) -> dict:
+    with _provider_health_io_lock():
+        state, corruption = _load_provider_health_state_unlocked()
+
+    if corruption:
+        if fail_closed:
+            return _provider_health_corruption_state(corruption)
+        return {"providers": {}}
+
+    return dict(state or {"providers": {}})
+
+
+def _mutate_provider_health_state(mutator, *, mutation_name: str) -> tuple[dict, dict | None]:
+    with _provider_health_io_lock():
+        state, corruption = _load_provider_health_state_unlocked()
+        if corruption:
+            _emit_provider_health_diagnostic(
+                "provider_health_mutation_blocked",
+                {
+                    "mutation": mutation_name,
+                    "reason": "provider_health_corrupt",
+                    "corruption": corruption,
+                },
+            )
+            return _provider_health_corruption_state(corruption), corruption
+
+        mutable = dict(state or {"providers": {}})
+        mutable.setdefault("providers", {})
+        mutator(mutable)
+        _atomic_write_json_with_fsync(_provider_health_path(), mutable)
+        return mutable, None
 
 
 def _error_type_from_text(error_text: str) -> str:
     txt = str(error_text or "").lower()
+    if any(key in txt for key in ("billing", "payment required", "invoice", "card declined")):
+        return "billing"
     if any(key in txt for key in ("credit balance", "insufficient credit")):
         return "credit"
     if "quota" in txt:
@@ -1069,6 +1187,27 @@ def _error_type_from_text(error_text: str) -> str:
     if any(key in txt for key in ("timeout", "connection", "dns", "chunkedencodingerror")):
         return "network"
     return "unknown"
+
+
+def classify_provider_preflight_degraded_mode_error(error_text: str) -> dict:
+    txt = str(error_text or "").strip()
+    normalized = txt.lower()
+    err_type = _error_type_from_text(normalized)
+
+    eligible_types = {"billing", "credit", "quota", "rate_limit", "overload", "network"}
+    eligible = err_type in eligible_types
+
+    if not eligible and any(token in normalized for token in ("http 429", "http 500", "http 503", "http 529")):
+        eligible = True
+        err_type = "overload" if "http 529" in normalized else "rate_limit"
+
+    reason_code = "provider_preflight_external_dependency_degraded" if eligible else f"provider_preflight_non_degradable_{err_type}"
+    return {
+        "eligible": eligible,
+        "error_type": err_type,
+        "reason_code": reason_code,
+        "summary": _summarize_error_for_telegram(txt, max_len=240),
+    }
 
 
 def _extract_request_id(error_text: str) -> str:
@@ -1092,7 +1231,19 @@ def _format_iso_utc(value: datetime) -> str:
 
 
 def get_global_overload_pause_status() -> dict:
-    state = _load_provider_health_state()
+    state = _load_provider_health_state(fail_closed=True)
+    corruption = dict(state.get("corruption") or {})
+    if bool(corruption.get("active")):
+        return {
+            "is_open": True,
+            "retry_after_seconds": max(300, _get_int_env("PROVIDER_CORRUPTION_BLOCK_SECONDS", 900)),
+            "pause_until": "",
+            "reason": "provider_health_corrupt",
+            "window_seconds": _get_int_env("PROVIDER_OVERLOAD_WINDOW_SECONDS", 300),
+            "trigger_count": _get_int_env("PROVIDER_OVERLOAD_TRIGGER_COUNT", 3),
+            "corruption": corruption,
+        }
+
     pause_until_raw = str(state.get("global_overload_pause_until") or "").strip()
     retry_after_seconds = 0
     is_open = False
@@ -1110,89 +1261,128 @@ def get_global_overload_pause_status() -> dict:
         "reason": str(state.get("global_overload_pause_reason") or ""),
         "window_seconds": _get_int_env("PROVIDER_OVERLOAD_WINDOW_SECONDS", 300),
         "trigger_count": _get_int_env("PROVIDER_OVERLOAD_TRIGGER_COUNT", 3),
+        "corruption": {"active": False},
     }
 
 
 def record_provider_failure(provider: str, error_text: str) -> dict:
-    state = _load_provider_health_state()
-    providers = state.setdefault("providers", {})
-    provider_state = providers.setdefault(provider, {})
+    result_holder = {"provider_state": {}}
 
-    failure_count = int(provider_state.get("consecutive_failures", 0)) + 1
-    err_type = _error_type_from_text(error_text)
-    now = _now_utc()
+    def _mutator(state: dict) -> None:
+        providers = state.setdefault("providers", {})
+        provider_state = providers.setdefault(provider, {})
 
-    open_seconds = 0
-    if err_type in {"credit", "quota", "rate_limit", "auth", "overload"}:
-        open_seconds = min(7200, 300 * (2 ** max(0, failure_count - 1)))
+        failure_count = int(provider_state.get("consecutive_failures", 0)) + 1
+        err_type = _error_type_from_text(error_text)
+        now = _now_utc()
 
-    open_until = ""
-    if open_seconds > 0:
-        open_until = _format_iso_utc(now + timedelta(seconds=open_seconds))
+        open_seconds = 0
+        if err_type in {"billing", "credit", "quota", "rate_limit", "auth", "overload", "network"}:
+            open_seconds = min(7200, 300 * (2 ** max(0, failure_count - 1)))
 
-    if err_type == "overload":
-        window_seconds = _get_int_env("PROVIDER_OVERLOAD_WINDOW_SECONDS", 300)
-        trigger_count = _get_int_env("PROVIDER_OVERLOAD_TRIGGER_COUNT", 3)
-        pause_seconds = _get_int_env("PROVIDER_OVERLOAD_GLOBAL_PAUSE_SECONDS", 600)
+        open_until = ""
+        if open_seconds > 0:
+            open_until = _format_iso_utc(now + timedelta(seconds=open_seconds))
 
-        cutoff = now - timedelta(seconds=window_seconds)
-        raw_events = list(state.get("overload_events") or [])
-        kept_events = []
-        for raw in raw_events:
-            parsed = _parse_iso_utc(raw)
-            if parsed is None:
-                continue
-            if parsed >= cutoff.replace(tzinfo=parsed.tzinfo):
-                kept_events.append(_format_iso_utc(parsed))
-        kept_events.append(_format_iso_utc(now.replace(tzinfo=timezone.utc)))
-        state["overload_events"] = kept_events[-100:]
+        if err_type == "overload":
+            window_seconds = _get_int_env("PROVIDER_OVERLOAD_WINDOW_SECONDS", 300)
+            trigger_count = _get_int_env("PROVIDER_OVERLOAD_TRIGGER_COUNT", 3)
+            pause_seconds = _get_int_env("PROVIDER_OVERLOAD_GLOBAL_PAUSE_SECONDS", 600)
 
-        if len(kept_events) >= trigger_count:
-            proposed_until = _format_iso_utc(now.replace(tzinfo=timezone.utc) + timedelta(seconds=pause_seconds))
-            existing_until_raw = str(state.get("global_overload_pause_until") or "")
-            existing_dt = _parse_iso_utc(existing_until_raw)
-            proposed_dt = _parse_iso_utc(proposed_until)
-            if proposed_dt is not None and (existing_dt is None or proposed_dt > existing_dt):
-                state["global_overload_pause_until"] = proposed_until
-                state["global_overload_pause_reason"] = (
-                    f"overload_storm:{len(kept_events)}/{window_seconds}s"
-                )
+            cutoff = now - timedelta(seconds=window_seconds)
+            raw_events = list(state.get("overload_events") or [])
+            kept_events = []
+            for raw in raw_events:
+                parsed = _parse_iso_utc(raw)
+                if parsed is None:
+                    continue
+                if parsed >= cutoff.replace(tzinfo=parsed.tzinfo):
+                    kept_events.append(_format_iso_utc(parsed))
+            kept_events.append(_format_iso_utc(now.replace(tzinfo=timezone.utc)))
+            state["overload_events"] = kept_events[-100:]
 
-    provider_state.update(
-        {
+            if len(kept_events) >= trigger_count:
+                proposed_until = _format_iso_utc(now.replace(tzinfo=timezone.utc) + timedelta(seconds=pause_seconds))
+                existing_until_raw = str(state.get("global_overload_pause_until") or "")
+                existing_dt = _parse_iso_utc(existing_until_raw)
+                proposed_dt = _parse_iso_utc(proposed_until)
+                if proposed_dt is not None and (existing_dt is None or proposed_dt > existing_dt):
+                    state["global_overload_pause_until"] = proposed_until
+                    state["global_overload_pause_reason"] = (
+                        f"overload_storm:{len(kept_events)}/{window_seconds}s"
+                    )
+
+        provider_state.update(
+            {
+                "provider": provider,
+                "consecutive_failures": failure_count,
+                "last_failed_at": _format_iso_utc(now),
+                "last_error": _summarize_error_for_telegram(error_text, max_len=400),
+                "last_error_type": err_type,
+                "last_request_id": _extract_request_id(error_text),
+                "open_until": open_until,
+            }
+        )
+        result_holder["provider_state"] = dict(provider_state)
+
+    _, corruption = _mutate_provider_health_state(_mutator, mutation_name="record_provider_failure")
+    if corruption:
+        return {
             "provider": provider,
-            "consecutive_failures": failure_count,
-            "last_failed_at": _format_iso_utc(now),
-            "last_error": _summarize_error_for_telegram(error_text, max_len=400),
-            "last_error_type": err_type,
-            "last_request_id": _extract_request_id(error_text),
-            "open_until": open_until,
+            "consecutive_failures": 0,
+            "last_error_type": "provider_health_corrupt",
+            "open_until": "",
+            "corruption": dict(corruption),
         }
-    )
-    _save_provider_health_state(state)
-    return provider_state
+    return dict(result_holder["provider_state"])
 
 
 def record_provider_success(provider: str, note: str = "") -> dict:
-    state = _load_provider_health_state()
-    providers = state.setdefault("providers", {})
-    provider_state = providers.setdefault(provider, {})
-    now = _now_utc()
-    provider_state.update(
-        {
+    result_holder = {"provider_state": {}}
+
+    def _mutator(state: dict) -> None:
+        providers = state.setdefault("providers", {})
+        provider_state = providers.setdefault(provider, {})
+        now = _now_utc()
+        provider_state.update(
+            {
+                "provider": provider,
+                "consecutive_failures": 0,
+                "last_success_at": _format_iso_utc(now),
+                "last_success_note": note,
+                "open_until": "",
+            }
+        )
+        result_holder["provider_state"] = dict(provider_state)
+
+    _, corruption = _mutate_provider_health_state(_mutator, mutation_name="record_provider_success")
+    if corruption:
+        return {
             "provider": provider,
             "consecutive_failures": 0,
-            "last_success_at": _format_iso_utc(now),
             "last_success_note": note,
             "open_until": "",
+            "corruption": dict(corruption),
         }
-    )
-    _save_provider_health_state(state)
-    return provider_state
+    return dict(result_holder["provider_state"])
 
 
 def get_provider_circuit_status(provider: str) -> dict:
-    state = _load_provider_health_state()
+    state = _load_provider_health_state(fail_closed=True)
+    corruption = dict(state.get("corruption") or {})
+    if bool(corruption.get("active")):
+        return {
+            "provider": provider,
+            "is_open": True,
+            "retry_after_seconds": max(300, _get_int_env("PROVIDER_CORRUPTION_BLOCK_SECONDS", 900)),
+            "state": {
+                "provider": provider,
+                "last_error_type": "provider_health_corrupt",
+                "corruption": corruption,
+            },
+            "corruption": corruption,
+        }
+
     provider_state = state.get("providers", {}).get(provider, {})
     open_until_raw = str(provider_state.get("open_until") or "").strip()
     is_open = False
@@ -1212,6 +1402,7 @@ def get_provider_circuit_status(provider: str) -> dict:
         "is_open": is_open,
         "retry_after_seconds": retry_after_seconds,
         "state": provider_state,
+        "corruption": {"active": False},
     }
 
 
@@ -1233,23 +1424,55 @@ def run_anthropic_preflight(model: str = "claude-opus-4-5") -> tuple[bool, str]:
 
     try:
         from anthropic import Anthropic
-
-        max_retries_raw = str(os.getenv("ANTHROPIC_MAX_RETRIES", "1")).strip()
-        try:
-            max_retries = int(max_retries_raw)
-        except Exception:
-            max_retries = 1
-        client = Anthropic(api_key=key, max_retries=max(0, max_retries))
-        resp = client.messages.create(
-            model=model,
-            max_tokens=8,
-            messages=[{"role": "user", "content": "ok"}],
-        )
-        record_provider_success("anthropic", note=f"preflight_ok:{getattr(resp, 'id', 'no_id')}")
-        return True, getattr(resp, "id", "ok")
     except Exception as e:
         record_provider_failure("anthropic", str(e))
         return False, _summarize_error_for_telegram(str(e), max_len=240)
+
+    max_retries_raw = str(os.getenv("ANTHROPIC_MAX_RETRIES", "1")).strip()
+    try:
+        max_retries = max(0, int(max_retries_raw))
+    except Exception:
+        max_retries = 1
+
+    max_attempts = max(1, max_retries + 1)
+    client = Anthropic(api_key=key, max_retries=0)
+
+    last_error: Exception | None = None
+    existing_budget = get_retry_budget_state()
+
+    @contextmanager
+    def _preflight_retry_budget_if_needed():
+        if existing_budget is not None:
+            yield
+            return
+        with retry_budget_context(total_retries=max(0, max_attempts - 1), scope="anthropic_preflight"):
+            yield
+
+    with _preflight_retry_budget_if_needed():
+        for attempt in range(1, max_attempts + 1):
+            try:
+                resp = client.messages.create(
+                    model=model,
+                    max_tokens=8,
+                    messages=[{"role": "user", "content": "ok"}],
+                )
+                record_provider_success("anthropic", note=f"preflight_ok:{getattr(resp, 'id', 'no_id')}")
+                return True, getattr(resp, "id", "ok")
+            except Exception as e:
+                last_error = e
+                decision = classify_retry_decision(error_text=str(e), exc=e, stage="anthropic_preflight")
+                if attempt < max_attempts and decision.retryable:
+                    can_retry, _remaining = consume_retry_budget(reason_code=decision.reason_code)
+                    if can_retry:
+                        time.sleep(min(5.0, float(2 ** max(0, attempt - 1))))
+                        continue
+                record_provider_failure("anthropic", str(e))
+                return False, _summarize_error_for_telegram(str(e), max_len=240)
+
+    if last_error is not None:
+        record_provider_failure("anthropic", str(last_error))
+        return False, _summarize_error_for_telegram(str(last_error), max_len=240)
+    return False, "anthropic_preflight_unknown_error"
 
 
 def notify_startup(active_channels: int):

@@ -32,7 +32,7 @@ import threading
 import time
 import uuid
 from contextlib import contextmanager, redirect_stdout
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, TextIO
@@ -849,6 +849,58 @@ def _submit_render(channel_id: str, *, trigger_source: str):
     return render_executor.submit(render_and_schedule, channel_id, trigger_source=source)
 
 
+def _normalize_initial_fill_result(channel_id: str, result: Any) -> dict[str, Any]:
+    if not isinstance(result, dict):
+        return {
+            "channel_id": channel_id,
+            "status": "failed",
+            "reason": "missing_render_result",
+        }
+
+    normalized = dict(result)
+    normalized.setdefault("channel_id", channel_id)
+    normalized.setdefault("status", "failed")
+    return normalized
+
+
+def _wait_for_initial_fill_futures(submissions: list[tuple[str, Any]]) -> dict[str, Any]:
+    report = {
+        "channel_results": {},
+        "submitted_channels": [channel_id for channel_id, _future in submissions],
+        "succeeded_channels": [],
+        "failed_channels": [],
+        "blocked_channels": [],
+    }
+
+    try:
+        if submissions:
+            wait([future for _channel_id, future in submissions])
+        for channel_id, future in submissions:
+            try:
+                outcome = future.result()
+            except Exception as exc:
+                outcome = {
+                    "channel_id": channel_id,
+                    "status": "failed",
+                    "reason": "future_raised",
+                    "error": str(exc),
+                }
+            normalized = _normalize_initial_fill_result(channel_id, outcome)
+            report["channel_results"][channel_id] = normalized
+            status = str(normalized.get("status") or "failed")
+            if status == "success":
+                report["succeeded_channels"].append(channel_id)
+            elif status == "blocked":
+                report["blocked_channels"].append(channel_id)
+            else:
+                report["failed_channels"].append(channel_id)
+    finally:
+        render_executor.shutdown(wait=True)
+
+    report["exit_code"] = 0 if not report["failed_channels"] else 1
+    return report
+
+
 def _eligible_initial_fill_channels(*, ready_channels: list[str] | None = None, queue: dict | None = None) -> list[str]:
     ready = list(ready_channels if ready_channels is not None else get_ready_channels())
     current_queue = queue if queue is not None else load_queue()
@@ -951,7 +1003,11 @@ def render_and_schedule(channel_id: str, *, trigger_source: str):
     acquired = channel_lock.acquire(blocking=False)
     if not acquired:
         logger.info(f"[{channel_id}] Render zaten devam ediyor, atlandı.")
-        return
+        return {
+            "channel_id": channel_id,
+            "status": "blocked",
+            "reason": "render_already_running",
+        }
 
     try:
         from src.channel_manager import get_channel
@@ -970,7 +1026,11 @@ def render_and_schedule(channel_id: str, *, trigger_source: str):
                 scheduler_pid=os.getpid(),
                 last_error=str(canary.get("reason") or "canary_blocked"),
             )
-            return
+            return {
+                "channel_id": channel_id,
+                "status": "blocked",
+                "reason": str(canary.get("reason") or "canary_blocked"),
+            }
 
         pause = get_global_overload_pause_status()
         if pause.get("is_open"):
@@ -986,7 +1046,11 @@ def render_and_schedule(channel_id: str, *, trigger_source: str):
                 cfg.name,
                 f"Global overload pause open; provider cooling down ({retry_after}s)",
             )
-            return
+            return {
+                "channel_id": channel_id,
+                "status": "blocked",
+                "reason": reason,
+            }
 
         # ── Provider circuit breaker kontrolü ────────────────────────
         circuit = get_provider_circuit_status("anthropic")
@@ -1001,13 +1065,21 @@ def render_and_schedule(channel_id: str, *, trigger_source: str):
                 cfg.name,
                 f"Anthropic circuit open; provider is cooling down ({retry_after}s)",
             )
-            return
+            return {
+                "channel_id": channel_id,
+                "status": "blocked",
+                "reason": "anthropic_circuit_open",
+            }
 
         # ── Disk kontrolü ──────────────────────────────────────────────
         if not check_disk_space(min_gb=1.5):
             logger.error(f"[{cfg.name}] Disk doldu! Render iptal edildi.")
             notify_error(cfg.name, "Disk alanı kritik seviyede!")
-            return
+            return {
+                "channel_id": channel_id,
+                "status": "failed",
+                "reason": "disk_space_low",
+            }
 
         publish_at = get_next_upload_time(
             cfg,
@@ -1183,6 +1255,15 @@ def render_and_schedule(channel_id: str, *, trigger_source: str):
                 )
             except Exception:
                 pass
+            return {
+                "channel_id": channel_id,
+                "status": "success",
+                "video_id": result.get("video_id"),
+                "title": result.get("title", ""),
+                "youtube_url": result.get("youtube_url", ""),
+                "publish_at": publish_at,
+                "trigger_source": trigger_source,
+            }
         elif result and result.get("upload_precheck", {}).get("status") == "blocked":
             precheck = dict(result.get("upload_precheck") or {})
             reason_codes = list(precheck.get("guard_reason_codes") or ["channel_dna_mismatch"])
@@ -1227,6 +1308,15 @@ def render_and_schedule(channel_id: str, *, trigger_source: str):
                 )
             except Exception:
                 pass
+            return {
+                "channel_id": channel_id,
+                "status": "blocked",
+                "reason": str(precheck.get("quarantine_reason") or "channel_dna_mismatch"),
+                "quarantine_reason": str(precheck.get("quarantine_reason") or "channel_dna_mismatch"),
+                "guard_reason_codes": reason_codes,
+                "title": result.get("title", ""),
+                "trigger_source": trigger_source,
+            }
         else:
             upload_error_text = str((result or {}).get("upload_error") or "")
             upload_meta = dict((result or {}).get("upload_metadata") or {})
@@ -1251,6 +1341,15 @@ def render_and_schedule(channel_id: str, *, trigger_source: str):
                 upload_error_text[:500] or "none",
                 upload_meta,
             )
+            return {
+                "channel_id": channel_id,
+                "status": "failed",
+                "reason": "missing_video_id",
+                "failure_kind": failure_kind,
+                "upload_error": upload_error_text,
+                "upload_metadata": upload_meta,
+                "trigger_source": trigger_source,
+            }
 
     except Exception as e:
         routed_error_text = str(getattr(e, "_provider_error_text", str(e)))
@@ -1327,9 +1426,23 @@ def render_and_schedule(channel_id: str, *, trigger_source: str):
             pass
         try:
             if "failed_fact_check" in routed_error_text.lower():
-                return
+                return {
+                    "channel_id": channel_id,
+                    "status": "failed",
+                    "reason": "failed_fact_check",
+                    "error": routed_error_text,
+                    "failure_class": failure_class["classification"],
+                    "trigger_source": trigger_source,
+                }
             if getattr(e, "_scheduler_notify_sent", False):
-                return
+                return {
+                    "channel_id": channel_id,
+                    "status": "failed",
+                    "reason": "scheduler_notify_sent",
+                    "error": routed_error_text,
+                    "failure_class": failure_class["classification"],
+                    "trigger_source": trigger_source,
+                }
             from src.channel_manager import get_channel
             cfg = get_channel(channel_id)
             from src.scheduler_utils import notify_error
@@ -1365,6 +1478,14 @@ def render_and_schedule(channel_id: str, *, trigger_source: str):
             )
         except Exception:
             pass
+        return {
+            "channel_id": channel_id,
+            "status": "failed",
+            "reason": failure_class["classification"],
+            "error": routed_error_text,
+            "failure_class": failure_class["classification"],
+            "trigger_source": trigger_source,
+        }
     finally:
         if acquired:
             channel_lock.release()
@@ -1419,7 +1540,7 @@ def on_upload_time(channel_id: str):
     _submit_render(channel_id, trigger_source="post_upload_continuation")
 
 
-def initial_fill(*, trigger_source: str = "explicit_initial_fill"):
+def initial_fill(*, trigger_source: str = "explicit_initial_fill", wait_for_completion: bool = False):
     """
     Başlangıçta tüm kanallar için ön render başlat.
     Her kanal için bir sonraki boş saate video hazırla.
@@ -1454,6 +1575,7 @@ def initial_fill(*, trigger_source: str = "explicit_initial_fill"):
         logger.warning(f"Bayat kuyruk temizleme hatası: {e}")
 
     submitted_channels = []
+    submitted_futures: list[tuple[str, Any]] = []
     for cid in ready:
         # Bu kanalın kuyruğunda zaten video var mı?
         active_entries = [e for e in queue.get(cid, []) if _is_publishable_queue_entry(e)]
@@ -1462,7 +1584,7 @@ def initial_fill(*, trigger_source: str = "explicit_initial_fill"):
             continue
         # Kuyrugu bos — render baslât
         logger.info(f"[{cid}] On render basliyor (siraya eklendi)...")
-        _submit_render(cid, trigger_source=trigger_source)
+        submitted_futures.append((cid, _submit_render(cid, trigger_source=trigger_source)))
         submitted_channels.append(cid)
         time.sleep(5)  # Kilit çakışmasını önle — ThreadPoolExecutor zaten tek sırada çalıştırır
 
@@ -1474,6 +1596,11 @@ def initial_fill(*, trigger_source: str = "explicit_initial_fill"):
         submitted_channels=submitted_channels,
         reason="explicit_initial_fill_requested",
     )
+
+    if wait_for_completion:
+        return _wait_for_initial_fill_futures(submitted_futures)
+
+    return None
 
 
 def catch_up_overdue_queue_entries() -> dict[str, list[dict]]:
@@ -3703,7 +3830,22 @@ def main():
             provider_preflight_detail=provider_detail,
             production_safety_gate_payload=gate_payload,
         )
-        initial_fill(trigger_source="explicit_initial_fill")
+        initial_fill_report = initial_fill(trigger_source="explicit_initial_fill", wait_for_completion=True) or {}
+        channel_results = dict(initial_fill_report.get("channel_results") or {})
+        if channel_results:
+            for channel_id, result in channel_results.items():
+                status = str((result or {}).get("status") or "failed")
+                if status == "success":
+                    print(f"Initial fill: {channel_id} -> success")
+                elif status == "blocked":
+                    reason = str((result or {}).get("reason") or "blocked")
+                    print(f"Initial fill: {channel_id} -> blocked ({reason})")
+                else:
+                    reason = str((result or {}).get("reason") or "failed")
+                    print(f"Initial fill: {channel_id} -> failed ({reason})")
+        if initial_fill_report.get("failed_channels"):
+            print("Initial fill: FAIL")
+            sys.exit(1)
         print("Initial fill: submitted eligible channels")
         return
 

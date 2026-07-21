@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+from concurrent.futures import Future
 from types import SimpleNamespace
 
 import pytest
@@ -179,6 +181,243 @@ def test_initial_fill_explicit_trigger_submits_eligible_channels(monkeypatch):
     assert submissions == [("a", "explicit_initial_fill")]
 
 
+def test_explicit_initial_fill_waits_for_futures_and_shuts_down_executor(monkeypatch):
+    import scheduler
+
+    started = threading.Event()
+    release = threading.Event()
+    shutdown_calls = []
+
+    class FakeExecutor:
+        def shutdown(self, *, wait):
+            shutdown_calls.append(wait)
+
+    def fake_submit(channel_id, *, trigger_source):
+        future = Future()
+
+        def complete_later():
+            started.set()
+            release.wait(timeout=1)
+            future.set_result({
+                "channel_id": channel_id,
+                "status": "success",
+                "video_id": f"video-{channel_id}",
+                "title": f"title-{channel_id}",
+                "youtube_url": f"https://youtu.be/{channel_id}",
+                "trigger_source": trigger_source,
+            })
+
+        threading.Thread(target=complete_later, daemon=True).start()
+        return future
+
+    monkeypatch.setattr(scheduler, "render_executor", FakeExecutor())
+    monkeypatch.setattr(scheduler, "_observation_mode_active", lambda: False)
+    monkeypatch.setattr(scheduler, "get_ready_channels", lambda: ["a"])
+    monkeypatch.setattr(scheduler, "load_queue", lambda: {})
+    monkeypatch.setattr(scheduler, "update_queue", lambda mutator: {})
+    monkeypatch.setattr(scheduler, "_submit_render", fake_submit)
+    monkeypatch.setattr(scheduler, "record_production_event", lambda _event: None)
+    monkeypatch.setattr(scheduler.time, "sleep", lambda *_args, **_kw: None)
+
+    results = {}
+
+    def run_initial_fill():
+        results["report"] = scheduler.initial_fill(trigger_source="explicit_initial_fill", wait_for_completion=True)
+
+    worker = threading.Thread(target=run_initial_fill)
+    worker.start()
+
+    assert started.wait(timeout=1)
+    assert worker.is_alive()
+
+    release.set()
+    worker.join(timeout=1)
+
+    assert not worker.is_alive()
+    assert shutdown_calls == [True]
+    assert results["report"]["succeeded_channels"] == ["a"]
+    assert results["report"]["failed_channels"] == []
+    assert results["report"]["exit_code"] == 0
+
+
+def test_initial_fill_reports_all_channel_outcomes(monkeypatch):
+    import scheduler
+
+    def make_future(result):
+        future = Future()
+        future.set_result(result)
+        return future
+
+    submitted = []
+
+    class FakeExecutor:
+        def shutdown(self, *, wait):
+            submitted.append(("shutdown", wait))
+
+    def fake_submit(channel_id, *, trigger_source):
+        if channel_id == "a":
+            return make_future({
+                "channel_id": channel_id,
+                "status": "success",
+                "video_id": "video-a",
+                "title": "ok",
+                "youtube_url": "https://youtu.be/a",
+                "trigger_source": trigger_source,
+            })
+        return make_future({
+            "channel_id": channel_id,
+            "status": "failed",
+            "reason": "render_failure",
+            "error": "boom",
+            "trigger_source": trigger_source,
+        })
+
+    monkeypatch.setattr(scheduler, "render_executor", FakeExecutor())
+    monkeypatch.setattr(scheduler, "_observation_mode_active", lambda: False)
+    monkeypatch.setattr(scheduler, "get_ready_channels", lambda: ["a", "b"])
+    monkeypatch.setattr(scheduler, "load_queue", lambda: {})
+    monkeypatch.setattr(scheduler, "update_queue", lambda mutator: {})
+    monkeypatch.setattr(scheduler, "_submit_render", fake_submit)
+    monkeypatch.setattr(scheduler, "record_production_event", lambda _event: None)
+    monkeypatch.setattr(scheduler.time, "sleep", lambda *_args, **_kw: None)
+
+    report = scheduler.initial_fill(trigger_source="explicit_initial_fill", wait_for_completion=True)
+
+    assert report["submitted_channels"] == ["a", "b"]
+    assert report["succeeded_channels"] == ["a"]
+    assert report["failed_channels"] == ["b"]
+    assert report["channel_results"]["a"]["status"] == "success"
+    assert report["channel_results"]["b"]["status"] == "failed"
+    assert submitted == [("shutdown", True)]
+
+
+def test_explicit_initial_fill_cli_exits_nonzero_on_failed_channel(monkeypatch, tmp_path):
+    import scheduler
+
+    _patch_common_startup(monkeypatch, tmp_path, scheduler, ready=("a", "b"), queue={})
+    monkeypatch.setattr(scheduler.sys, "argv", ["scheduler.py", "--initial-fill"])
+
+    def fake_submit(channel_id, *, trigger_source):
+        future = Future()
+        if channel_id == "a":
+            future.set_result({
+                "channel_id": channel_id,
+                "status": "success",
+                "video_id": "video-a",
+                "title": "ok",
+                "youtube_url": "https://youtu.be/a",
+                "trigger_source": trigger_source,
+            })
+        else:
+            future.set_result({
+                "channel_id": channel_id,
+                "status": "failed",
+                "reason": "render_failure",
+                "error": "boom",
+                "trigger_source": trigger_source,
+            })
+        return future
+
+    monkeypatch.setattr(scheduler, "_submit_render", fake_submit)
+    monkeypatch.setattr(scheduler, "render_executor", SimpleNamespace(shutdown=lambda *, wait: None))
+
+    with pytest.raises(SystemExit) as excinfo:
+        scheduler.main()
+
+    assert excinfo.value.code == 1
+
+
+def test_render_and_schedule_success_persists_queue_entry(monkeypatch):
+    import scheduler
+
+    captured_queue = {}
+    lock = SimpleNamespace(acquire=lambda blocking=False: True, release=lambda: None)
+    monkeypatch.setattr(scheduler, "_get_channel_render_lock", lambda _cid: lock)
+    monkeypatch.setattr(scheduler, "canary_gate_decision", lambda _cid: {"allow": True})
+    monkeypatch.setattr("src.scheduler_utils.check_disk_space", lambda **_kw: True)
+    monkeypatch.setattr("src.scheduler_utils.get_global_overload_pause_status", lambda: {"is_open": False})
+    monkeypatch.setattr("src.scheduler_utils.get_provider_circuit_status", lambda _provider: {"is_open": False})
+    monkeypatch.setattr("src.scheduler_utils.record_provider_success", lambda *_args, **_kw: None)
+    monkeypatch.setattr("src.scheduler_utils.save_used_topic", lambda *_args, **_kw: None)
+    monkeypatch.setattr("src.scheduler_utils.notify_upload", lambda *_args, **_kw: None)
+    monkeypatch.setattr("src.channel_manager.get_channel", lambda cid: _cfg(cid))
+    monkeypatch.setattr(scheduler, "load_queue", lambda: {})
+
+    def update_queue(mutator):
+        nonlocal captured_queue
+        captured_queue = {}
+        mutator(captured_queue)
+        return captured_queue
+
+    monkeypatch.setattr(scheduler, "update_queue", update_queue)
+    monkeypatch.setattr(scheduler, "get_next_upload_time", lambda *_args, **_kw: "2026-07-18T20:00:00+03:00")
+    monkeypatch.setattr("src.pipeline.run_full_pipeline", lambda **_kwargs: {"video_id": "vid-1", "title": "ok", "youtube_url": "https://youtu.be/vid-1", "short_url": "https://yt.be/1"})
+
+    result = scheduler.render_and_schedule("a", trigger_source="recurring_empty_queue_fill")
+
+    assert result["status"] == "success"
+    assert captured_queue["a"][0]["status"] == "active"
+    assert captured_queue["a"][0]["video_id"] == "vid-1"
+
+
+def test_render_and_schedule_failed_pipeline_returns_failed_result(monkeypatch):
+    import scheduler
+
+    lock = SimpleNamespace(acquire=lambda blocking=False: True, release=lambda: None)
+    monkeypatch.setattr(scheduler, "_get_channel_render_lock", lambda _cid: lock)
+    monkeypatch.setattr(scheduler, "canary_gate_decision", lambda _cid: {"allow": True})
+    monkeypatch.setattr("src.scheduler_utils.check_disk_space", lambda **_kw: True)
+    monkeypatch.setattr("src.scheduler_utils.get_global_overload_pause_status", lambda: {"is_open": False})
+    monkeypatch.setattr("src.scheduler_utils.get_provider_circuit_status", lambda _provider: {"is_open": False})
+    monkeypatch.setattr("src.scheduler_utils.notify_upload", lambda *_args, **_kw: None)
+    monkeypatch.setattr("src.scheduler_utils.notify_error", lambda *_args, **_kw: None)
+    monkeypatch.setattr("src.channel_manager.get_channel", lambda cid: _cfg(cid))
+    monkeypatch.setattr(scheduler, "load_queue", lambda: {})
+    monkeypatch.setattr(scheduler, "update_queue", lambda mutator: {})
+    monkeypatch.setattr(scheduler, "get_next_upload_time", lambda *_args, **_kw: "2026-07-18T20:00:00+03:00")
+    monkeypatch.setattr("src.pipeline.run_full_pipeline", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    result = scheduler.render_and_schedule("a", trigger_source="recurring_empty_queue_fill")
+
+    assert result["status"] == "failed"
+    assert result["reason"] in {"RuntimeError", "TERMINAL_FAILURE", "RETRYABLE", "NON_RETRYABLE_QUARANTINE"}
+
+
+def test_submit_render_returns_future(monkeypatch):
+    import scheduler
+
+    sentinel = Future()
+    monkeypatch.setattr(scheduler, "render_executor", SimpleNamespace(submit=lambda *args, **kwargs: sentinel))
+
+    assert scheduler._submit_render("a", trigger_source="manual_operator") is sentinel
+
+
+def test_explicit_initial_fill_skips_publishable_queue_entries(monkeypatch):
+    import scheduler
+
+    submissions = []
+    future = Future()
+    future.set_result({"channel_id": "b", "status": "success", "video_id": "video-b", "title": "ok", "youtube_url": "https://youtu.be/b", "trigger_source": "explicit_initial_fill"})
+    monkeypatch.setattr(scheduler, "_observation_mode_active", lambda: False)
+    monkeypatch.setattr(scheduler, "get_ready_channels", lambda: ["a", "b"])
+    monkeypatch.setattr(
+        scheduler,
+        "load_queue",
+        lambda: {
+            "a": [{"status": "active", "publish_at": "2026-07-18T20:00:00+03:00"}],
+            "b": [{"status": "quarantined"}],
+        },
+    )
+    monkeypatch.setattr(scheduler, "update_queue", lambda mutator: {"a": [{"status": "active"}], "b": [{"status": "quarantined"}]})
+    monkeypatch.setattr(scheduler, "_submit_render", lambda cid, *, trigger_source: submissions.append((cid, trigger_source)) or future)
+    monkeypatch.setattr(scheduler, "record_production_event", lambda _event: None)
+    monkeypatch.setattr(scheduler.time, "sleep", lambda *_args, **_kw: None)
+
+    scheduler.initial_fill(trigger_source="explicit_initial_fill", wait_for_completion=True)
+
+    assert submissions == [("b", "explicit_initial_fill")]
+
+
 def test_initial_fill_observation_mode_still_blocks(monkeypatch):
     import scheduler
 
@@ -244,7 +483,7 @@ def test_explicit_initial_fill_cli_runs_preflight_and_fill(monkeypatch, tmp_path
     _patch_common_startup(monkeypatch, tmp_path, scheduler)
     monkeypatch.setattr(scheduler.sys, "argv", ["scheduler.py", "--initial-fill"])
     calls = []
-    monkeypatch.setattr(scheduler, "initial_fill", lambda *, trigger_source: calls.append(trigger_source))
+    monkeypatch.setattr(scheduler, "initial_fill", lambda *, trigger_source, **_kw: calls.append(trigger_source))
 
     scheduler.main()
 

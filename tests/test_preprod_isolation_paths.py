@@ -62,30 +62,58 @@ def test_scheduler_preprod_isolation_passes_for_isolated_paths(monkeypatch, tmp_
     state_root = tmp_path / "state"
     state_root.mkdir(parents=True, exist_ok=True)
 
-    monkeypatch.setenv("PREPROD_ISOLATION_MODE", "true")
-    monkeypatch.setenv("PREPROD_STATE_ROOT", str(state_root))
-    monkeypatch.setenv("SCHEDULER_QUEUE_FILE", str(state_root / "state" / "queue.json"))
-    monkeypatch.setenv("SCHEDULER_PID_FILE", str(state_root / "state" / "pid"))
-    monkeypatch.setenv("SCHEDULER_SINGLETON_LOCK_FILE", str(state_root / "state" / "singleton.lock"))
-    monkeypatch.setenv("SCHEDULER_SINGLETON_META_FILE", str(state_root / "state" / "singleton_meta.json"))
-    monkeypatch.setenv("RUNTIME_EVIDENCE_LATEST_FILE", str(state_root / "telemetry" / "runtime.json"))
-    monkeypatch.setenv("SAFETY_GATE_LATEST_FILE", str(state_root / "telemetry" / "safety.json"))
-    monkeypatch.setenv("ACTIVATION_CONTROLLER_REPORT_PATH", str(state_root / "telemetry" / "activation.json"))
-    monkeypatch.setenv("ACTIVATION_CONTROLLER_REPORT_ARCHIVE_DIR", str(state_root / "state" / "activation_reports"))
-    monkeypatch.setenv("ACTIVATION_FLAGS_PATH", str(state_root / "state" / "flags.json"))
-    monkeypatch.setenv("GOVERNANCE_REFRESH_LATEST_PATH", str(state_root / "state" / "gov_latest.json"))
-    monkeypatch.setenv("GOVERNANCE_READINESS_MD_PATH", str(state_root / "state" / "governance.md"))
-    monkeypatch.setenv("PRODUCTION_DASHBOARD_JSON_PATH", str(state_root / "telemetry" / "dashboard.json"))
-    monkeypatch.setenv("PRODUCTION_DASHBOARD_MD_PATH", str(state_root / "state" / "dashboard.md"))
-    monkeypatch.setenv("PRODUCTION_EVENTS_PATH", str(state_root / "telemetry" / "events.jsonl"))
-    monkeypatch.setenv("PRODUCTION_OBSERVABILITY_LATEST_PATH", str(state_root / "telemetry" / "observability.json"))
-    monkeypatch.setenv("SCHEDULER_LOG_FILE", str(state_root / "logs" / "scheduler.log"))
-    scheduler._close_scheduler_logging_handlers()
-    scheduler = importlib.reload(scheduler)
-    monkeypatch.setattr(scheduler, "_SCHEDULER_LOG_FILE_PATH", state_root / "logs" / "scheduler.log")
-    monkeypatch.setattr(scheduler.os, "getcwd", lambda: str(repo_root))
+    isolated_scheduler = scheduler
+    try:
+        with monkeypatch.context() as scoped:
+            scoped.setenv("PREPROD_ISOLATION_MODE", "true")
+            scoped.setenv("PREPROD_STATE_ROOT", str(state_root))
+            scoped.setenv("SCHEDULER_QUEUE_FILE", str(state_root / "state" / "queue.json"))
+            scoped.setenv("SCHEDULER_PID_FILE", str(state_root / "state" / "pid"))
+            scoped.setenv("SCHEDULER_SINGLETON_LOCK_FILE", str(state_root / "state" / "singleton.lock"))
+            scoped.setenv("SCHEDULER_SINGLETON_META_FILE", str(state_root / "state" / "singleton_meta.json"))
+            scoped.setenv("RUNTIME_EVIDENCE_LATEST_FILE", str(state_root / "telemetry" / "runtime.json"))
+            scoped.setenv("SAFETY_GATE_LATEST_FILE", str(state_root / "telemetry" / "safety.json"))
+            scoped.setenv("ACTIVATION_CONTROLLER_REPORT_PATH", str(state_root / "telemetry" / "activation.json"))
+            scoped.setenv("ACTIVATION_CONTROLLER_REPORT_ARCHIVE_DIR", str(state_root / "state" / "activation_reports"))
+            scoped.setenv("ACTIVATION_FLAGS_PATH", str(state_root / "state" / "flags.json"))
+            scoped.setenv("GOVERNANCE_REFRESH_LATEST_PATH", str(state_root / "state" / "gov_latest.json"))
+            scoped.setenv("GOVERNANCE_READINESS_MD_PATH", str(state_root / "state" / "governance.md"))
+            scoped.setenv("PRODUCTION_DASHBOARD_JSON_PATH", str(state_root / "telemetry" / "dashboard.json"))
+            scoped.setenv("PRODUCTION_DASHBOARD_MD_PATH", str(state_root / "state" / "dashboard.md"))
+            scoped.setenv("PRODUCTION_EVENTS_PATH", str(state_root / "telemetry" / "events.jsonl"))
+            scoped.setenv("PRODUCTION_OBSERVABILITY_LATEST_PATH", str(state_root / "telemetry" / "observability.json"))
+            scoped.setenv("SCHEDULER_LOG_FILE", str(state_root / "logs" / "scheduler.log"))
+            scheduler._close_scheduler_logging_handlers()
+            isolated_scheduler = importlib.reload(scheduler)
+            scoped.setattr(isolated_scheduler, "_SCHEDULER_LOG_FILE_PATH", state_root / "logs" / "scheduler.log")
+            scoped.setattr(isolated_scheduler.os, "getcwd", lambda: str(repo_root))
 
-    scheduler._assert_preprod_isolation_paths()
+            isolated_scheduler._assert_preprod_isolation_paths()
+    finally:
+        isolated_scheduler._close_scheduler_logging_handlers()
+        importlib.reload(isolated_scheduler)
+
+
+def test_scheduler_preprod_reload_does_not_leak_module_constants(monkeypatch, tmp_path):
+    import scheduler
+
+    state_root = tmp_path / "state"
+    state_root.mkdir(parents=True, exist_ok=True)
+
+    with monkeypatch.context() as scoped:
+        scoped.setenv("PREPROD_ISOLATION_MODE", "true")
+        scoped.setenv("PREPROD_STATE_ROOT", str(state_root))
+        scoped.setenv("SCHEDULER_LOG_FILE", str(state_root / "logs" / "scheduler.log"))
+        scoped.setenv("SCHEDULER_QUEUE_FILE", str(state_root / "state" / "queue.json"))
+        scheduler._close_scheduler_logging_handlers()
+        isolated = importlib.reload(scheduler)
+        assert str(state_root) in str(isolated._SCHEDULER_LOG_FILE_PATH)
+        assert str(state_root) in str(isolated.QUEUE_FILE)
+
+    isolated._close_scheduler_logging_handlers()
+    restored = importlib.reload(isolated)
+    assert str(state_root) not in str(restored._SCHEDULER_LOG_FILE_PATH)
+    assert str(state_root) not in str(restored.QUEUE_FILE)
 
 
 def test_production_quality_dashboard_path_override(tmp_path, monkeypatch):

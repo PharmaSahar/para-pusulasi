@@ -7,6 +7,7 @@ from pathlib import Path
 import requests
 
 from .config import config
+from .forensic_telemetry import sanitize_url
 from .visual_safety_policy import evaluate_visual_query
 
 logger = logging.getLogger(__name__)
@@ -147,6 +148,26 @@ class ImageFetcher:
         self.channel_cfg = cfg
         self.api_key = os.getenv("PEXELS_API_KEY", "") if not channel_cfg else getattr(cfg, "pexels_api_key", os.getenv("PEXELS_API_KEY", ""))
         self.has_api = bool(self.api_key) and not self.api_key.startswith("your_")
+        self.last_forensic_trace = {
+            "provider": "pexels",
+            "query_attempts": [],
+            "selected_assets": [],
+            "asset_metadata_by_local_path": {},
+            "deterministic_inputs": {},
+            "cache_provenance": [],
+        }
+
+    def _record_forensic_trace(self, trace: dict) -> None:
+        if not isinstance(trace, dict):
+            return
+        self.last_forensic_trace = {
+            "provider": "pexels",
+            "query_attempts": list(trace.get("query_attempts") or []),
+            "selected_assets": list(trace.get("selected_assets") or []),
+            "asset_metadata_by_local_path": dict(trace.get("asset_metadata_by_local_path") or {}),
+            "deterministic_inputs": dict(trace.get("deterministic_inputs") or {}),
+            "cache_provenance": list(trace.get("cache_provenance") or []),
+        }
 
     def _fallback_query(self, title: str) -> str:
         niche = _normalize_niche(getattr(self.channel_cfg, "niche", ""))
@@ -236,6 +257,17 @@ class ImageFetcher:
 
         # Build query candidates: primary + safe fallbacks
         query_candidates = [original_query] + build_safe_search_queries(title, niche, channel_id)
+        forensic_trace = {
+            "provider": "pexels",
+            "query_attempts": [],
+            "selected_assets": [],
+            "asset_metadata_by_local_path": {},
+            "deterministic_inputs": {
+                "title_hash": hash(title),
+                "query_override": str(query_override or ""),
+            },
+            "cache_provenance": [],
+        }
 
         obs = SearchObservability(
             channel_id=channel_id,
@@ -250,6 +282,13 @@ class ImageFetcher:
         for attempt, query in enumerate(query_candidates):
             if len(paths) >= count:
                 break
+            forensic_trace["query_attempts"].append(
+                {
+                    "attempt": int(attempt),
+                    "query": str(query),
+                    "media_type": "video",
+                }
+            )
             obs.effective_query = query
             if attempt > 0:
                 obs.fallback_used = True
@@ -295,6 +334,26 @@ class ImageFetcher:
                     clip_path = f"{output_dir}/clip_{len(paths):02d}.mp4"
                     self._download_file(best["link"], clip_path)
                     paths.append(clip_path)
+                    provider_asset_id = str(video.get("id") or "")
+                    provider_url = str(video.get("url") or "")
+                    forensic_trace["selected_assets"].append(
+                        {
+                            "candidate_asset_id": provider_asset_id,
+                            "provider_asset_id": provider_asset_id,
+                            "provider": "pexels",
+                            "source_url": sanitize_url(provider_url),
+                            "local_path": clip_path,
+                            "media_type": "video",
+                            "query": str(query),
+                        }
+                    )
+                    forensic_trace["asset_metadata_by_local_path"][clip_path] = {
+                        "provider_asset_id": provider_asset_id,
+                        "source_url": sanitize_url(provider_url),
+                        "provider": "pexels",
+                        "media_type": "video",
+                        "query": str(query),
+                    }
                     obs.selected_asset_urls.append(str(video.get("url", "")))
                     logger.info(f"Klip indirildi [{query[:40]}]: {clip_path}")
 
@@ -307,8 +366,16 @@ class ImageFetcher:
             obs.fallback_used = True
             obs.fallback_reason = "all_video_queries_failed_using_photos"
             paths = self.fetch_images(title, count, output_dir)
+            inherited = dict(getattr(self, "last_forensic_trace", {}) or {})
+            if inherited:
+                forensic_trace["query_attempts"].extend(list(inherited.get("query_attempts") or []))
+                forensic_trace["selected_assets"].extend(list(inherited.get("selected_assets") or []))
+                forensic_trace["asset_metadata_by_local_path"].update(dict(inherited.get("asset_metadata_by_local_path") or {}))
+                for key, value in dict(inherited.get("deterministic_inputs") or {}).items():
+                    forensic_trace["deterministic_inputs"][key] = value
 
         record_search_observability(obs)
+        self._record_forensic_trace(forensic_trace)
         logger.info(f"Toplam {len(paths)} medya dosyasi hazir. "
                     f"[accepted={obs.accepted} rejected={obs.rejected} hard_blocked={obs.hard_blocked}]")
         return paths
@@ -331,6 +398,16 @@ class ImageFetcher:
         Path(output_dir).mkdir(parents=True, exist_ok=True)
 
         query_candidates = [original_query] + build_safe_search_queries(title, niche, channel_id)
+        forensic_trace = {
+            "provider": "pexels",
+            "query_attempts": [],
+            "selected_assets": [],
+            "asset_metadata_by_local_path": {},
+            "deterministic_inputs": {
+                "title_hash": hash(title),
+            },
+            "cache_provenance": [],
+        }
 
         obs = SearchObservability(
             channel_id=channel_id,
@@ -345,6 +422,13 @@ class ImageFetcher:
         for attempt, query in enumerate(query_candidates):
             if len(paths) >= count:
                 break
+            forensic_trace["query_attempts"].append(
+                {
+                    "attempt": int(attempt),
+                    "query": str(query),
+                    "media_type": "photo",
+                }
+            )
             obs.effective_query = query
             if attempt > 0:
                 obs.fallback_used = True
@@ -374,11 +458,32 @@ class ImageFetcher:
                     img_path = f"{output_dir}/img_{len(paths):02d}.jpg"
                     self._download_file(photo["src"]["large2x"], img_path)
                     paths.append(img_path)
+                    provider_asset_id = str(photo.get("id") or "")
+                    provider_url = str(photo.get("url") or "")
+                    forensic_trace["selected_assets"].append(
+                        {
+                            "candidate_asset_id": provider_asset_id,
+                            "provider_asset_id": provider_asset_id,
+                            "provider": "pexels",
+                            "source_url": sanitize_url(provider_url),
+                            "local_path": img_path,
+                            "media_type": "photo",
+                            "query": str(query),
+                        }
+                    )
+                    forensic_trace["asset_metadata_by_local_path"][img_path] = {
+                        "provider_asset_id": provider_asset_id,
+                        "source_url": sanitize_url(provider_url),
+                        "provider": "pexels",
+                        "media_type": "photo",
+                        "query": str(query),
+                    }
                     obs.selected_asset_urls.append(str(photo.get("url", "")))
             except Exception as exc:
                 logger.warning(f"Fotoğraf indirme başarısız (attempt {attempt+1}): {exc}")
 
         record_search_observability(obs)
+        self._record_forensic_trace(forensic_trace)
         return paths
 
     def fetch_thumbnail_photo(self, title: str, output_path: str = "") -> str | None:
@@ -416,6 +521,46 @@ class ImageFetcher:
             photo = safe_photos[idx]
             url = photo["src"].get("large2x") or photo["src"]["large"]
             self._download_file(url, output_path)
+            trace = dict(getattr(self, "last_forensic_trace", {}) or {})
+            trace.setdefault("provider", "pexels")
+            trace.setdefault("query_attempts", [])
+            trace.setdefault("selected_assets", [])
+            trace.setdefault("asset_metadata_by_local_path", {})
+            trace.setdefault("deterministic_inputs", {})
+            trace.setdefault("cache_provenance", [])
+            trace["query_attempts"].append(
+                {
+                    "attempt": 0,
+                    "query": str(query),
+                    "media_type": "thumbnail_photo",
+                }
+            )
+            provider_asset_id = str(photo.get("id") or "")
+            provider_url = str(photo.get("url") or "")
+            trace["selected_assets"].append(
+                {
+                    "candidate_asset_id": provider_asset_id,
+                    "provider_asset_id": provider_asset_id,
+                    "provider": "pexels",
+                    "source_url": sanitize_url(provider_url),
+                    "local_path": output_path,
+                    "media_type": "thumbnail_photo",
+                    "query": str(query),
+                }
+            )
+            trace["asset_metadata_by_local_path"][output_path] = {
+                "provider_asset_id": provider_asset_id,
+                "source_url": sanitize_url(provider_url),
+                "provider": "pexels",
+                "media_type": "thumbnail_photo",
+                "query": str(query),
+            }
+            trace["deterministic_inputs"]["thumbnail_selection"] = {
+                "title_hash": hash(title),
+                "candidate_count": len(safe_photos),
+                "selected_index": idx,
+            }
+            self._record_forensic_trace(trace)
             logger.info(f"Thumbnail fotoğrafı indirildi: {query}")
             return output_path
         except Exception as exc:

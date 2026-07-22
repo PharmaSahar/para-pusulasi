@@ -34,6 +34,17 @@ from .retry_policy import (
     get_retry_budget_state,
     retry_budget_context,
 )
+from .forensic_telemetry import (
+    FORENSIC_COMPONENT,
+    FORENSIC_SCHEMA_VERSION,
+    average_hash_8x8,
+    compute_record_hash,
+    sanitize_url,
+    sha256_file,
+    sha256_text,
+    validate_forensic_record,
+    write_immutable_forensic_record,
+)
 from .visual_diversity import topic_similarity
 
 
@@ -89,6 +100,7 @@ UPLOAD_REGISTRY_PATH = env_or_runtime_path("UPLOAD_REGISTRY_PATH", "state/produc
 UPLOAD_REGISTRY_LOCK_PATH = env_or_runtime_path("UPLOAD_REGISTRY_LOCK_PATH", "state/production_upload_registry.lock")
 DEAD_LETTER_QUEUE_PATH = env_or_runtime_path("DEAD_LETTER_QUEUE_PATH", "telemetry/production_dead_letter_queue.jsonl")
 CANARY_STATE_PATH = env_or_runtime_path("CANARY_STATE_PATH", "state/production_canary_state.json")
+FORENSIC_GENERATION_ROOT = env_or_runtime_path("FORENSIC_GENERATION_ROOT", "forensics/generation")
 
 
 def _trace_dashboard_write(*, target: Path, write_mode: str, atomic: bool, bytes_written: int) -> None:
@@ -1193,6 +1205,182 @@ def canary_gate_decision(channel_id: str) -> dict[str, Any]:
     )
     _safe_write_json(CANARY_STATE_PATH, state)
     return {"allow": True, "reason": "canary_allowed", "mode": "canary"}
+
+
+def _safe_read_manifest(path_value: str | None) -> dict[str, Any]:
+    path_text = str(path_value or "").strip()
+    if not path_text:
+        return {}
+    path = Path(path_text)
+    if not path.exists() or not path.is_file():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _build_manifest_asset_index(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    index: dict[str, dict[str, Any]] = {}
+    for item in list(manifest.get("assets") or []):
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("asset") or "").strip()
+        if not key:
+            continue
+        index[key] = item
+    return index
+
+
+def _normalize_media_queries(query_attempts: list[dict[str, Any]]) -> list[str]:
+    ordered: list[str] = []
+    for item in query_attempts:
+        if not isinstance(item, dict):
+            continue
+        query = str(item.get("query") or "").strip()
+        if query:
+            ordered.append(query)
+    return ordered
+
+
+def _infer_scene_role(index: int, total: int, *, thumbnail_path: str | None, scene_path: str) -> str:
+    if thumbnail_path and str(scene_path) == str(thumbnail_path):
+        return "thumbnail-source"
+    if index == 0:
+        return "intro"
+    if index == max(0, total - 1):
+        return "outro"
+    return "body"
+
+
+def _scene_perceptual_entry(scene_path: str) -> dict[str, Any]:
+    phash = average_hash_8x8(scene_path)
+    return {
+        "perceptual_hash": phash.get("value"),
+        "perceptual_hash_status": phash.get("status"),
+        "perceptual_hash_algorithm": phash.get("algorithm"),
+    }
+
+
+def build_generation_forensic_record(result: dict[str, Any]) -> dict[str, Any]:
+    selected_visuals = [str(item) for item in (result.get("selected_visuals") or []) if str(item).strip()]
+    thumbnail_path = str(result.get("thumbnail_path") or "").strip()
+    video_path = str(result.get("video_path") or "").strip()
+
+    media_trace = dict(result.get("forensic_media_trace") or {})
+    query_attempts = list(media_trace.get("query_attempts") or [])
+    selected_assets = list(media_trace.get("selected_assets") or [])
+    metadata_by_path = dict(media_trace.get("asset_metadata_by_local_path") or {})
+
+    visual_manifest = _safe_read_manifest(str(result.get("visual_manifest_path") or ""))
+    manifest_index = _build_manifest_asset_index(visual_manifest)
+
+    provider_asset_ids: list[str] = []
+    asset_urls_sanitized: list[str] = []
+    for item in selected_assets:
+        if not isinstance(item, dict):
+            continue
+        provider_asset_id = str(item.get("provider_asset_id") or "").strip()
+        source_url = sanitize_url(str(item.get("source_url") or ""))
+        if provider_asset_id:
+            provider_asset_ids.append(provider_asset_id)
+        if source_url:
+            asset_urls_sanitized.append(source_url)
+
+    scene_order: list[dict[str, Any]] = []
+    perceptual_hashes: list[dict[str, Any]] = []
+    asset_fingerprints: list[str] = []
+    for scene_index, scene_path in enumerate(selected_visuals):
+        manifest_item = dict(manifest_index.get(scene_path) or {})
+        meta_item = dict(metadata_by_path.get(scene_path) or {})
+        fingerprint = str(manifest_item.get("asset_fingerprint") or "").strip()
+        if not fingerprint:
+            fallback_hash = sha256_file(scene_path)
+            fingerprint = str(fallback_hash or sha256_text(scene_path)).strip().lower()
+        local_asset_hash = sha256_file(scene_path)
+        pentry = _scene_perceptual_entry(scene_path)
+        provider_asset_id = str(meta_item.get("provider_asset_id") or manifest_item.get("provider_asset_id") or "").strip() or None
+
+        scene_record = {
+            "scene_index": int(scene_index),
+            "asset_fingerprint": fingerprint,
+            "perceptual_hash": pentry.get("perceptual_hash"),
+            "provider_asset_id": provider_asset_id,
+            "local_asset_hash": local_asset_hash,
+            "source_type": str(meta_item.get("source_type") or manifest_item.get("source_type") or meta_item.get("media_type") or "unknown"),
+            "duration": None,
+            "role": _infer_scene_role(scene_index, len(selected_visuals), thumbnail_path=thumbnail_path, scene_path=scene_path),
+            "perceptual_hash_status": pentry.get("perceptual_hash_status"),
+            "perceptual_hash_algorithm": pentry.get("perceptual_hash_algorithm"),
+        }
+        scene_order.append(scene_record)
+        perceptual_hashes.append(
+            {
+                "asset_fingerprint": fingerprint,
+                "value": pentry.get("perceptual_hash"),
+                "status": pentry.get("perceptual_hash_status"),
+                "algorithm": pentry.get("perceptual_hash_algorithm"),
+            }
+        )
+        asset_fingerprints.append(fingerprint)
+
+    dedup_provider = sorted({item for item in provider_asset_ids if item})
+    dedup_urls = sorted({item for item in asset_urls_sanitized if item})
+    dedup_fingerprints = sorted({item for item in asset_fingerprints if item})
+
+    qa_result = {
+        "automatic_qa": dict(result.get("automatic_qa") or {}),
+        "content_quality": dict(result.get("content_quality") or {}),
+        "script_quality": dict(result.get("script_quality") or {}),
+        "thumbnail_intelligence": dict(result.get("thumbnail_intelligence") or {}),
+        "rejection_reasons": list(result.get("rejection_reasons") or []),
+    }
+
+    provider_values = [
+        str(media_trace.get("provider") or "").strip(),
+        str(result.get("content_provider") or "anthropic").strip(),
+        "youtube",
+    ]
+    provider = ",".join(sorted({p for p in provider_values if p}))
+
+    record = {
+        "forensic_schema_version": FORENSIC_SCHEMA_VERSION,
+        "timestamp_utc": str(result.get("finished_at") or _now_iso()),
+        "release_sha": str(result.get("build_sha") or result.get("commit_sha") or ""),
+        "run_id": str(result.get("run_id") or ""),
+        "content_id": str(result.get("content_id") or result.get("generation_id") or ""),
+        "channel_id": str(result.get("channel") or result.get("channel_id") or ""),
+        "topic": str(result.get("topic") or result.get("title") or ""),
+        "provider": provider,
+        "media_queries": _normalize_media_queries(query_attempts),
+        "provider_asset_ids": dedup_provider,
+        "asset_urls_sanitized": dedup_urls,
+        "asset_fingerprints": dedup_fingerprints,
+        "perceptual_hashes": perceptual_hashes,
+        "selected_visuals": selected_visuals,
+        "scene_order": scene_order,
+        "thumbnail_prompt": str(result.get("thumbnail_prompt") or ""),
+        "thumbnail_hash": sha256_file(thumbnail_path),
+        "render_hash": sha256_file(video_path),
+        "video_id": str(result.get("video_id") or "") or None,
+        "youtube_url": str(result.get("youtube_url") or "") or None,
+        "qa_result": qa_result,
+        "generation_result": str(result.get("final_status") or "unknown"),
+        "record_hash": "",
+        "created_by_component": FORENSIC_COMPONENT,
+        "cache_provenance": list(media_trace.get("cache_provenance") or []),
+    }
+    record["record_hash"] = compute_record_hash(record)
+    validate_forensic_record(record)
+    return record
+
+
+def write_immutable_generation_forensic_record(result: dict[str, Any]) -> Path | None:
+    if str(result.get("final_status") or "").lower() != "success":
+        return None
+    record = build_generation_forensic_record(result)
+    return write_immutable_forensic_record(root_dir=FORENSIC_GENERATION_ROOT, record=record)
 
 
 def write_production_evidence(result: dict[str, Any]) -> Path:

@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .forensic_telemetry import average_hash_8x8, sanitize_url, sha256_file
+
 
 POLICY_VERSION = "visual_safety.v1"
 MODERATION_VERSION = "metadata_rules.v1"
@@ -312,18 +314,42 @@ def build_visual_manifest(
     run_id: str,
     niche: str,
     topic: str,
-    assets: list[str],
+    assets: list[Any],
     output_path: str | Path,
 ) -> Path:
     records = []
     for asset in assets:
-        asset_text = str(asset or "").strip()
+        provider_asset_id = ""
+        source_url = ""
+        source_type = "local"
+        media_type = "unknown"
+        query = ""
+        if isinstance(asset, dict):
+            asset_text = str(asset.get("asset") or asset.get("local_path") or "").strip()
+            provider_asset_id = str(asset.get("provider_asset_id") or "").strip()
+            source_url = sanitize_url(str(asset.get("source_url") or ""))
+            source_type = str(asset.get("source_type") or asset.get("provider") or "local")
+            media_type = str(asset.get("media_type") or "unknown")
+            query = str(asset.get("query") or "")
+        else:
+            asset_text = str(asset or "").strip()
         if not asset_text:
             continue
+        local_asset_hash = sha256_file(asset_text)
+        perceptual = average_hash_8x8(asset_text)
         records.append(
             {
                 "asset": asset_text,
                 "asset_fingerprint": fingerprint_asset(asset_text),
+                "local_asset_hash": local_asset_hash,
+                "perceptual_hash": perceptual.get("value"),
+                "perceptual_hash_status": perceptual.get("status"),
+                "perceptual_hash_algorithm": perceptual.get("algorithm"),
+                "provider_asset_id": provider_asset_id,
+                "source_url": source_url,
+                "source_type": source_type,
+                "media_type": media_type,
+                "query": query,
                 "source": "final_render_manifest",
                 "approved": True,
                 "moderation_result": "safe",

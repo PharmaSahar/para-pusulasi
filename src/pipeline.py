@@ -65,6 +65,7 @@ from .production_quality_platform import (
     score_script_quality,
     update_production_dashboard,
     update_production_observability_latest,
+    write_immutable_generation_forensic_record,
     write_production_evidence,
 )
 
@@ -506,6 +507,14 @@ def run_full_pipeline(
     result["final_status"] = "in_progress"
     result["dry_run"] = bool(dry_run)
     result["trigger_source"] = str(trigger_source or "")
+    result["forensic_media_trace"] = {
+        "provider": "",
+        "query_attempts": [],
+        "selected_assets": [],
+        "asset_metadata_by_local_path": {},
+        "deterministic_inputs": {},
+        "cache_provenance": [],
+    }
 
     def _consume_pipeline_retry_budget(reason_code: str) -> tuple[bool, int | None]:
         current_budget = get_retry_budget_state()
@@ -556,6 +565,27 @@ def run_full_pipeline(
             warning.update(extra)
         result[field] = warning
         return warning
+
+    def _merge_forensic_media_trace(trace: dict | None):
+        if not isinstance(trace, dict):
+            return
+        current = dict(result.get("forensic_media_trace") or {})
+        current.setdefault("provider", "")
+        current.setdefault("query_attempts", [])
+        current.setdefault("selected_assets", [])
+        current.setdefault("asset_metadata_by_local_path", {})
+        current.setdefault("deterministic_inputs", {})
+        current.setdefault("cache_provenance", [])
+
+        provider = str(trace.get("provider") or "").strip()
+        if provider:
+            current["provider"] = provider
+        current["query_attempts"].extend(list(trace.get("query_attempts") or []))
+        current["selected_assets"].extend(list(trace.get("selected_assets") or []))
+        current["asset_metadata_by_local_path"].update(dict(trace.get("asset_metadata_by_local_path") or {}))
+        current["deterministic_inputs"].update(dict(trace.get("deterministic_inputs") or {}))
+        current["cache_provenance"].extend(list(trace.get("cache_provenance") or []))
+        result["forensic_media_trace"] = current
 
     if result.get("analytics_live_status") == "no_go_api_not_enabled":
         _record_warning(
@@ -1345,6 +1375,7 @@ def run_full_pipeline(
             setattr(topic_error, "_regeneration_limit", 1)
             raise
         result["title"] = content.title
+        result["thumbnail_prompt"] = getattr(content, "thumbnail_prompt", "")
         result["script_path"] = str(getattr(content, "saved_path", "") or f"{cfg.scripts_dir}/{content.created_at[:10]}_{content.title[:30]}.json")
 
         if script_lineage_enabled:
@@ -2246,6 +2277,7 @@ def run_full_pipeline(
             output_dir=str(observation_dir / "visual_candidates"),
             query_override=query_value,
         )
+        _merge_forensic_media_trace(getattr(fetcher, "last_forensic_trace", None))
         result["selected_visuals"] = [str(item) for item in (image_paths or [])]
         thumbnail_path = str(image_paths[0]) if image_paths else ""
         visual_manifest_path = build_visual_manifest(
@@ -2454,6 +2486,7 @@ def run_full_pipeline(
             image_paths = fetcher.fetch_video_clips(
                 content.title, count=4, output_dir=media_dir, query_override=pexels_query
             )
+        _merge_forensic_media_trace(getattr(fetcher, "last_forensic_trace", None))
 
         # Finansal grafik üret — video ortasına (değişken pozisyon) ekle
         chart_path = None
@@ -2575,6 +2608,7 @@ def run_full_pipeline(
                     logger.info("DALL-E 3 thumbnail kullanılıyor")
             if not thumb_bg:
                 thumb_bg = fetcher.fetch_thumbnail_photo(content.title)
+                _merge_forensic_media_trace(getattr(fetcher, "last_forensic_trace", None))
             if not thumb_bg:
                 thumb_bg = image_paths[0] if image_paths else None
         except Exception:
@@ -3361,6 +3395,7 @@ def run_full_pipeline(
     result["script"] = getattr(content, "script", "")
     result["description"] = getattr(content, "description", "")
     result["tags"] = list(getattr(content, "tags", []) or [])
+    result["thumbnail_prompt"] = getattr(content, "thumbnail_prompt", "")
     result["finished_at"] = datetime.now(timezone.utc).isoformat()
     if result.get("video_id"):
         result["final_status"] = "success"
@@ -3374,6 +3409,44 @@ def run_full_pipeline(
         result["final_status"] = "failed"
     else:
         result["final_status"] = "blocked"
+
+    try:
+        forensic_record_path = write_immutable_generation_forensic_record(result)
+        if forensic_record_path is not None:
+            result["forensic_record_path"] = str(forensic_record_path)
+    except Exception as exc:
+        result["forensic_record_error"] = {
+            "error_type": exc.__class__.__name__,
+            "message": str(exc),
+        }
+        logger.error(
+            "Immutable forensic record write failed: run_id=%s content_id=%s channel=%s error_type=%s",
+            result.get("run_id"),
+            result.get("content_id"),
+            result.get("channel"),
+            exc.__class__.__name__,
+        )
+        try:
+            record_production_event(
+                {
+                    "event_type": "forensic_record_write_failed",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "severity": "ERROR",
+                    "status": "failed",
+                    "reason": "immutable_forensic_write_failed",
+                    "operation": "forensic_record_write",
+                    "channel": result.get("channel"),
+                    "channel_id": result.get("channel"),
+                    "job_id": result.get("run_id"),
+                    "source_component": "pipeline",
+                    "evidence": {
+                        "error_type": exc.__class__.__name__,
+                        "message": str(exc),
+                    },
+                }
+            )
+        except Exception:
+            pass
 
     try:
         write_production_evidence(result)

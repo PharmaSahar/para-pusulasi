@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tools.audit_cross_channel_forensics import build_report
+from tools.audit_cross_channel_forensics import build_report, classify_release_sha
 
 
 def _record(
@@ -90,3 +90,28 @@ def test_scene_sequence_overlap_high_without_exact():
     finding = report["findings"][0]
     assert finding["high_scene_sequence_overlap"] is True
     assert finding["classification"] == "perceptual_near_duplicate"
+
+
+def test_release_sha_classification_short_sha_matches_target_prefix():
+    target_sha = "9ec07084c734019da7c0e0a43813ff39dd3b98a2"
+    assert classify_release_sha("9ec0708", target_sha) == "CURRENT_RELEASE"
+
+
+def test_release_sha_classification_full_sha_matches_exact():
+    target_sha = "9ec07084c734019da7c0e0a43813ff39dd3b98a2"
+    assert classify_release_sha(target_sha, target_sha) == "CURRENT_RELEASE"
+
+
+def test_release_sha_classification_different_prefix_is_older():
+    target_sha = "9ec07084c734019da7c0e0a43813ff39dd3b98a2"
+    assert classify_release_sha("7ac3aaa", target_sha) == "OLDER_RELEASE"
+
+
+def test_release_sha_classification_empty_is_unknown():
+    target_sha = "9ec07084c734019da7c0e0a43813ff39dd3b98a2"
+    assert classify_release_sha("", target_sha) == "UNKNOWN_RELEASE"
+
+
+def test_release_sha_classification_malformed_is_invalid():
+    target_sha = "9ec07084c734019da7c0e0a43813ff39dd3b98a2"
+    assert classify_release_sha("zzzzzzz", target_sha) == "INVALID_SHA_FORMAT"

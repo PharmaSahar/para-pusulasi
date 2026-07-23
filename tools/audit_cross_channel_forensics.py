@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from collections import defaultdict
 from dataclasses import dataclass
 from itertools import combinations
@@ -10,6 +11,8 @@ from typing import Any
 
 
 DEFAULT_PHASH_DISTANCE_THRESHOLD = 6
+_SHORT_SHA_MIN_LEN = 7
+_HEX_RE = re.compile(r"^[0-9a-f]+$")
 
 
 def _safe_read_json(path: Path) -> dict[str, Any] | None:
@@ -18,6 +21,76 @@ def _safe_read_json(path: Path) -> dict[str, Any] | None:
     except Exception:
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def classify_release_sha(record_sha: str, target_sha: str) -> str:
+    """Classify forensic record release SHA against the deployment target SHA.
+
+    Contract:
+    - Forensic records may store short SHA (e.g. 7 chars) or full 40-char SHA.
+    - Empty record SHA is UNKNOWN_RELEASE.
+    - Malformed SHA is INVALID_SHA_FORMAT.
+    - Full SHA must match exactly.
+    - Short SHA matches when it equals target prefix of equal length.
+    """
+
+    record = str(record_sha or "").strip().lower()
+    target = str(target_sha or "").strip().lower()
+
+    if not record:
+        return "UNKNOWN_RELEASE"
+
+    # Prevent false positives from tiny prefixes and reject non-hex strings.
+    if not _HEX_RE.fullmatch(record) or len(record) < _SHORT_SHA_MIN_LEN or len(record) > 40:
+        return "INVALID_SHA_FORMAT"
+
+    if not _HEX_RE.fullmatch(target) or len(target) != 40:
+        return "UNKNOWN_RELEASE"
+
+    if len(record) == 40:
+        return "CURRENT_RELEASE" if record == target else "OLDER_RELEASE"
+
+    # Short SHA contract: compare with same-length target prefix.
+    return "CURRENT_RELEASE" if record == target[: len(record)] else "OLDER_RELEASE"
+
+
+def build_release_identity_report(records: list[dict[str, Any]], *, target_sha: str) -> dict[str, Any]:
+    classified: list[dict[str, Any]] = []
+    counts = {
+        "CURRENT_RELEASE": 0,
+        "OLDER_RELEASE": 0,
+        "UNKNOWN_RELEASE": 0,
+        "INVALID_SHA_FORMAT": 0,
+    }
+
+    for record in records:
+        release_sha = str(record.get("release_sha") or "")
+        classification = classify_release_sha(release_sha, target_sha)
+        counts[classification] = counts.get(classification, 0) + 1
+        classified.append(
+            {
+                "path": str(record.get("_path") or ""),
+                "channel_id": str(record.get("channel_id") or ""),
+                "run_id": str(record.get("run_id") or ""),
+                "content_id": str(record.get("content_id") or ""),
+                "release_sha": release_sha,
+                "release_sha_length": len(release_sha),
+                "release_classification": classification,
+            }
+        )
+
+    return {
+        "target_sha": str(target_sha or ""),
+        "summary": {
+            "records_analyzed": len(records),
+            "current_release_records": counts["CURRENT_RELEASE"],
+            "older_release_records": counts["OLDER_RELEASE"],
+            "unknown_release_records": counts["UNKNOWN_RELEASE"],
+            "invalid_sha_format_records": counts["INVALID_SHA_FORMAT"],
+            "any_current_release_record": counts["CURRENT_RELEASE"] > 0,
+        },
+        "records": classified,
+    }
 
 
 def _iter_records(root: Path) -> list[dict[str, Any]]:
@@ -313,6 +386,11 @@ def main() -> int:
     parser.add_argument("--successful-only", action="store_true", help="Only include generation_result=success records")
     parser.add_argument("--phash-distance-threshold", type=int, default=DEFAULT_PHASH_DISTANCE_THRESHOLD)
     parser.add_argument("--json-out", default="", help="Optional path to write JSON report")
+    parser.add_argument(
+        "--target-sha",
+        default="",
+        help="Optional full 40-character target SHA to classify forensic record release_sha values",
+    )
     args = parser.parse_args()
 
     records = _iter_records(Path(args.root))
@@ -320,6 +398,9 @@ def main() -> int:
         records = [r for r in records if str(r.get("generation_result") or "").lower() == "success"]
 
     report = build_report(records, phash_distance_threshold=max(0, int(args.phash_distance_threshold)))
+
+    if str(args.target_sha or "").strip():
+        report["release_identity"] = build_release_identity_report(records, target_sha=str(args.target_sha or ""))
 
     if args.json_out:
         out = Path(args.json_out)

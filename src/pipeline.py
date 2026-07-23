@@ -1471,13 +1471,21 @@ def run_full_pipeline(
                 )
 
     @contextmanager
-    def _stage(stage: str, start_payload: dict | None = None, complete_payload_fn=None):
+    def _stage(stage: str, start_payload: dict | None = None, complete_payload_fn=None, failed_payload_fn=None):
         _emit(stage, "stage_started", start_payload)
         try:
             yield
         except Exception as e:
             if not getattr(e, "_suppress_pipeline_stage_failed_event", False):
-                _emit(stage, "stage_failed", {"error": str(e)[:300]})
+                failed_payload = {"error": str(e)[:300]}
+                if callable(failed_payload_fn):
+                    try:
+                        candidate = failed_payload_fn(e) or {}
+                        if isinstance(candidate, dict):
+                            failed_payload.update(candidate)
+                    except Exception:
+                        pass
+                _emit(stage, "stage_failed", failed_payload)
             raise
         else:
             payload = {}
@@ -2836,27 +2844,90 @@ def run_full_pipeline(
         thumbnail_path=str(thumbnail_path) if thumbnail_path else None,
         visual_manifest_path=str(result.get("visual_manifest_path", "")),
     )
-    precheck = evaluate_upload_precheck(
-        channel_id=str(result.get("channel", "")),
-        content_id=str(result.get("content_id", "")),
-        run_id=str(result.get("run_id", "")),
-        niche=str(getattr(cfg, "niche", "")),
-        title=str(getattr(content, "title", "")),
-        topic=str(topic or getattr(content, "title", "")),
-        script=str(getattr(content, "script", "")),
-        description=str(getattr(content, "description", "") or ""),
-        tags=list(getattr(content, "tags", []) or []),
-        script_path=str(result.get("script_path", "")),
-        video_path=str(video_path),
-        thumbnail_path=str(thumbnail_path) if thumbnail_path else None,
-        manifest_path=ownership_manifest_path,
-        visual_manifest_path=str(result.get("visual_manifest_path", "")),
-        final_visual_assets=list(result.get("final_visual_assets") or []),
-        duplicate_upload_detected=bool(get_registered_upload(idempotency_key)),
-        quarantine_state="pending" if result.get("production_safety_gate", {}).get("ok") is False else "clear",
-        dry_run=bool(dry_run),
-    )
-    result["upload_precheck"] = precheck
+    class _UploadPrecheckBlocked(RuntimeError):
+        """Internal control-flow signal for telemetry emission only."""
+
+    def _upload_precheck_metadata_consistency(precheck_payload: dict | None) -> str:
+        if not isinstance(precheck_payload, dict):
+            return "unknown"
+        guard_codes = [str(code) for code in list(precheck_payload.get("guard_reason_codes") or [])]
+        if "upload_precheck_metadata_consistency_failed" in guard_codes:
+            return "fail"
+        return "pass"
+
+    def _build_upload_precheck_payload(precheck_payload: dict | None) -> dict:
+        tags = list(getattr(content, "tags", []) or [])
+        precheck_dict = dict(precheck_payload or {})
+        return {
+            "run_id": str(result.get("run_id", "")),
+            "content_id": str(result.get("content_id", "")),
+            "channel_id": str(result.get("channel", "")),
+            "decision": str(precheck_dict.get("status") or "unknown"),
+            "metadata_consistency": _upload_precheck_metadata_consistency(precheck_dict),
+            "guard_reason_codes": list(precheck_dict.get("guard_reason_codes") or []),
+            "quarantine_reason": str(precheck_dict.get("quarantine_reason") or ""),
+            "title": str(getattr(content, "title", "")),
+            "topic": str(topic or getattr(content, "title", "")),
+            "first_five_tags": [str(tag) for tag in tags[:5]],
+        }
+
+    precheck: dict[str, Any] = {}
+
+    def _upload_precheck_failed_payload(exc: Exception) -> dict:
+        payload = _build_upload_precheck_payload(precheck)
+        guard_codes = list(payload.get("guard_reason_codes") or [])
+        blocking_guard = str(guard_codes[0] if guard_codes else "upload_precheck_final_guard")
+        if isinstance(exc, _UploadPrecheckBlocked):
+            reason_code = "upload_precheck_blocked"
+        else:
+            reason_code = "upload_precheck_exception"
+            blocking_guard = "exception"
+        payload.update(
+            {
+                "reason_code": reason_code,
+                "blocking_guard": blocking_guard,
+                "failure_stage": "upload_precheck",
+            }
+        )
+        return payload
+
+    try:
+        with _stage(
+            "upload_precheck",
+            start_payload={
+                "run_id": str(result.get("run_id", "")),
+                "content_id": str(result.get("content_id", "")),
+                "channel_id": str(result.get("channel", "")),
+            },
+            complete_payload_fn=lambda: _build_upload_precheck_payload(precheck),
+            failed_payload_fn=_upload_precheck_failed_payload,
+        ):
+            precheck = evaluate_upload_precheck(
+                channel_id=str(result.get("channel", "")),
+                content_id=str(result.get("content_id", "")),
+                run_id=str(result.get("run_id", "")),
+                niche=str(getattr(cfg, "niche", "")),
+                title=str(getattr(content, "title", "")),
+                topic=str(topic or getattr(content, "title", "")),
+                script=str(getattr(content, "script", "")),
+                description=str(getattr(content, "description", "") or ""),
+                tags=list(getattr(content, "tags", []) or []),
+                script_path=str(result.get("script_path", "")),
+                video_path=str(video_path),
+                thumbnail_path=str(thumbnail_path) if thumbnail_path else None,
+                manifest_path=ownership_manifest_path,
+                visual_manifest_path=str(result.get("visual_manifest_path", "")),
+                final_visual_assets=list(result.get("final_visual_assets") or []),
+                duplicate_upload_detected=bool(get_registered_upload(idempotency_key)),
+                quarantine_state="pending" if result.get("production_safety_gate", {}).get("ok") is False else "clear",
+                dry_run=bool(dry_run),
+            )
+            result["upload_precheck"] = precheck
+            if precheck.get("status") == "blocked":
+                raise _UploadPrecheckBlocked("upload_precheck_blocked")
+    except _UploadPrecheckBlocked:
+        pass
+
     _capture_forward_evidence("OWNERSHIP_FINALIZED", ownership_manifest_path=str(ownership_manifest_path))
     if precheck.get("status") == "blocked":
         result["upload_metadata"] = {

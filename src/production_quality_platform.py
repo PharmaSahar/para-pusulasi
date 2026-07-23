@@ -1271,6 +1271,25 @@ def _scene_perceptual_entry(scene_path: str) -> dict[str, Any]:
     }
 
 
+def _build_upload_precheck_observability(result: dict[str, Any]) -> dict[str, Any]:
+    precheck = dict(result.get("upload_precheck") or {})
+    tags = [str(tag) for tag in list(result.get("tags") or [])]
+    guard_reason_codes = [str(code) for code in list(precheck.get("guard_reason_codes") or [])]
+    metadata_consistency = "fail" if "upload_precheck_metadata_consistency_failed" in guard_reason_codes else "pass"
+    return {
+        "run_id": str(result.get("run_id") or ""),
+        "content_id": str(result.get("content_id") or result.get("generation_id") or ""),
+        "channel_id": str(result.get("channel") or result.get("channel_id") or ""),
+        "decision": str(precheck.get("status") or "unknown"),
+        "metadata_consistency": metadata_consistency,
+        "guard_reason_codes": guard_reason_codes,
+        "quarantine_reason": str(precheck.get("quarantine_reason") or ""),
+        "title": str(result.get("title") or ""),
+        "topic": str(result.get("topic") or result.get("title") or ""),
+        "first_five_tags": tags[:5],
+    }
+
+
 def build_generation_forensic_record(result: dict[str, Any]) -> dict[str, Any]:
     selected_visuals = [str(item) for item in (result.get("selected_visuals") or []) if str(item).strip()]
     thumbnail_path = str(result.get("thumbnail_path") or "").strip()
@@ -1375,6 +1394,7 @@ def build_generation_forensic_record(result: dict[str, Any]) -> dict[str, Any]:
         "youtube_url": str(result.get("youtube_url") or "") or None,
         "qa_result": qa_result,
         "generation_result": str(result.get("final_status") or "unknown"),
+        "upload_precheck": _build_upload_precheck_observability(result),
         "record_hash": "",
         "created_by_component": FORENSIC_COMPONENT,
         "cache_provenance": list(media_trace.get("cache_provenance") or []),
@@ -1438,6 +1458,7 @@ def write_production_evidence(result: dict[str, Any]) -> Path:
             "upload_retry_count": result.get("upload_retry_count", 0),
         },
         "final_decision": result.get("final_status") or "unknown",
+        "upload_precheck": _build_upload_precheck_observability(result),
     }
 
     PRODUCTION_EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)

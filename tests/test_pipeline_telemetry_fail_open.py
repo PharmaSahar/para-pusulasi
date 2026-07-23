@@ -134,6 +134,17 @@ class _FakeUploader:
         return {"subscribers": 0}
 
 
+class _FakeUploaderBlockedSentinel:
+    def __init__(self, channel_cfg=None):
+        pass
+
+    def upload_video(self, *args, **kwargs):
+        raise AssertionError("upload should not be called when precheck blocks")
+
+    def get_channel_stats(self):
+        return {"subscribers": 0}
+
+
 class _ForbiddenTTS:
     def __init__(self, channel_cfg=None):
         pass
@@ -524,6 +535,102 @@ def test_pipeline_short_upload_is_skipped_when_main_upload_fails(monkeypatch, tm
         for _, event_type, payload in shorts_events
     )
     assert not any(event_type == "stage_failed" for _, event_type, _ in shorts_events)
+
+
+def test_upload_precheck_stage_emits_started_and_completed_on_success(monkeypatch, tmp_path):
+    cfg = _FakeConfig(tmp_path)
+    emitted: list[tuple[str, str, dict]] = []
+
+    def _capture_event(*args, **kwargs):
+        envelope = args[0] if args else kwargs.get("event") or {}
+        stage = str(envelope.get("stage") or "")
+        event_type = str(envelope.get("event_type") or "")
+        payload = dict(envelope.get("payload") or {})
+        emitted.append((stage, event_type, payload))
+
+    monkeypatch.setattr(pipeline, "ContentGenerator", _FakeGenerator)
+    monkeypatch.setattr(pipeline, "TTSEngine", _FakeTTS)
+    monkeypatch.setattr(pipeline, "ImageFetcher", _FakeFetcher)
+    monkeypatch.setattr(pipeline, "VideoCreator", _FakeCreator)
+    monkeypatch.setattr(pipeline, "YouTubeUploader", _FakeUploader)
+    monkeypatch.setattr(
+        pipeline,
+        "evaluate_upload_precheck",
+        lambda **_kwargs: {
+            "status": "allow",
+            "quarantine_reason": "",
+            "guard_reason_codes": [],
+            "details": {},
+        },
+    )
+    monkeypatch.setattr(pipeline, "build_default_fact_provider", lambda: object())
+    monkeypatch.setattr(pipeline, "validate_script_factual_freshness", _fact_check_ok)
+    monkeypatch.setattr(pipeline, "emit_event", _capture_event)
+
+    import src.shorts_creator as shorts_creator_module
+
+    monkeypatch.setattr(shorts_creator_module, "ShortsCreator", _FakeShortsCreator)
+
+    result = pipeline.run_full_pipeline(topic="x", generate_only=False, channel_cfg=cfg)
+
+    precheck_events = [row for row in emitted if row[0] == "upload_precheck"]
+    assert any(event_type == "stage_started" for _, event_type, _ in precheck_events)
+    assert any(event_type == "stage_completed" for _, event_type, _ in precheck_events)
+    completed_payloads = [payload for _, event_type, payload in precheck_events if event_type == "stage_completed"]
+    assert completed_payloads
+    assert completed_payloads[-1].get("decision") == "allow"
+    assert completed_payloads[-1].get("metadata_consistency") in {"pass", "unknown"}
+    assert isinstance(completed_payloads[-1].get("first_five_tags"), list)
+    assert len(completed_payloads[-1].get("first_five_tags") or []) <= 5
+    assert result.get("final_status") in {"success", "blocked"}
+
+
+def test_upload_precheck_stage_emits_failed_when_blocked(monkeypatch, tmp_path):
+    cfg = _FakeConfig(tmp_path)
+    emitted: list[tuple[str, str, dict]] = []
+
+    def _capture_event(*args, **kwargs):
+        envelope = args[0] if args else kwargs.get("event") or {}
+        stage = str(envelope.get("stage") or "")
+        event_type = str(envelope.get("event_type") or "")
+        payload = dict(envelope.get("payload") or {})
+        emitted.append((stage, event_type, payload))
+
+    monkeypatch.setattr(pipeline, "ContentGenerator", _FakeGenerator)
+    monkeypatch.setattr(pipeline, "TTSEngine", _FakeTTS)
+    monkeypatch.setattr(pipeline, "ImageFetcher", _FakeFetcher)
+    monkeypatch.setattr(pipeline, "VideoCreator", _FakeCreator)
+    monkeypatch.setattr(pipeline, "YouTubeUploader", _FakeUploaderBlockedSentinel)
+    monkeypatch.setattr(pipeline, "build_default_fact_provider", lambda: object())
+    monkeypatch.setattr(pipeline, "validate_script_factual_freshness", _fact_check_ok)
+    monkeypatch.setattr(
+        pipeline,
+        "evaluate_upload_precheck",
+        lambda **_kwargs: {
+            "status": "blocked",
+            "quarantine_reason": "upload_precheck_blocked",
+            "guard_reason_codes": ["upload_precheck_metadata_consistency_failed", "upload_precheck_final_guard"],
+            "details": {},
+        },
+    )
+    monkeypatch.setattr(pipeline, "emit_event", _capture_event)
+
+    import src.shorts_creator as shorts_creator_module
+
+    monkeypatch.setattr(shorts_creator_module, "ShortsCreator", _FakeShortsCreator)
+
+    result = pipeline.run_full_pipeline(topic="x", generate_only=False, channel_cfg=cfg)
+
+    precheck_events = [row for row in emitted if row[0] == "upload_precheck"]
+    assert any(event_type == "stage_started" for _, event_type, _ in precheck_events)
+    failed_payloads = [payload for _, event_type, payload in precheck_events if event_type == "stage_failed"]
+    assert failed_payloads
+    failed_payload = failed_payloads[-1]
+    assert failed_payload.get("reason_code") == "upload_precheck_blocked"
+    assert failed_payload.get("failure_stage") == "upload_precheck"
+    assert failed_payload.get("blocking_guard") == "upload_precheck_metadata_consistency_failed"
+    assert failed_payload.get("metadata_consistency") == "fail"
+    assert result.get("upload_precheck", {}).get("status") == "blocked"
 
 
 def test_pipeline_thumbnail_experiment_binding_success_writes_variant_metadata(monkeypatch, tmp_path):

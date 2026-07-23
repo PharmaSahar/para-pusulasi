@@ -166,6 +166,17 @@ def test_upload_registry_and_evidence(tmp_path, monkeypatch):
     assert evidence_path.exists()
     payload = json.loads(Path(evidence_path).read_text(encoding="utf-8"))
     assert payload["generation_id"] == "g1"
+    assert "upload_precheck" in payload
+    assert payload["upload_precheck"]["run_id"] == ""
+    assert payload["upload_precheck"]["content_id"] == "g1"
+    assert payload["upload_precheck"]["channel_id"] == "ch1"
+    assert payload["upload_precheck"]["decision"] == "unknown"
+    assert payload["upload_precheck"]["metadata_consistency"] == "pass"
+    assert payload["upload_precheck"]["guard_reason_codes"] == []
+    assert payload["upload_precheck"]["quarantine_reason"] == ""
+    assert payload["upload_precheck"]["title"] == "Title"
+    assert payload["upload_precheck"]["topic"] == "Topic"
+    assert payload["upload_precheck"]["first_five_tags"] == ["a", "b", "c"]
 
 
 def test_canary_gate_decision(tmp_path, monkeypatch):

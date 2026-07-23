@@ -44,6 +44,9 @@ _REQUIRED_TOP_LEVEL_FIELDS = {
     "cache_provenance",
 }
 
+_UPLOAD_PRECHECK_ALLOWED_DECISIONS = {"allow", "blocked", "unknown"}
+_UPLOAD_PRECHECK_ALLOWED_METADATA = {"pass", "fail", "unknown"}
+
 _SECRET_KEY_RE = re.compile(
     r"(api[_-]?key|token|secret|password|authorization|cookie|session|bearer|access[_-]?token|refresh[_-]?token)",
     re.IGNORECASE,
@@ -193,6 +196,36 @@ def validate_forensic_record(record: dict[str, Any]) -> None:
 
     for value in record.get("asset_fingerprints", []):
         _validate_hash_field("asset_fingerprint", value, nullable=False)
+
+    upload_precheck = record.get("upload_precheck")
+    if upload_precheck is not None:
+        if not isinstance(upload_precheck, dict):
+            raise ValueError("forensic_invalid_upload_precheck:type")
+        expected_keys = {
+            "run_id",
+            "content_id",
+            "channel_id",
+            "decision",
+            "metadata_consistency",
+            "guard_reason_codes",
+            "quarantine_reason",
+            "title",
+            "topic",
+            "first_five_tags",
+        }
+        missing_keys = sorted(expected_keys - set(upload_precheck.keys()))
+        if missing_keys:
+            raise ValueError(f"forensic_invalid_upload_precheck:missing={missing_keys}")
+        if str(upload_precheck.get("decision") or "") not in _UPLOAD_PRECHECK_ALLOWED_DECISIONS:
+            raise ValueError("forensic_invalid_upload_precheck:decision")
+        if str(upload_precheck.get("metadata_consistency") or "") not in _UPLOAD_PRECHECK_ALLOWED_METADATA:
+            raise ValueError("forensic_invalid_upload_precheck:metadata_consistency")
+        if not isinstance(upload_precheck.get("guard_reason_codes"), list):
+            raise ValueError("forensic_invalid_upload_precheck:guard_reason_codes")
+        if not isinstance(upload_precheck.get("first_five_tags"), list):
+            raise ValueError("forensic_invalid_upload_precheck:first_five_tags")
+        if len(upload_precheck.get("first_five_tags") or []) > 5:
+            raise ValueError("forensic_invalid_upload_precheck:first_five_tags_length")
 
     _validate_hash_field("thumbnail_hash", record.get("thumbnail_hash"), nullable=True)
     _validate_hash_field("render_hash", record.get("render_hash"), nullable=True)

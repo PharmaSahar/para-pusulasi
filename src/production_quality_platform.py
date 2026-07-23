@@ -1033,8 +1033,16 @@ def register_upload(idempotency_key: str, payload: dict[str, Any]) -> None:
         entries = registry.setdefault("entries", {})
         existing = entries.get(idempotency_key)
         if isinstance(existing, dict):
+            existing_status = _normalize_upload_state(existing.get("status"))
+            existing_video_id = str(existing.get("video_id") or "").strip()
+            # Backward compatibility: older registry rows may have been committed
+            # without an explicit status field. Treat those as committed rather than
+            # failing a new write on a legacy none -> committed transition.
+            current_state = existing_status
+            if current_state is None and existing_video_id:
+                current_state = UPLOAD_STATE_COMMITTED
             _assert_upload_transition(
-                current_state=existing.get("status"),
+                current_state=current_state,
                 next_state=UPLOAD_STATE_COMMITTED,
                 op="register_upload",
             )

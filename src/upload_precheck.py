@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -67,6 +68,11 @@ def _forbidden_keyword_matches(text: str, niche: str, policy: dict[str, Any]) ->
     forbidden = [str(x).strip().lower() for x in list(niche_cfg.get("forbidden_keywords") or []) if str(x).strip()]
     combined = str(text or "").lower()
     return [kw for kw in forbidden if kw in combined]
+
+
+def _canonicalize_metadata_match_text(text: str) -> str:
+    value = str(text or "").lower().replace("/", " ")
+    return re.sub(r"\s+", " ", value).strip()
 
 
 def _is_channel_scoped_path(channel_id: str, path: str | Path) -> bool:
@@ -339,8 +345,10 @@ def evaluate_upload_precheck(
         for tag in list(tags or [])
         if str(tag).strip() and len(str(tag).strip().replace("#", "")) >= 3
     ]
+    canonical_tag_tokens = [_canonicalize_metadata_match_text(token) for token in tag_tokens]
     combined_text = " ".join([str(title or ""), str(topic or ""), str(script or ""), str(description or "")]).lower()
-    if tag_tokens and not any(token and token in combined_text for token in tag_tokens[:5]):
+    canonical_combined_text = _canonicalize_metadata_match_text(combined_text)
+    if canonical_tag_tokens and not any(token and token in canonical_combined_text for token in canonical_tag_tokens[:5]):
         reason_codes.append("upload_precheck_metadata_consistency_failed")
 
     fit, fit_reasons = check_channel_topic_fit(

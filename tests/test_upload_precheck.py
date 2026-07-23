@@ -38,6 +38,57 @@ def _make_manifest(*, channel_id: str, content_id: str, run_id: str, niche: str,
     )
 
 
+def _build_precheck_result(
+    tmp_path,
+    monkeypatch,
+    *,
+    niche: str = "saglik",
+    title: str,
+    topic: str,
+    script_text: str,
+    description: str,
+    tags: list[str],
+):
+    monkeypatch.chdir(tmp_path)
+
+    script = tmp_path / "channels" / "saglik_pusulasi" / "scripts" / "ok.json"
+    video = tmp_path / "channels" / "saglik_pusulasi" / "output" / "videos" / "ok.mp4"
+    thumb = tmp_path / "channels" / "saglik_pusulasi" / "output" / "videos" / "ok.jpg"
+    _write_file(script, b"script-content")
+    _write_file(video, b"video-content")
+    _write_file(thumb, b"thumb-content")
+
+    manifest = _make_manifest(
+        channel_id="saglik_pusulasi",
+        content_id="content_ok",
+        run_id="run_ok",
+        niche=niche,
+        title=title,
+        topic=topic,
+        script=script_text,
+        script_path=script,
+        video_path=video,
+        thumbnail_path=thumb,
+    )
+
+    return evaluate_upload_precheck(
+        channel_id="saglik_pusulasi",
+        content_id="content_ok",
+        run_id="run_ok",
+        niche=niche,
+        title=title,
+        topic=topic,
+        script=script_text,
+        description=description,
+        tags=tags,
+        script_path=str(script),
+        video_path=str(video),
+        thumbnail_path=str(thumb),
+        manifest_path=manifest,
+        enabled=True,
+    )
+
+
 def test_upload_precheck_allows_valid_manifest(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
@@ -493,3 +544,66 @@ def test_upload_precheck_blocks_unreadable_artifact(tmp_path, monkeypatch):
 
     assert res["status"] == "blocked"
     assert "upload_precheck_script_hash_unavailable" in res["guard_reason_codes"]
+
+
+def test_upload_precheck_allows_slash_space_equivalent_tags(tmp_path, monkeypatch):
+    res = _build_precheck_result(
+        tmp_path,
+        monkeypatch,
+        niche="kisisel_finans",
+        title="Dolar/TL 2026 Rehberi",
+        topic="Dolar/TL 2026 Rehberi",
+        script_text="Dolar/TL 2026 icin temel riskleri anlatiyoruz.",
+        description="Dolar/TL 2026 gorunumu ve risk yonetimi.",
+        tags=["dolar tl 2026"],
+    )
+
+    assert res["status"] == "allow"
+    assert "upload_precheck_metadata_consistency_failed" not in res["guard_reason_codes"]
+
+
+def test_upload_precheck_allows_repeated_whitespace_equivalent_tags(tmp_path, monkeypatch):
+    res = _build_precheck_result(
+        tmp_path,
+        monkeypatch,
+        title="abc def rehberi",
+        topic="abc def rehberi",
+        script_text="abc def ifadesi bu senaryoda geciyor.",
+        description="abc def metadatasi korunur.",
+        tags=["abc   def"],
+    )
+
+    assert res["status"] == "allow"
+    assert "upload_precheck_metadata_consistency_failed" not in res["guard_reason_codes"]
+
+
+def test_upload_precheck_blocks_english_tag_without_turkish_metadata_match(tmp_path, monkeypatch):
+    res = _build_precheck_result(
+        tmp_path,
+        monkeypatch,
+        niche="kisisel_finans",
+        title="Dolar kuru analizi",
+        topic="Dolar kuru analizi",
+        script_text="Bu videoda doviz kuru riskini anlatiyoruz.",
+        description="Tamamen Turkce bir aciklama.",
+        tags=["usd try forecast"],
+    )
+
+    assert res["status"] == "blocked"
+    assert "upload_precheck_metadata_consistency_failed" in res["guard_reason_codes"]
+
+
+def test_upload_precheck_blocks_unrelated_exact_phrase_after_canonicalization(tmp_path, monkeypatch):
+    res = _build_precheck_result(
+        tmp_path,
+        monkeypatch,
+        niche="kisisel_finans",
+        title="Euro tahmini",
+        topic="Euro tahmini",
+        script_text="Bu videoda euro tahmini uzerinden riskleri anlatiyoruz.",
+        description="Euro tahmini odakli Turkce aciklama.",
+        tags=["dolar tahmini"],
+    )
+
+    assert res["status"] == "blocked"
+    assert "upload_precheck_metadata_consistency_failed" in res["guard_reason_codes"]

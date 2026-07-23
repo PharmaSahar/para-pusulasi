@@ -241,6 +241,61 @@ def _compute_incident_fingerprint(*, channel_name: str, error_type: str, decisio
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
 
+def _stable_json_hash(payload: dict) -> str:
+    try:
+        raw = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    except Exception:
+        raw = json.dumps({}, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _extract_artifact_correlation(context: dict) -> dict[str, object]:
+    ctx = dict(context or {})
+
+    def _s(key: str) -> str:
+        return str(ctx.get(key) or "").strip()
+
+    corr = {
+        "run_id": _s("run_id"),
+        "content_id": _s("content_id"),
+        "rejected_artifact_id": _s("rejected_artifact_id"),
+        "regenerated_artifact_id": _s("regenerated_artifact_id"),
+        "accepted_artifact_id": _s("accepted_artifact_id"),
+        "uploaded_artifact_id": _s("uploaded_artifact_id"),
+        "rejected_artifact_outcome": _s("rejected_artifact_outcome"),
+        "regenerated_artifact_outcome": _s("regenerated_artifact_outcome"),
+        "accepted_artifact_outcome": _s("accepted_artifact_outcome"),
+        "upload_outcome": _s("upload_outcome"),
+    }
+    has_truthy_uploaded = bool(_s("uploaded_artifact_id") or _s("upload_outcome") == "uploaded")
+    blocked_flag = ctx.get("blocked_artifact_uploaded")
+    if blocked_flag is None:
+        blocked_flag = not has_truthy_uploaded
+    corr["blocked_artifact_uploaded"] = bool(blocked_flag)
+    return corr
+
+
+def _build_incident_semantic_signature(*, context: dict, decision: str, severity: str, error_summary: str) -> str:
+    ctx = dict(context or {})
+    semantic_payload = {
+        "channel": str(ctx.get("channel_name") or "").strip().lower(),
+        "error_type": str(ctx.get("error_type") or "unknown").strip().lower(),
+        "pipeline_stage": str(ctx.get("pipeline_stage") or "scheduler").strip().lower(),
+        "decision": str(decision or "").strip().lower(),
+        "severity": str(severity or "WARNING").strip().upper(),
+        "error_summary": " ".join(str(error_summary or "").lower().split()),
+        "retry_count": max(0, _safe_int(ctx.get("retry_count"), 0)),
+        "regeneration_count": max(0, _safe_int(ctx.get("regeneration_count"), 0)),
+        "retry_limit": max(0, _safe_int(ctx.get("retry_limit"), 0)),
+        "regeneration_limit": max(0, _safe_int(ctx.get("regeneration_limit"), 0)),
+        "guard_reason_codes": sorted(str(x).strip().lower() for x in (ctx.get("guard_reason_codes") or []) if str(x).strip()),
+        "triggering_validator": str(ctx.get("triggering_validator") or "").strip().lower(),
+        "selected_topic": str(ctx.get("selected_topic") or "").strip().lower(),
+        "artifact_correlation": _extract_artifact_correlation(ctx),
+    }
+    return _stable_json_hash(semantic_payload)
+
+
 def _safe_int(value: object, default: int = 0) -> int:
     try:
         return int(value)
@@ -287,6 +342,7 @@ def _build_incident_event(*, lifecycle_event: str, incident_id: str, channel_nam
         "next_action": str(context.get("next_action") or ""),
         "error_type": str(context.get("error_type") or "unknown"),
         "error_summary": str(context.get("error_summary") or ""),
+        "artifact_correlation": _extract_artifact_correlation(context),
     }
 
     if str(context.get("error_type") or "") == "topic_provenance_collision":
@@ -398,6 +454,7 @@ def _update_incident_metrics(state: dict) -> dict:
 
 def _register_incident_event(*, lifecycle_event: str, channel_name: str, severity: str, decision: str, next_action: str, error_summary: str, raw_error: str, context: dict | None = None) -> dict:
     ctx = dict(context or {})
+    ctx["channel_name"] = channel_name
     run_id = str(ctx.get("run_id") or "")
     content_id = str(ctx.get("content_id") or "")
     pipeline_stage = str(ctx.get("pipeline_stage") or "scheduler")
@@ -410,6 +467,12 @@ def _register_incident_event(*, lifecycle_event: str, channel_name: str, severit
     ctx["next_action"] = next_action
     ctx["error_summary"] = error_summary
     ctx["raw_error"] = raw_error
+    semantic_signature = str(ctx.get("semantic_signature") or _build_incident_semantic_signature(
+        context=ctx,
+        decision=decision,
+        severity=severity,
+        error_summary=error_summary,
+    ))
 
     fingerprint = str(ctx.get("incident_fingerprint") or _compute_incident_fingerprint(
         channel_name=channel_name,
@@ -439,6 +502,7 @@ def _register_incident_event(*, lifecycle_event: str, channel_name: str, severit
             summary["last_decision"] = decision
             summary["max_retry_count"] = max(_safe_int(summary.get("max_retry_count"), 0), retry_count)
             summary["max_regeneration_count"] = max(_safe_int(summary.get("max_regeneration_count"), 0), regeneration_count)
+            summary["last_semantic_signature"] = semantic_signature
             incidents[incident_id] = summary
             open_map.pop(fingerprint, None)
 
@@ -468,10 +532,28 @@ def _register_incident_event(*, lifecycle_event: str, channel_name: str, severit
                 "regeneration_count": regeneration_count,
                 "regeneration_limit": regeneration_limit,
                 "event": event_payload,
+                "semantic_changed": True,
             }
 
         if opened:
             incident_id = str(opened.get("incident_id") or "")
+            previous_signature = str(opened.get("last_semantic_signature") or "")
+            has_strong_identity = bool(
+                str(run_id or "").strip()
+                or str(content_id or "").strip()
+                or str(ctx.get("selected_topic") or "").strip()
+                or str(ctx.get("collision_path") or "").strip()
+            )
+            if previous_signature == semantic_signature and has_strong_identity:
+                return {
+                    "incident_id": incident_id,
+                    "lifecycle_event": "INCIDENT_UNCHANGED",
+                    "retry_count": retry_count,
+                    "retry_limit": retry_limit,
+                    "regeneration_count": regeneration_count,
+                    "regeneration_limit": regeneration_limit,
+                    "semantic_changed": False,
+                }
             lifecycle = "INCIDENT_UPDATED"
         else:
             incident_id = str(uuid.uuid4())
@@ -481,6 +563,7 @@ def _register_incident_event(*, lifecycle_event: str, channel_name: str, severit
                 "channel": channel_name,
                 "opened_at": now_iso,
                 "error_type": error_type,
+                "last_semantic_signature": semantic_signature,
             }
 
         summary = dict(incidents.get(incident_id) or {})
@@ -500,9 +583,18 @@ def _register_incident_event(*, lifecycle_event: str, channel_name: str, severit
                 "max_retry_count": max(_safe_int(summary.get("max_retry_count"), 0), retry_count),
                 "max_regeneration_count": max(_safe_int(summary.get("max_regeneration_count"), 0), regeneration_count),
                 "top_collision_reason": str(ctx.get("collision_diagnostics") or summary.get("top_collision_reason") or "unknown"),
+                "artifact_correlation": _extract_artifact_correlation(ctx),
+                "last_semantic_signature": semantic_signature,
             }
         )
         incidents[incident_id] = summary
+        open_map[fingerprint] = {
+            "incident_id": incident_id,
+            "channel": channel_name,
+            "opened_at": summary.get("opened_at") or now_iso,
+            "error_type": error_type,
+            "last_semantic_signature": semantic_signature,
+        }
 
         event_payload = _build_incident_event(
             lifecycle_event=lifecycle,
@@ -530,10 +622,11 @@ def _register_incident_event(*, lifecycle_event: str, channel_name: str, severit
             "regeneration_count": regeneration_count,
             "regeneration_limit": regeneration_limit,
             "event": event_payload,
+            "semantic_changed": True,
         }
 
 
-def _resolve_open_incidents_for_channel(channel_name: str, *, run_id: str = "", pipeline_stage: str = "upload", severity: str = "INFO") -> list[dict]:
+def _resolve_open_incidents_for_channel(channel_name: str, *, run_id: str = "", pipeline_stage: str = "upload", severity: str = "INFO", context: dict | None = None) -> list[dict]:
     state = _load_incident_state()
     open_map = dict(state.get("open_by_fingerprint") or {})
     resolved: list[dict] = []
@@ -552,6 +645,7 @@ def _resolve_open_incidents_for_channel(channel_name: str, *, run_id: str = "", 
                 "incident_fingerprint": fingerprint,
                 "run_id": run_id,
                 "pipeline_stage": pipeline_stage,
+                **dict(context or {}),
             },
         )
         if result.get("lifecycle_event") == "INCIDENT_RESOLVED":
@@ -786,9 +880,15 @@ def send_telegram(message: str):
         logger.warning(f"Telegram bildirimi gönderilemedi: {e}")
 
 
-def notify_upload(channel_name: str, title: str, url: str, short_url: str = ""):
+def notify_upload(channel_name: str, title: str, url: str, short_url: str = "", context: dict | None = None):
+    upload_context = dict(context or {})
     try:
-        resolved = _resolve_open_incidents_for_channel(channel_name, pipeline_stage="upload")
+        resolved = _resolve_open_incidents_for_channel(
+            channel_name,
+            run_id=str(upload_context.get("run_id") or ""),
+            pipeline_stage="upload",
+            context=upload_context,
+        )
     except Exception as e:
         logger.warning("Incident resolve telemetry failed (non-blocking): %s", e)
         resolved = []
@@ -839,6 +939,20 @@ def notify_error(channel_name: str, error: str, context: dict | None = None) -> 
             "incident_id": "",
             "lifecycle_event": "INCIDENT_OBSERVABILITY_UNAVAILABLE",
         }
+
+    if incident_state.get("lifecycle_event") == "INCIDENT_UNCHANGED":
+        merged = dict(decision)
+        merged.update(
+            {
+                "incident_id": incident_state.get("incident_id", ""),
+                "incident_lifecycle": "INCIDENT_UNCHANGED",
+                "retry_count": retry_count,
+                "retry_limit": retry_limit,
+                "regeneration_count": regeneration_count,
+                "regeneration_limit": regeneration_limit,
+            }
+        )
+        return merged
 
     alert_key = _build_render_error_alert_key(channel_name, error_text, decision["decision"], severity=severity)
     cooldown_hours = 6 if decision["decision"] == "skip_current_item" else 2

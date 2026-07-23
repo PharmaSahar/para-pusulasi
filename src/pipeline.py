@@ -2228,7 +2228,19 @@ def run_full_pipeline(
                 "[%s] Content quality gate BLOCK after regeneration: %s",
                 result.get("channel"), dec.block_reasons,
             )
-            raise RuntimeError(f"content_quality_blocked: {'; '.join(dec.block_reasons)}")
+            error = RuntimeError(f"content_quality_blocked: {'; '.join(dec.block_reasons)}")
+            setattr(error, "_run_id", str(result.get("run_id", "") or ""))
+            setattr(error, "_content_id", str(result.get("content_id", "") or ""))
+            setattr(error, "_pipeline_stage", "content_quality_gate")
+            setattr(error, "_error_type", "content_quality_blocked")
+            setattr(error, "_regeneration_count", int(_cq_regeneration_count))
+            setattr(error, "_regeneration_limit", 1)
+            setattr(error, "_rejected_artifact_id", f"{str(result.get('content_id', '') or '').strip()}:cq_attempt_{_cq_regeneration_count}")
+            setattr(error, "_rejected_artifact_outcome", "quality_blocked")
+            setattr(error, "_accepted_artifact_outcome", "none")
+            setattr(error, "_upload_outcome", "not_uploaded")
+            setattr(error, "_blocked_artifact_uploaded", False)
+            raise error
 
         logger.warning(
             "[%s] Content quality gate BLOCK (attempt 1) — regenerating: %s",
@@ -2252,7 +2264,21 @@ def run_full_pipeline(
                 "[%s] Content quality gate BLOCK (final): %s",
                 result.get("channel"), dec2.block_reasons,
             )
-            raise RuntimeError(f"content_quality_blocked: {'; '.join(dec2.block_reasons)}")
+            error = RuntimeError(f"content_quality_blocked: {'; '.join(dec2.block_reasons)}")
+            setattr(error, "_run_id", str(result.get("run_id", "") or ""))
+            setattr(error, "_content_id", str(result.get("content_id", "") or ""))
+            setattr(error, "_pipeline_stage", "content_quality_gate")
+            setattr(error, "_error_type", "content_quality_blocked")
+            setattr(error, "_regeneration_count", 1)
+            setattr(error, "_regeneration_limit", 1)
+            setattr(error, "_rejected_artifact_id", f"{str(result.get('content_id', '') or '').strip()}:cq_attempt_1")
+            setattr(error, "_regenerated_artifact_id", f"{str(result.get('content_id', '') or '').strip()}:cq_attempt_2")
+            setattr(error, "_rejected_artifact_outcome", "quality_blocked")
+            setattr(error, "_regenerated_artifact_outcome", "quality_blocked")
+            setattr(error, "_accepted_artifact_outcome", "none")
+            setattr(error, "_upload_outcome", "not_uploaded")
+            setattr(error, "_blocked_artifact_uploaded", False)
+            raise error
         logger.info("[%s] Content quality gate: regenerated content ALLOW", result.get("channel"))
 
     if _content_quality_gate_enabled() or _production_quality_platform_enabled():

@@ -1179,6 +1179,15 @@ def render_and_schedule(channel_id: str, *, trigger_source: str):
                                     "original_topic_source": str(getattr(e, "_original_topic_source", "") or ""),
                                     "provenance_score": getattr(e, "_provenance_score", None),
                                     "confidence_score": getattr(e, "_confidence_score", None),
+                                    "rejected_artifact_id": str(getattr(e, "_rejected_artifact_id", "") or ""),
+                                    "regenerated_artifact_id": str(getattr(e, "_regenerated_artifact_id", "") or ""),
+                                    "accepted_artifact_id": str(getattr(e, "_accepted_artifact_id", "") or ""),
+                                    "uploaded_artifact_id": str(getattr(e, "_uploaded_artifact_id", "") or ""),
+                                    "rejected_artifact_outcome": str(getattr(e, "_rejected_artifact_outcome", "") or ""),
+                                    "regenerated_artifact_outcome": str(getattr(e, "_regenerated_artifact_outcome", "") or ""),
+                                    "accepted_artifact_outcome": str(getattr(e, "_accepted_artifact_outcome", "") or ""),
+                                    "upload_outcome": str(getattr(e, "_upload_outcome", "") or ""),
+                                    "blocked_artifact_uploaded": bool(getattr(e, "_blocked_artifact_uploaded", False)),
                                 },
                             )
                             logger.info(
@@ -1235,6 +1244,13 @@ def render_and_schedule(channel_id: str, *, trigger_source: str):
                 result.get("title", ""),
                 result.get("youtube_url", ""),
                 result.get("short_url", ""),
+                context={
+                    "run_id": str(result.get("run_id", "") or ""),
+                    "content_id": str(result.get("content_id", "") or ""),
+                    "uploaded_artifact_id": str(result.get("video_id", "") or ""),
+                    "upload_outcome": "uploaded" if result.get("video_id") else "not_uploaded",
+                    "blocked_artifact_uploaded": False,
+                },
             )
 
             # Güvenli mod: cross-channel like/subscribe devre dışı
@@ -1467,6 +1483,15 @@ def render_and_schedule(channel_id: str, *, trigger_source: str):
                     "original_topic_source": str(getattr(e, "_original_topic_source", "") or ""),
                     "provenance_score": getattr(e, "_provenance_score", None),
                     "confidence_score": getattr(e, "_confidence_score", None),
+                    "rejected_artifact_id": str(getattr(e, "_rejected_artifact_id", "") or ""),
+                    "regenerated_artifact_id": str(getattr(e, "_regenerated_artifact_id", "") or ""),
+                    "accepted_artifact_id": str(getattr(e, "_accepted_artifact_id", "") or ""),
+                    "uploaded_artifact_id": str(getattr(e, "_uploaded_artifact_id", "") or ""),
+                    "rejected_artifact_outcome": str(getattr(e, "_rejected_artifact_outcome", "") or ""),
+                    "regenerated_artifact_outcome": str(getattr(e, "_regenerated_artifact_outcome", "") or ""),
+                    "accepted_artifact_outcome": str(getattr(e, "_accepted_artifact_outcome", "") or ""),
+                    "upload_outcome": str(getattr(e, "_upload_outcome", "") or ""),
+                    "blocked_artifact_uploaded": bool(getattr(e, "_blocked_artifact_uploaded", False)),
                 },
             )
             logger.info(

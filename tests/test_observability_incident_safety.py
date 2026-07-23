@@ -77,6 +77,10 @@ def test_notify_error_redacts_filesystem_paths_in_telegram_payload(monkeypatch, 
 
     monkeypatch.setenv("PRODUCTION_ALERT_DEBUG_MODE", "0")
     monkeypatch.setattr(scheduler_utils, "ALERTS_FILE", str(tmp_path / "alerts_sent.json"))
+    monkeypatch.setattr(scheduler_utils, "INCIDENT_EVENTS_FILE", tmp_path / "production_incidents.jsonl")
+    monkeypatch.setattr(scheduler_utils, "INCIDENT_STATE_FILE", tmp_path / "incident_state.json")
+    monkeypatch.setattr(scheduler_utils, "INCIDENT_METRICS_FILE", tmp_path / "incident_metrics_latest.json")
+    monkeypatch.setattr(scheduler_utils, "INCIDENT_LOCK_FILE", tmp_path / "incident_state.lock")
     monkeypatch.setattr(scheduler_utils, "send_telegram", lambda message: sent.append(message))
 
     scheduler_utils.notify_error(
@@ -303,3 +307,109 @@ def test_critical_event_is_not_hidden_by_warning_cooldown(monkeypatch, tmp_path)
     assert warning["incident_lifecycle"] == "INCIDENT_OPEN"
     assert critical["incident_lifecycle"] == "INCIDENT_UPDATED"
     assert len(sent) == 2
+
+
+def test_notify_error_unchanged_state_suppresses_repeated_updates(monkeypatch, tmp_path):
+    sent: list[str] = []
+
+    monkeypatch.setattr(scheduler_utils, "ALERTS_FILE", str(tmp_path / "alerts_sent.json"))
+    monkeypatch.setattr(scheduler_utils, "INCIDENT_EVENTS_FILE", tmp_path / "production_incidents.jsonl")
+    monkeypatch.setattr(scheduler_utils, "INCIDENT_STATE_FILE", tmp_path / "incident_state.json")
+    monkeypatch.setattr(scheduler_utils, "INCIDENT_METRICS_FILE", tmp_path / "incident_metrics_latest.json")
+    monkeypatch.setattr(scheduler_utils, "INCIDENT_LOCK_FILE", tmp_path / "incident_state.lock")
+    monkeypatch.setattr(scheduler_utils, "send_telegram", lambda message: sent.append(message))
+
+    first = scheduler_utils.notify_error(
+        "Demo",
+        "temporary timeout while contacting provider",
+        context={"run_id": "run-stable", "pipeline_stage": "scheduler_render", "retry_count": 0},
+    )
+    second = scheduler_utils.notify_error(
+        "Demo",
+        "temporary timeout while contacting provider",
+        context={"run_id": "run-stable", "pipeline_stage": "scheduler_render", "retry_count": 0},
+    )
+
+    assert first["incident_lifecycle"] == "INCIDENT_OPEN"
+    assert second["incident_lifecycle"] == "INCIDENT_UNCHANGED"
+    assert len(sent) == 1
+
+    rows = (tmp_path / "production_incidents.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(rows) == 1
+
+
+def test_notify_error_meaningful_delta_emits_updated_event(monkeypatch, tmp_path):
+    monkeypatch.setattr(scheduler_utils, "ALERTS_FILE", str(tmp_path / "alerts_sent.json"))
+    monkeypatch.setattr(scheduler_utils, "INCIDENT_EVENTS_FILE", tmp_path / "production_incidents.jsonl")
+    monkeypatch.setattr(scheduler_utils, "INCIDENT_STATE_FILE", tmp_path / "incident_state.json")
+    monkeypatch.setattr(scheduler_utils, "INCIDENT_METRICS_FILE", tmp_path / "incident_metrics_latest.json")
+    monkeypatch.setattr(scheduler_utils, "INCIDENT_LOCK_FILE", tmp_path / "incident_state.lock")
+    monkeypatch.setattr(scheduler_utils, "send_telegram", lambda _message: None)
+
+    first = scheduler_utils.notify_error(
+        "Demo",
+        "temporary timeout while contacting provider",
+        context={"run_id": "run-delta", "pipeline_stage": "scheduler_render", "retry_count": 0},
+    )
+    second = scheduler_utils.notify_error(
+        "Demo",
+        "temporary timeout while contacting provider",
+        context={"run_id": "run-delta", "pipeline_stage": "scheduler_render", "retry_count": 1},
+    )
+
+    assert first["incident_lifecycle"] == "INCIDENT_OPEN"
+    assert second["incident_lifecycle"] == "INCIDENT_UPDATED"
+
+    rows = [json.loads(line) for line in (tmp_path / "production_incidents.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert len(rows) == 2
+    assert rows[-1]["incident_lifecycle"] == "INCIDENT_UPDATED"
+
+
+def test_resolve_lifecycle_happens_once_and_tracks_uploaded_artifact(monkeypatch, tmp_path):
+    monkeypatch.setattr(scheduler_utils, "ALERTS_FILE", str(tmp_path / "alerts_sent.json"))
+    monkeypatch.setattr(scheduler_utils, "INCIDENT_EVENTS_FILE", tmp_path / "production_incidents.jsonl")
+    monkeypatch.setattr(scheduler_utils, "INCIDENT_STATE_FILE", tmp_path / "incident_state.json")
+    monkeypatch.setattr(scheduler_utils, "INCIDENT_METRICS_FILE", tmp_path / "incident_metrics_latest.json")
+    monkeypatch.setattr(scheduler_utils, "INCIDENT_LOCK_FILE", tmp_path / "incident_state.lock")
+    monkeypatch.setattr(scheduler_utils, "send_telegram", lambda _message: None)
+
+    opened = scheduler_utils.notify_error(
+        "Demo",
+        "temporary timeout while contacting provider",
+        context={"run_id": "run-resolve", "content_id": "cnt-1", "pipeline_stage": "scheduler_render"},
+    )
+    assert opened["incident_lifecycle"] == "INCIDENT_OPEN"
+
+    resolved_first = scheduler_utils._resolve_open_incidents_for_channel(
+        "Demo",
+        run_id="run-resolve",
+        pipeline_stage="upload",
+        context={
+            "content_id": "cnt-1",
+            "uploaded_artifact_id": "video-123",
+            "upload_outcome": "uploaded",
+            "blocked_artifact_uploaded": False,
+        },
+    )
+    resolved_second = scheduler_utils._resolve_open_incidents_for_channel(
+        "Demo",
+        run_id="run-resolve",
+        pipeline_stage="upload",
+        context={
+            "content_id": "cnt-1",
+            "uploaded_artifact_id": "video-123",
+            "upload_outcome": "uploaded",
+            "blocked_artifact_uploaded": False,
+        },
+    )
+
+    assert len(resolved_first) == 1
+    assert resolved_first[0]["lifecycle_event"] == "INCIDENT_RESOLVED"
+    assert resolved_second == []
+
+    rows = [json.loads(line) for line in (tmp_path / "production_incidents.jsonl").read_text(encoding="utf-8").splitlines()]
+    resolved_rows = [row for row in rows if row.get("incident_lifecycle") == "INCIDENT_RESOLVED"]
+    assert len(resolved_rows) == 1
+    correlation = dict(resolved_rows[0].get("artifact_correlation") or {})
+    assert correlation.get("uploaded_artifact_id") == "video-123"
+    assert correlation.get("blocked_artifact_uploaded") is False

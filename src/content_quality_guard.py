@@ -77,6 +77,51 @@ _NICHE_SIGNAL_KEYWORDS: dict[str, frozenset[str]] = {
                              "motivasyon", "hedef", "alışkanlık", "meditasyon"}),
 }
 
+# Soft/polysemous terms are diagnostic-only unless strengthened by additional signals.
+_GLOBAL_SOFT_TERMS: frozenset[str] = frozenset(
+    {
+        "ogrenme",
+        "ogren",
+        "egitim",
+        "ders",
+        "not",
+        "psikoloji",
+        "dusunce",
+        "hedef",
+        "stres",
+        "saglik",
+        "pay",
+        "hisse",
+        "kur",
+        "altin",
+        "motivasyon",
+    }
+)
+
+_NICHE_CRITICAL_TERMS: dict[str, frozenset[str]] = {
+    "saglik": frozenset({"doktor", "hastane", "tedavi", "ilac", "klinik", "ameliyat", "tani"}),
+    "borsa": frozenset({"bist", "temettu", "vob", "teknik", "trading", "endeks"}),
+    "kripto": frozenset({"bitcoin", "ethereum", "blockchain", "defi", "nft", "altcoin"}),
+    "kisisel_finans": frozenset({"kredi", "borc", "enflasyon", "tasarruf", "portfoy", "emeklilik", "dolar", "doviz", "yatirim"}),
+    "gayrimenkul": frozenset({"gayrimenkul", "emlak", "arsa", "ipotek", "tapu", "konut"}),
+    "egitim": frozenset({"universite", "sinav", "mufredat", "kurs"}),
+    "kariyer": frozenset({"linkedin", "terfi", "cv", "staj"}),
+    "teknoloji": frozenset({"yapay", "zeka", "yazilim", "python", "chatgpt", "otomasyon"}),
+    "psikoloji": frozenset({"terapi", "depresyon", "anksiyete", "travma", "meditasyon"}),
+}
+
+_NICHE_HARD_PHRASES: dict[str, tuple[str, ...]] = {
+    "saglik": ("tibbi tani", "tedavi protokolu", "ilac dozu", "hastalik belirtisi"),
+    "borsa": ("teknik analiz", "hisse senedi", "portfoy dagilimi", "bist 100"),
+    "kripto": ("spot islemi", "on chain", "cold wallet", "akilli sozlesme"),
+    "kisisel_finans": ("doviz kuru", "varlik dagilimi", "kredi faizi", "altin birikimi"),
+    "gayrimenkul": ("kira carpan", "konut kredisi", "arsa yatirimi", "tapu devri"),
+    "egitim": ("sinav takvimi", "mufredat plani", "ders notu"),
+    "kariyer": ("mulakat hazirligi", "kariyer plani", "ucret pazarligi"),
+    "teknoloji": ("yazilim mimarisi", "model egitimi", "veri boru hatti"),
+    "psikoloji": ("bilissel davranis", "anksiyete yonetimi", "terapi sureci"),
+}
+
 # ── Required metadata fields ─────────────────────────────────────────────────
 _REQUIRED_FIELDS = ("title", "description", "tags", "category_id", "script")
 _REQUIRED_SHORT_FIELDS = ("title", "description", "script")
@@ -131,6 +176,8 @@ def check_channel_topic_fit(
     script: str,
     title: str,
     niche: str,
+    description: str = "",
+    thumbnail_prompt: str = "",
     channel_topics: list[str] | None = None,
 ) -> tuple[Literal["pass", "fail", "warn"], list[str]]:
     """
@@ -142,23 +189,107 @@ def check_channel_topic_fit(
     - A health channel must not produce finance/stock market content.
     - Cross-contamination detected via signal-keyword presence.
     """
-    niche_norm = (niche or "").strip().lower()
+    niche_norm = _normalize_for_matching(niche)
     forbidden = _NICHE_FORBIDDEN_CROSS.get(niche_norm, frozenset())
-    combined_text = f"{topic} {title} {script}".lower()
+    combined_text = _normalize_for_matching(
+        " ".join([
+            str(topic or ""),
+            str(title or ""),
+            str(script or ""),
+            str(description or ""),
+            str(thumbnail_prompt or ""),
+        ])
+    )
+
+    tokens = _tokenize_match_tokens(combined_text)
 
     reasons: list[str] = []
     for foreign_niche in forbidden:
-        signals = _NICHE_SIGNAL_KEYWORDS.get(foreign_niche, frozenset())
-        found = [kw for kw in signals if kw in combined_text]
-        if len(found) >= 2:
+        evidence = _evaluate_cross_niche_evidence(
+            detected_domain=niche_norm,
+            conflicting_domain=foreign_niche,
+            normalized_text=combined_text,
+            tokens=tokens,
+        )
+        if evidence["final_classification"] == "HARD_CROSS_NICHE_SIGNAL":
             reasons.append(
-                f"cross_niche_contamination: {niche_norm} contains {foreign_niche} "
-                f"signals [{', '.join(found[:3])}]"
+                "cross_niche_contamination: "
+                + json.dumps(evidence, ensure_ascii=False, sort_keys=True)
             )
 
     if reasons:
         return "fail", reasons
     return "pass", []
+
+
+def _normalize_for_matching(text: str) -> str:
+    value = str(text or "").strip().casefold()
+    table = str.maketrans(
+        {
+            "ı": "i",
+            "İ": "i",
+            "ş": "s",
+            "ğ": "g",
+            "ç": "c",
+            "ö": "o",
+            "ü": "u",
+        }
+    )
+    normalized = value.translate(table)
+    return re.sub(r"\s+", " ", normalized)
+
+
+def _tokenize_match_tokens(text: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9_]{2,}", text))
+
+
+def _evaluate_cross_niche_evidence(
+    *,
+    detected_domain: str,
+    conflicting_domain: str,
+    normalized_text: str,
+    tokens: set[str],
+) -> dict[str, object]:
+    raw_signals = {_normalize_for_matching(v) for v in _NICHE_SIGNAL_KEYWORDS.get(conflicting_domain, frozenset())}
+    critical_terms = {_normalize_for_matching(v) for v in _NICHE_CRITICAL_TERMS.get(conflicting_domain, frozenset())}
+    hard_phrases = tuple(_normalize_for_matching(v) for v in _NICHE_HARD_PHRASES.get(conflicting_domain, ()))
+
+    hard_terms = sorted(
+        term for term in raw_signals if term and term in tokens and term not in _GLOBAL_SOFT_TERMS
+    )
+    soft_terms = sorted(
+        term for term in raw_signals if term and term in tokens and term in _GLOBAL_SOFT_TERMS
+    )
+    phrase_hits = sorted(
+        phrase for phrase in hard_phrases if phrase and re.search(rf"(?<!\w){re.escape(phrase)}(?!\w)", normalized_text)
+    )
+    critical_hits = sorted(term for term in critical_terms if term and term in tokens)
+
+    score = len(hard_terms) * 2 + len(soft_terms) + len(phrase_hits) * 3 + len(critical_hits) * 4
+    threshold = 4
+    has_hard_signal = bool(critical_hits or phrase_hits or len(hard_terms) >= 2 or (len(hard_terms) >= 1 and len(soft_terms) >= 2))
+
+    if has_hard_signal and score >= threshold:
+        final_classification = "HARD_CROSS_NICHE_SIGNAL"
+        decision_reason = "hard signals exceed deterministic threshold"
+    elif hard_terms or soft_terms or phrase_hits:
+        final_classification = "SOFT_CONTEXT_SIGNAL" if soft_terms else "AMBIGUOUS_SIGNAL"
+        decision_reason = "diagnostic signal below hard-block threshold"
+    else:
+        final_classification = "AMBIGUOUS_SIGNAL"
+        decision_reason = "no conflicting domain evidence"
+
+    return {
+        "detected_domain": detected_domain,
+        "conflicting_domain": conflicting_domain,
+        "hard_signals": sorted(set(hard_terms + critical_hits)),
+        "soft_signals": soft_terms,
+        "contextual_phrases": phrase_hits,
+        "score": score,
+        "threshold": threshold,
+        "final_classification": final_classification,
+        "decision_reason": decision_reason,
+    }
 
 
 def check_metadata_completeness(bundle: MetadataBundle) -> tuple[bool, list[str]]:
@@ -246,7 +377,12 @@ def evaluate_content_quality(
 
     # 1. Channel-topic fit
     fit, reasons = check_channel_topic_fit(
-        topic, script, bundle.title, bundle.niche
+        topic,
+        script,
+        bundle.title,
+        bundle.niche,
+        description=bundle.description,
+        thumbnail_prompt=bundle.thumbnail_prompt,
     )
     dec.channel_fit = fit
     dec.channel_fit_reasons = reasons

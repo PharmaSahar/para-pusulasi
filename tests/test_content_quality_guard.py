@@ -91,6 +91,41 @@ class TestChannelTopicContract:
         )
         assert result == "pass"
 
+    def test_soft_polysemous_token_does_not_hard_block(self):
+        result, reasons = check_channel_topic_fit(
+            topic="Stres yonetimi ile daha iyi odaklanma",
+            script="Gunluk stres yonetimi ve nefes calismalari anlatiliyor",
+            title="Stresi yonetmenin 5 yolu",
+            niche="egitim",
+        )
+        assert result == "pass"
+        assert reasons == []
+
+    def test_keyword_boundary_prevents_partial_match_false_positive(self):
+        result, reasons = check_channel_topic_fit(
+            topic="Kriptografi ders notlari",
+            script="Bu derste veri guvenligi ve sifreleme mantigi inceleniyor",
+            title="Kriptografiye giris",
+            niche="egitim",
+        )
+        assert result == "pass"
+        assert reasons == []
+
+    def test_turkish_normalization_detects_hard_cross_niche_signal(self):
+        result, reasons = check_channel_topic_fit(
+            topic="Hisse senedi teknik analiz",
+            script="BIST 100 ve portfoy dagilimi konulari",
+            title="Yatirim stratejisi",
+            niche="saglik",
+        )
+        assert result == "fail"
+        assert reasons
+        payloads = [json.loads(reason.split(": ", 1)[1]) for reason in reasons]
+        assert any(payload["final_classification"] == "HARD_CROSS_NICHE_SIGNAL" for payload in payloads)
+        assert all(payload["detected_domain"] == "saglik" for payload in payloads)
+        assert any(payload["conflicting_domain"] == "borsa" for payload in payloads)
+        assert any(payload["score"] >= payload["threshold"] for payload in payloads)
+
 
 # ── Metadata completeness tests ────────────────────────────────────────────────
 

@@ -47,7 +47,7 @@ from src.production_quality_platform import (
 from src.production_observation import production_observation_mode_enabled
 from src.production_safety_gate import evaluate_production_safety_gate
 from src.retry_policy import classify_retry_decision, consume_retry_budget, get_retry_budget_state, retry_budget_context
-from src.runtime_storage import runtime_path
+from src.runtime_storage import progress_state_path, runtime_path
 try:
     import fcntl
 except ImportError:  # pragma: no cover
@@ -77,6 +77,10 @@ def _path_from_env(env_key: str, default: str) -> Path:
 def _path_string_from_env(env_key: str, default: str) -> str:
     raw = str(os.getenv(env_key, default)).strip()
     return raw if raw else default
+
+
+def _runtime_state_path_from_env(env_key: str, default_relative: str) -> Path:
+    return _path_from_env(env_key, str(runtime_path(default_relative)))
 
 # Loglama
 _SCHEDULER_LOG_FILE_PATH = _path_from_env("SCHEDULER_LOG_FILE", str(runtime_path("logs/scheduler.log")))
@@ -292,7 +296,7 @@ def save_queue(data: dict):
 
                 report = mirror_legacy_queue_snapshot(
                     data,
-                    db_path=os.getenv("JOB_STORE_DB_PATH", "output/state/jobs.db"),
+                    db_path=str(_runtime_state_path_from_env("JOB_STORE_DB_PATH", "state/jobs.db")),
                 )
                 if report.get("missing_count", 0) > 0:
                     logger.warning(
@@ -330,7 +334,7 @@ def update_queue(mutator):
 
                 report = mirror_legacy_queue_snapshot(
                     queue,
-                    db_path=os.getenv("JOB_STORE_DB_PATH", "output/state/jobs.db"),
+                    db_path=str(_runtime_state_path_from_env("JOB_STORE_DB_PATH", "state/jobs.db")),
                 )
                 if report.get("missing_count", 0) > 0:
                     logger.warning(
@@ -1781,7 +1785,11 @@ def maintenance_job():
     deleted = cleanup_old_renders(max_age_hours=48)
 
     # 2. Log rotation (8000 satır limit)
-    for log_file in ["logs/vps_scheduler.log", "logs/scheduler.log", "logs/vps_error.log"]:
+    for log_file in [
+        str(runtime_path("logs/vps_scheduler.log")),
+        str(runtime_path("logs/scheduler.log")),
+        str(runtime_path("logs/vps_error.log")),
+    ]:
         rotate_log_file(log_file, max_lines=8000)
 
     # 3. Bayat kuyruk girişlerini temizle + boşalan kanallar için render tetikle
@@ -1810,7 +1818,7 @@ def maintenance_job():
     except Exception as e:
         logger.warning(f"Kapasite kontrol hatası: {e}")
 
-    # 6. PROGRESS.md güncelle
+    # 6. Runtime progress state guncelle
     update_progress_file(
         last_task="Günlük bakım tamamlandı",
         next_step="Scheduler çalışıyor — videoları otomatik yüklüyor"
@@ -1900,7 +1908,7 @@ def run_optimization_runtime_cycle() -> dict:
     if not target_channel and ready_channels:
         target_channel = ready_channels[0]
 
-    flags_path = _path_from_env("ACTIVATION_FLAGS_PATH", "output/state/learning_activation_flags.json")
+    flags_path = _runtime_state_path_from_env("ACTIVATION_FLAGS_PATH", "state/learning_activation_flags.json")
     flags_before = _load_json_file(flags_path)
 
     evidence = {
@@ -2340,12 +2348,12 @@ def process_likes_job():
     logger.info("Cross-channel auto-like devre dışı (safe mode).")
 
 def update_progress_file(last_task: str = "", next_step: str = ""):
-    """PROGRESS.md'yi otomatik güncelle — her büyük görev sonunda çağır."""
+    """Scheduler ilerleme durumunu mutable runtime state altinda güncelle."""
     try:
         from datetime import datetime
         import pytz
         TZ_local = pytz.timezone("Europe/Istanbul")
-        now = datetime.now(TZ_local).strftime("%Y-%m-%d %H:%M")
+        now = datetime.now(TZ_local).isoformat()
 
         queue = load_queue()
         ready = get_ready_channels()
@@ -2355,37 +2363,27 @@ def update_progress_file(last_task: str = "", next_step: str = ""):
             entries = queue.get(cid, [])
             if entries:
                 pub = entries[0].get("publish_at", "")[:16]
-                rows.append(f"| {cid:25} | ✅ Kuyrukta | {pub} |")
+                rows.append({"channel_id": cid, "status": "queued", "publish_at": pub})
             else:
-                rows.append(f"| {cid:25} | 🔄 Render bekleniyor | — |")
+                rows.append({"channel_id": cid, "status": "waiting_render", "publish_at": None})
 
-        table = "\n".join(rows)
-
-        content = f"""# PROGRESS — Para Pusulası YouTube Otomasyon
-
-> Bu dosya scheduler tarafından otomatik güncellenir.
-
----
-
-## Son Güncelleme
-**Tarih:** {now} (Istanbul)
-
-## Son Tamamlanan Görev
-{last_task or "— (henüz kaydedilmedi)"}
-
-## Bir Sonraki Adım
-{next_step or "— (scheduler çalışıyor, otomatik devam)"}
-
-## Kanal Kuyruk Durumu
-| Kanal | Durum | Yayın Zamanı |
-|---|---|---|
-{table}
-"""
-        from pathlib import Path
-        Path("PROGRESS.md").write_text(content, encoding="utf-8")
-        logger.info("PROGRESS.md güncellendi")
+        progress_payload = {
+            "schema_version": "scheduler_progress_state.v1",
+            "updated_at_local": now,
+            "timezone": "Europe/Istanbul",
+            "last_task": last_task or "",
+            "next_step": next_step or "",
+            "channels": rows,
+        }
+        progress_path = progress_state_path()
+        progress_path.parent.mkdir(parents=True, exist_ok=True)
+        progress_path.write_text(
+            json.dumps(progress_payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        logger.info("progress state updated: %s", progress_path)
     except Exception as e:
-        logger.warning(f"PROGRESS.md güncellenemedi: {e}")
+        logger.warning("progress state update failed: %s", e)
 
 
 def fill_empty_queues_job():
@@ -2801,7 +2799,7 @@ def run_optimization_cycle_once() -> int:
 def run_governance_refresh_once() -> int:
     """Governance readiness artifact zincirini bir kez calistirir."""
     governance_refresh_job()
-    latest = Path("logs/governance_refresh_run_latest.json")
+    latest = _runtime_state_path_from_env("GOVERNANCE_REFRESH_LATEST_PATH", "state/governance_refresh_run_latest.json")
     print(
         json.dumps(
             {
@@ -3977,7 +3975,7 @@ def main():
         try:
             from src.job_store import initialize_database
 
-            initialize_database(os.getenv("JOB_STORE_DB_PATH", "output/state/jobs.db"))
+            initialize_database(str(_runtime_state_path_from_env("JOB_STORE_DB_PATH", "state/jobs.db")))
             logger.info("JOB_STORE_MODE=shadow aktif: SQLite shadow mirror etkin.")
         except Exception as e:
             logger.warning("Shadow DB init failed (non-blocking): %s", e)

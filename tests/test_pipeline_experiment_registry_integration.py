@@ -238,3 +238,23 @@ def test_pipeline_prefers_param_experiment_id_over_config_and_env(monkeypatch, t
 
     assert result["experiment_id"] == "param-id"
     assert result.get("performance_snapshot", {}).get("experiment_id") == "param-id"
+
+
+def test_pipeline_passes_explicit_registry_path_to_thumbnail_binding(monkeypatch, tmp_path):
+    _setup_pipeline_mocks(monkeypatch, append_calls={"snapshots": []})
+
+    expected_registry = tmp_path / "explicit_registry.jsonl"
+    monkeypatch.setenv("EXPERIMENT_REGISTRY_PATH", str(expected_registry))
+
+    captured = {"registry_path": None}
+
+    def _fake_register_thumbnail_variant_bindings(*, experiment_id, candidates, registry_path, created_by="thumbnail_binding", registry_version="1.0"):
+        captured["registry_path"] = Path(registry_path)
+        return []
+
+    monkeypatch.setattr(pipeline, "register_thumbnail_variant_bindings", _fake_register_thumbnail_variant_bindings)
+
+    cfg = _FakeConfig(tmp_path, experiment_id="cfg-exp")
+    pipeline.run_full_pipeline(topic="x", generate_only=False, channel_cfg=cfg)
+
+    assert captured["registry_path"] == expected_registry

@@ -48,6 +48,7 @@ from .upload_precheck import evaluate_upload_precheck, persist_ownership_manifes
 from .visual_safety_policy import build_visual_manifest, evaluate_visual_query
 from .youtube_uploader import YouTubeUploader
 from .retry_policy import consume_retry_budget, get_retry_budget_state, retry_budget_context
+from .runtime_storage import runtime_path
 from .production_quality_platform import (
     build_idempotency_key,
     claim_upload_before_side_effect,
@@ -398,7 +399,7 @@ def _append_pipeline_run_registry_event(
     schema_version: str,
 ) -> None:
     """Append pipeline run trace event to registry JSONL in fail-open mode."""
-    registry_path = Path(os.getenv("EXPERIMENT_REGISTRY_PATH", "output/telemetry/experiments.jsonl"))
+    registry_path = Path(os.getenv("EXPERIMENT_REGISTRY_PATH", str(runtime_path("telemetry/experiments.jsonl"))))
     payload = {
         "experiment_id": experiment_id,
         "run_id": run_id,
@@ -486,6 +487,7 @@ def run_full_pipeline(
     result["content_id"] = generate_content_id()
     result["run_id"] = generate_run_id()
     resolved_experiment_id = _resolve_experiment_id(explicit_experiment_id=experiment_id, cfg=cfg)
+    registry_path = Path(os.getenv("EXPERIMENT_REGISTRY_PATH", str(runtime_path("telemetry/experiments.jsonl"))))
     result["experiment_id"] = resolved_experiment_id
     live_collector_enabled, analytics_live_status = _resolve_analytics_live_runtime(cfg)
     result["live_collector_enabled"] = bool(live_collector_enabled)
@@ -679,7 +681,7 @@ def run_full_pipeline(
             operation="render",
             channel_id=str(result.get("channel", "")),
             channel_cfg=cfg,
-            queue_path=Path(os.getenv("SCHEDULER_QUEUE_FILE", "output/state/channel_queue.json")),
+            queue_path=Path(os.getenv("SCHEDULER_QUEUE_FILE", str(runtime_path("state/channel_queue.json")))),
             writable_paths=[getattr(cfg, "output_dir", ""), getattr(cfg, "logs_dir", "")],
             job_id=str(result.get("run_id", "")),
         )
@@ -687,7 +689,7 @@ def run_full_pipeline(
             operation="upload",
             channel_id=str(result.get("channel", "")),
             channel_cfg=cfg,
-            queue_path=Path(os.getenv("SCHEDULER_QUEUE_FILE", "output/state/channel_queue.json")),
+            queue_path=Path(os.getenv("SCHEDULER_QUEUE_FILE", str(runtime_path("state/channel_queue.json")))),
             writable_paths=[getattr(cfg, "output_dir", ""), getattr(cfg, "logs_dir", "")],
             job_id=str(result.get("run_id", "")),
         )
@@ -695,7 +697,7 @@ def run_full_pipeline(
             operation="shorts_upload",
             channel_id=str(result.get("channel", "")),
             channel_cfg=cfg,
-            queue_path=Path(os.getenv("SCHEDULER_QUEUE_FILE", "output/state/channel_queue.json")),
+            queue_path=Path(os.getenv("SCHEDULER_QUEUE_FILE", str(runtime_path("state/channel_queue.json")))),
             writable_paths=[getattr(cfg, "output_dir", ""), getattr(cfg, "logs_dir", "")],
             job_id=str(result.get("run_id", "")),
         )
@@ -757,7 +759,7 @@ def run_full_pipeline(
             operation="render",
             channel_id=str(result.get("channel", "")),
             channel_cfg=cfg,
-            queue_path=Path(os.getenv("SCHEDULER_QUEUE_FILE", "output/state/channel_queue.json")),
+            queue_path=Path(os.getenv("SCHEDULER_QUEUE_FILE", str(runtime_path("state/channel_queue.json")))),
             writable_paths=[getattr(cfg, "output_dir", ""), getattr(cfg, "logs_dir", "")],
             job_id=str(result.get("run_id", "")),
         )
@@ -1217,6 +1219,7 @@ def run_full_pipeline(
             events = register_thumbnail_variant_bindings(
                 experiment_id=resolved_experiment_id,
                 candidates=candidates,
+                registry_path=registry_path,
             )
 
             result["thumbnail_variants"] = [asdict(item) for item in candidates]
@@ -2329,7 +2332,7 @@ def run_full_pipeline(
             operation="render",
             channel_id=str(result.get("channel", "")),
             channel_cfg=cfg,
-            queue_path=Path(os.getenv("SCHEDULER_QUEUE_FILE", "output/state/channel_queue.json")),
+            queue_path=Path(os.getenv("SCHEDULER_QUEUE_FILE", str(runtime_path("state/channel_queue.json")))),
             writable_paths=[getattr(cfg, "output_dir", ""), getattr(cfg, "logs_dir", "")],
             job_id=str(result.get("run_id", "")),
         )
@@ -2337,7 +2340,7 @@ def run_full_pipeline(
             operation="upload",
             channel_id=str(result.get("channel", "")),
             channel_cfg=cfg,
-            queue_path=Path(os.getenv("SCHEDULER_QUEUE_FILE", "output/state/channel_queue.json")),
+            queue_path=Path(os.getenv("SCHEDULER_QUEUE_FILE", str(runtime_path("state/channel_queue.json")))),
             writable_paths=[getattr(cfg, "output_dir", ""), getattr(cfg, "logs_dir", "")],
             job_id=str(result.get("run_id", "")),
         )

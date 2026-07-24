@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import importlib
 import os
 from pathlib import Path
@@ -280,3 +281,39 @@ def test_production_default_paths_unchanged_when_no_preprod_env(monkeypatch):
     assert str(pqp.PRODUCTION_DASHBOARD_MD_PATH).endswith("output/runtime/state/production_dashboard_latest.md")
     assert str(refresh._resolve_readiness_markdown()).endswith("output/runtime/state/governance_readiness_latest.md")
     assert str(ac.DEFAULT_REPORT_ARCHIVE_DIR).endswith("output/state/activation_reports")
+
+
+def test_runtime_path_resolver_uses_shared_root(tmp_path, monkeypatch):
+    shared_runtime = tmp_path / "shared" / "runtime"
+    shared_runtime.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setenv("RUNTIME_OUTPUT_ROOT", str(shared_runtime))
+
+    import src.runtime_storage as runtime_storage
+
+    runtime_storage = importlib.reload(runtime_storage)
+
+    assert runtime_storage.runtime_root() == shared_runtime.resolve()
+    assert runtime_storage.runtime_path("state/progress.json") == shared_runtime / "state" / "progress.json"
+    assert runtime_storage.progress_state_path() == shared_runtime / "state" / "progress.json"
+
+
+def test_scheduler_progress_update_writes_json_not_progress_md(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    progress_file = tmp_path / "shared" / "state" / "progress.json"
+    monkeypatch.setenv("PROGRESS_STATE_FILE", str(progress_file))
+
+    import scheduler
+
+    monkeypatch.setattr(scheduler, "load_queue", lambda: {"alpha": [{"publish_at": "2026-07-24T10:00:00"}]})
+    monkeypatch.setattr(scheduler, "get_ready_channels", lambda: ["alpha"])
+
+    scheduler.update_progress_file(last_task="done", next_step="next")
+
+    assert progress_file.exists()
+    assert not (tmp_path / "PROGRESS.md").exists()
+
+    payload = json.loads(progress_file.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "scheduler_progress_state.v1"
+    assert payload["last_task"] == "done"
+    assert payload["next_step"] == "next"

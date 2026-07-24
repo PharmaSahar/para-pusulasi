@@ -25,25 +25,26 @@ import fcntl
 from dotenv import dotenv_values
 from .channel_manager import resolve_allow_market_language
 from .retry_policy import classify_retry_decision, consume_retry_budget, get_retry_budget_state, retry_budget_context
+from .runtime_storage import runtime_path
 
 logger = logging.getLogger("SchedulerUtils")
 STARTUP_BANNER_NAME = "Parapusulasi"
 CHANNEL_REGISTRY_PATH = Path("channels/channel_registry.json")
 ACTIVE_QUEUE_STATUSES = {"active", "restored"}
-QUARANTINE_TRAIL_PATH = Path("logs/queue_quarantine_decisions.jsonl")
+QUARANTINE_TRAIL_PATH = runtime_path("telemetry/queue_quarantine_decisions.jsonl")
 QUEUE_FORBIDDEN_MARKET_RE = re.compile(
     r"\b(bist\w*|borsa\w*|hisse\w*|dolar\w*|usd\w*|try\w*|bitcoin\w*|ethereum\w*|btc\w*|eth\w*|kripto\w*|altin\w*|faiz\w*|enflasyon\w*|yatirim\w*|temettu\w*|portfoy\w*|teknik\s+analiz|temel\s+analiz|risk\s+yonetimi|finans\w*|doviz\w*|kur\w*)\b",
     re.IGNORECASE,
 )
 
-PROVIDER_HEALTH_FILE = "output/state/provider_health.json"
-PROVIDER_HEALTH_LOCK_FILE = "output/state/provider_health.lock"
-PROVIDER_HEALTH_DIAGNOSTICS_FILE = Path("output/state/provider_health_diagnostics.jsonl")
-PROVIDER_HEALTH_CORRUPTION_FILE = Path("output/state/provider_health_corruption.json")
-INCIDENT_STATE_FILE = Path("output/state/incident_state.json")
-INCIDENT_EVENTS_FILE = Path("logs/production_incidents.jsonl")
-INCIDENT_METRICS_FILE = Path("output/state/incident_metrics_latest.json")
-INCIDENT_LOCK_FILE = Path("output/state/incident_state.lock")
+PROVIDER_HEALTH_FILE = str(runtime_path("state/provider_health.json"))
+PROVIDER_HEALTH_LOCK_FILE = str(runtime_path("state/provider_health.lock"))
+PROVIDER_HEALTH_DIAGNOSTICS_FILE = runtime_path("state/provider_health_diagnostics.jsonl")
+PROVIDER_HEALTH_CORRUPTION_FILE = runtime_path("state/provider_health_corruption.json")
+INCIDENT_STATE_FILE = runtime_path("state/incident_state.json")
+INCIDENT_EVENTS_FILE = runtime_path("telemetry/production_incidents.jsonl")
+INCIDENT_METRICS_FILE = runtime_path("state/incident_metrics_latest.json")
+INCIDENT_LOCK_FILE = runtime_path("state/incident_state.lock")
 _INCIDENT_THREAD_LOCK = threading.Lock()
 _PROVIDER_HEALTH_THREAD_LOCK = threading.Lock()
 
@@ -1599,7 +1600,7 @@ def notify_startup(active_channels: int):
 
 # ─── TOPIC DEDUPLİKASYON ─────────────────────────────────────────────────────
 
-USED_TOPICS_FILE = "output/queue/used_topics.json"
+USED_TOPICS_FILE = str(runtime_path("queue/used_topics.json"))
 
 
 def load_used_topics() -> dict:
@@ -1678,7 +1679,7 @@ def health_check() -> dict:
 # ─── AKILLI UYARI SİSTEMİ ────────────────────────────────────────────────────
 # Her bakımda kapasite eşiklerini kontrol et, gerektiğinde Telegram'a uyar
 
-ALERTS_FILE = "output/queue/alerts_sent.json"
+ALERTS_FILE = str(runtime_path("queue/alerts_sent.json"))
 
 def _load_alerts() -> dict:
     p = Path(ALERTS_FILE)

@@ -12,12 +12,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .runtime_storage import runtime_path
+
 
 TOOL_VERSION = "production-observation-mode.v1"
 ENV_FLAG = "PRODUCTION_OBSERVATION_MODE"
-DEFAULT_STATE_PATH = Path("output/state/production_observation_mode.json")
-DEFAULT_AUDIT_PATH = Path("output/runtime/telemetry/production_observation_mode_audit.jsonl")
-DEFAULT_LOCK_PATH = Path("output/state/.production_observation_mode.lock")
+DEFAULT_STATE_PATH = runtime_path("state/production_observation_mode.json")
+DEFAULT_AUDIT_PATH = runtime_path("telemetry/production_observation_mode_audit.jsonl")
+DEFAULT_LOCK_PATH = runtime_path("state/.production_observation_mode.lock")
 
 
 class ProductionObservationModeError(RuntimeError):

@@ -14,6 +14,7 @@ from typing import Any
 from .config import config as default_config
 from .production_quality_platform import record_production_event
 from .production_observation import read_observation_state
+from .runtime_storage import runtime_path
 from .scheduler_utils import (
     check_token_health,
     get_free_disk_gb,
@@ -410,8 +411,8 @@ def _check_scheduler_health(*, operation: str, startup_health: Any | None, relea
         if not result.allowed:
             return result
 
-        lock_path = Path(os.getenv("SCHEDULER_SINGLETON_LOCK_FILE", "output/state/scheduler_singleton.lock"))
-        meta_path = Path(os.getenv("SCHEDULER_SINGLETON_META_FILE", "output/state/scheduler_singleton_meta.json"))
+        lock_path = Path(os.getenv("SCHEDULER_SINGLETON_LOCK_FILE", str(runtime_path("state/scheduler_singleton.lock"))))
+        meta_path = Path(os.getenv("SCHEDULER_SINGLETON_META_FILE", str(runtime_path("state/scheduler_singleton_meta.json"))))
         if meta_path.exists():
             try:
                 meta = json.loads(meta_path.read_text(encoding="utf-8"))
@@ -432,7 +433,7 @@ def _check_scheduler_health(*, operation: str, startup_health: Any | None, relea
                 )
         return result
 
-    pid_path = Path(os.getenv("SCHEDULER_PID_FILE", "output/state/production_scheduler.pid"))
+    pid_path = Path(os.getenv("SCHEDULER_PID_FILE", str(runtime_path("state/production_scheduler.pid"))))
     if pid_path.exists():
         raw_pid = pid_path.read_text(encoding="utf-8").strip()
         ok = raw_pid.isdigit()
@@ -500,7 +501,7 @@ def _queue_observability_metrics(payload: dict[str, Any], *, path: Path) -> dict
 
 
 def _check_queue_health(*, queue_path: str | Path | None, channel_id: str, release_sha: str, job_id: str) -> tuple[ProductionSafetyCheckResult, ProductionSafetyCheckResult | None]:
-    path = Path(queue_path) if queue_path else Path(os.getenv("SCHEDULER_QUEUE_FILE", "output/state/channel_queue.json"))
+    path = Path(queue_path) if queue_path else Path(os.getenv("SCHEDULER_QUEUE_FILE", str(runtime_path("state/channel_queue.json"))))
     if not path.exists():
         primary = _build_check(
             check_name="queue_health",

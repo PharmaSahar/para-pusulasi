@@ -18,10 +18,11 @@ from pathlib import Path
 from typing import Any
 
 from src.channel_manager import get_channel
+from src.runtime_storage import runtime_path
 
 ROOT = Path(__file__).resolve().parents[1]
-FLAGS_PATH = ROOT / "output" / "state" / "learning_activation_flags.json"
-THUMB_CACHE_PATH = ROOT / "logs" / "thumbnail_permission_cache.json"
+FLAGS_PATH = runtime_path("state/learning_activation_flags.json")
+THUMB_CACHE_PATH = runtime_path("state/thumbnail_permission_cache.json")
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -158,7 +159,7 @@ def build_ab_evidence(*, channel_id: str) -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Generate A/B runtime flag evidence")
     parser.add_argument("--channel", default="", help="Target channel id. If empty, first thumbnail-ready channel is used")
-    parser.add_argument("--output", default=str(ROOT / "logs" / "runtime_flag_ab_evidence.json"))
+    parser.add_argument("--output", default=str(runtime_path("state/runtime_flag_ab_evidence.json")))
     args = parser.parse_args(argv)
 
     channel_id = str(args.channel or "").strip() or _resolve_default_channel()

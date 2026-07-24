@@ -9,19 +9,21 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from src.runtime_storage import runtime_path
+
 ROOT = Path(__file__).resolve().parents[1]
 
 ARTIFACTS: dict[str, Path] = {
-    "p0_validation_metrics": ROOT / "logs" / "p0_validation_metrics_latest.json",
-    "trace_completeness": ROOT / "logs" / "trace_completeness_latest.json",
-    "thumbnail_403_root_cause": ROOT / "logs" / "thumbnail_403_root_cause_latest.json",
-    "thumbnail_streak_path": ROOT / "logs" / "thumbnail_streak_path_latest.json",
-    "activation_go_no_go": ROOT / "logs" / "activation_controller_report_latest.json",
-    "runtime_flag_ab_evidence": ROOT / "logs" / "runtime_flag_ab_evidence_latest.json",
-    "routing_guard_review_queue": ROOT / "logs" / "routing_guard_review_queue_latest.json",
+    "p0_validation_metrics": runtime_path("state/p0_validation_metrics_latest.json"),
+    "trace_completeness": runtime_path("state/trace_completeness_latest.json"),
+    "thumbnail_403_root_cause": runtime_path("state/thumbnail_403_root_cause_latest.json"),
+    "thumbnail_streak_path": runtime_path("state/thumbnail_streak_path_latest.json"),
+    "activation_go_no_go": runtime_path("state/activation_controller_report_latest.json"),
+    "runtime_flag_ab_evidence": runtime_path("state/runtime_flag_ab_evidence_latest.json"),
+    "routing_guard_review_queue": runtime_path("state/routing_guard_review_queue_latest.json"),
 }
 
-DEFAULT_OUTPUT = ROOT / "logs" / "p0_p1_artifacts_bundle_latest.json"
+DEFAULT_OUTPUT = runtime_path("state/p0_p1_artifacts_bundle_latest.json")
 
 
 def _utc_now_iso() -> str:

@@ -13,13 +13,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from src.runtime_storage import runtime_path
+
 ROOT = Path(__file__).resolve().parents[1]
-PERF_PATH = ROOT / "logs" / "channel_performance.jsonl"
-THUMB_HISTORY_PATH = ROOT / "logs" / "thumbnail_history.jsonl"
-ROUTING_GUARD_DECISIONS_PATH = ROOT / "logs" / "routing_guard_decisions.jsonl"
-SHORTS_SAFETY_DECISIONS_PATH = ROOT / "logs" / "shorts_safety_decisions.jsonl"
-CHAPTER_VALIDATION_TRAIL_PATH = ROOT / "logs" / "chapter_validation_trail.jsonl"
-OUTPUT_LATEST = ROOT / "logs" / "p0_validation_metrics_latest.json"
+PERF_PATH = runtime_path("telemetry/channel_performance.jsonl")
+THUMB_HISTORY_PATH = runtime_path("telemetry/thumbnail_history.jsonl")
+ROUTING_GUARD_DECISIONS_PATH = runtime_path("telemetry/routing_guard_decisions.jsonl")
+SHORTS_SAFETY_DECISIONS_PATH = runtime_path("telemetry/shorts_safety_decisions.jsonl")
+CHAPTER_VALIDATION_TRAIL_PATH = runtime_path("telemetry/chapter_validation_trail.jsonl")
+OUTPUT_LATEST = runtime_path("state/p0_validation_metrics_latest.json")
 
 
 def _utc_now_iso() -> str:

@@ -19,6 +19,7 @@ DEPLOY_STATE_ROOT="${IMMUTABLE_V2_DEPLOY_STATE_ROOT:-$DEFAULT_DEPLOY_STATE_ROOT}
 SHARED_ROOT="${IMMUTABLE_V2_SHARED_ROOT:-$DEFAULT_SHARED_ROOT}"
 OPERATOR_ROOT="${IMMUTABLE_V2_OPERATOR_ROOT:-$DEFAULT_OPERATOR_ROOT}"
 LOCK_DIR="${IMMUTABLE_V2_LOCK_DIR:-$DEPLOY_STATE_ROOT/deploy.lock}"
+PRECHECKS_ROOT="${IMMUTABLE_V2_PRECHECKS_ROOT:-$DEPLOY_STATE_ROOT/preflight}"
 ENFORCE_GIT_RELEASE_IDENTITY="${IMMUTABLE_V2_ENFORCE_GIT_RELEASE_IDENTITY:-$DEFAULT_ENFORCE_GIT_RELEASE_IDENTITY}"
 MIN_FREE_KB="${IMMUTABLE_V2_MIN_FREE_KB:-1048576}"
 LOCK_DIR_PREEXISTED="false"
@@ -496,6 +497,9 @@ assert_paths_approved() {
   is_within_root "$DEPLOY_STATE_ROOT" "/opt/parapusulasi" || {
     [[ "$DEPLOY_STATE_ROOT" == /tmp/* ]] || die "Deploy state root must be under /opt/parapusulasi (or /tmp/* for tests)"
   }
+  is_within_root "$PRECHECKS_ROOT" "$DEPLOY_STATE_ROOT" || {
+    [[ "$PRECHECKS_ROOT" == /tmp/* ]] || die "Preflight root must be under deploy state root (or /tmp/* for tests)"
+  }
 }
 
 fetch_remote_if_needed() {
@@ -532,7 +536,10 @@ staging_dir_for_sha() {
 }
 
 preflight_json_path() {
-  printf '%s/deployment_preflight.json\n' "$1"
+  local release_dir="$1"
+  local release_sha
+  release_sha="$(basename "$release_dir")"
+  printf '%s/%s/deployment_preflight.json\n' "$PRECHECKS_ROOT" "$release_sha"
 }
 
 release_meta_path() {
@@ -684,6 +691,7 @@ write_preflight_json() {
     log "DRY-RUN: write preflight report to $path"
     return 0
   fi
+  mkdir -p "$(dirname "$path")"
   cat > "$path" <<EOF
 {
   "release_sha": "$TARGET_SHA",
@@ -1516,7 +1524,7 @@ assert_prepared_release() {
   [[ -d "$release_dir" ]] || die "Prepared release not found: $release_dir"
   assert_release_integrity_contract "$release_dir" "$TARGET_SHA"
   assert_watchdog_executable "$release_dir"
-  [[ -f "$(preflight_json_path "$release_dir")" ]] || die "Prepared release missing preflight report"
+  [[ -f "$(preflight_json_path "$(staging_dir_for_sha "$TARGET_SHA")")" ]] || die "Prepared release missing preflight report"
 }
 
 verify_existing_release_identity_or_fail() {

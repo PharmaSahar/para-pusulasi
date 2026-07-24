@@ -20,6 +20,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from src.runtime_storage import runtime_path
+
 ROOT = Path(__file__).resolve().parents[1]
 ANALYTICS_PROBE_SCRIPT = ROOT / "ops" / "analytics_single_channel_probe.py"
 
@@ -57,9 +59,9 @@ def _assert_preprod_mutable_path(path: Path, *, env_key: str) -> None:
         )
 
 
-THUMB_CACHE_PATH = _env_path("THUMBNAIL_PERMISSION_CACHE_PATH", ROOT / "logs" / "thumbnail_permission_cache.json")
-DEFAULT_REPORT_PATH = _env_path("ACTIVATION_CONTROLLER_REPORT_PATH", ROOT / "logs" / "activation_controller_report.json")
-DEFAULT_FLAGS_PATH = _env_path("ACTIVATION_FLAGS_PATH", ROOT / "output" / "state" / "learning_activation_flags.json")
+THUMB_CACHE_PATH = _env_path("THUMBNAIL_PERMISSION_CACHE_PATH", runtime_path("state/thumbnail_permission_cache.json"))
+DEFAULT_REPORT_PATH = _env_path("ACTIVATION_CONTROLLER_REPORT_PATH", runtime_path("state/activation_controller_report.json"))
+DEFAULT_FLAGS_PATH = _env_path("ACTIVATION_FLAGS_PATH", runtime_path("state/learning_activation_flags.json"))
 DEFAULT_REPORT_ARCHIVE_DIR = _env_path("ACTIVATION_CONTROLLER_REPORT_ARCHIVE_DIR", ROOT / "output" / "state" / "activation_reports")
 
 

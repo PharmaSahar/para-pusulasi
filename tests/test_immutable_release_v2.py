@@ -172,12 +172,14 @@ def _runtime_layout(tmp_path: Path) -> dict[str, Path]:
     shared = base / "shared"
     operator = base / "operator"
     deploy_state = base / "deploy_state"
+    prechecks = deploy_state / "preflight"
     lock_dir = base / "deploy.lock"
 
     active_sha = "a" * 40
     active = releases / active_sha
     shared.mkdir(parents=True, exist_ok=True)
     operator.mkdir(parents=True, exist_ok=True)
+    prechecks.mkdir(parents=True, exist_ok=True)
     (shared / "runtime" / "output" / "scripts").mkdir(parents=True, exist_ok=True)
     (shared / "runtime" / "output" / "audio").mkdir(parents=True, exist_ok=True)
     (shared / "runtime" / "output" / "videos").mkdir(parents=True, exist_ok=True)
@@ -222,6 +224,7 @@ def _runtime_layout(tmp_path: Path) -> dict[str, Path]:
         "shared": shared,
         "operator": operator,
         "deploy_state": deploy_state,
+        "prechecks": prechecks,
         "lock_dir": lock_dir,
         "active": active,
     }
@@ -247,12 +250,10 @@ def _make_active_release_runtime_dirty(repo: Path, sha: str, layout: dict[str, P
     shutil.rmtree(active / "output")
     (active / "logs").symlink_to(layout["shared"] / "logs")
     (active / "output").symlink_to(layout["shared"] / "runtime" / "output")
-    _write(active / "deployment_preflight.json", '{"status": "pass"}\n')
 
     status = subprocess.check_output(["git", "status", "--short"], cwd=active, text=True)
     assert " D logs/" in status
     assert " D output/" in status
-    assert "?? deployment_preflight.json" in status
     return active
 
 
@@ -399,6 +400,7 @@ def _base_env(layout: dict[str, Path], fakebin: Path | None = None) -> dict[str,
         "IMMUTABLE_V2_RELEASES_ROOT": str(layout["releases"]),
         "IMMUTABLE_V2_CURRENT_LINK": str(layout["current"]),
         "IMMUTABLE_V2_DEPLOY_STATE_ROOT": str(layout["deploy_state"]),
+        "IMMUTABLE_V2_PRECHECKS_ROOT": str(layout["prechecks"]),
         "IMMUTABLE_V2_SHARED_ROOT": str(layout["shared"]),
         "IMMUTABLE_V2_OPERATOR_ROOT": str(layout["operator"]),
         "IMMUTABLE_V2_LOCK_DIR": str(layout["lock_dir"]),
@@ -412,6 +414,10 @@ def _base_env(layout: dict[str, Path], fakebin: Path | None = None) -> dict[str,
     if fakebin is not None:
         env["PATH"] = f"{fakebin}:{os.environ['PATH']}"
     return env
+
+
+def _preflight_report_path(layout: dict[str, Path], sha: str) -> Path:
+    return layout["prechecks"] / f".staging-{sha}" / "deployment_preflight.json"
 
 
 def _write_owner(active_lock: Path, *, owner_id: str = "owner-123", pid: int = 999999, process_identity: str = "deploy/deploy.sh") -> None:
@@ -592,7 +598,8 @@ def test_prepare_from_dirty_active_release_uses_temporary_clean_source(tmp_path:
     assert (release / "logs").resolve() == (layout["shared"] / "logs").resolve()
     assert (release / "output").is_symlink()
     assert (release / "output").resolve() == (layout["shared"] / "runtime" / "output").resolve()
-    assert (release / "deployment_preflight.json").is_file()
+    assert not (release / "deployment_preflight.json").exists()
+    assert _preflight_report_path(layout, sha).is_file()
     assert not list((layout["deploy_state"] / "deploy-source-worktrees").glob("source.*"))
 
 
@@ -913,7 +920,7 @@ def test_prepare_records_startup_preflight_command(tmp_path: Path) -> None:
     res = _invoke(repo, sha, "prepare", env)
 
     assert res.returncode == 0
-    preflight = json.loads((layout["releases"] / sha / "deployment_preflight.json").read_text(encoding="utf-8"))
+    preflight = json.loads(_preflight_report_path(layout, sha).read_text(encoding="utf-8"))
     assert "scheduler.py --startup-preflight" in preflight["health_evidence"]["command"]
 
 
@@ -1219,7 +1226,7 @@ def test_preflight_json_contains_shared_path_evidence(tmp_path: Path) -> None:
     res = _invoke(repo, sha, "prepare", env)
     assert res.returncode == 0
 
-    payload = json.loads((layout["releases"] / sha / "deployment_preflight.json").read_text(encoding="utf-8"))
+    payload = json.loads(_preflight_report_path(layout, sha).read_text(encoding="utf-8"))
     evidence = {item["relative_path"]: item for item in payload.get("path_evidence", [])}
     assert evidence["output"]["status"] == "pass"
     assert evidence["logs"]["status"] == "pass"
@@ -1240,7 +1247,7 @@ def test_preflight_json_records_created_paths(tmp_path: Path) -> None:
     res = _invoke(repo, sha, "prepare", env)
     assert res.returncode == 0
 
-    payload = json.loads((layout["releases"] / sha / "deployment_preflight.json").read_text(encoding="utf-8"))
+    payload = json.loads(_preflight_report_path(layout, sha).read_text(encoding="utf-8"))
     evidence = {item["relative_path"]: item for item in payload.get("path_evidence", [])}
     assert evidence["output/scripts"]["status"] == "pass"
     assert evidence["output/scripts"]["action"] == "created"
@@ -1277,7 +1284,7 @@ def test_preflight_health_warning_does_not_block_prepare(tmp_path: Path) -> None
     res = _invoke(repo, sha, "prepare", env)
 
     assert res.returncode == 0
-    payload = json.loads((layout["releases"] / sha / "deployment_preflight.json").read_text(encoding="utf-8"))
+    payload = json.loads(_preflight_report_path(layout, sha).read_text(encoding="utf-8"))
     assert payload["validations"][-1]["status"] == "pass"
     assert payload["health_evidence"]["warnings"] == ["Unable to resolve youtube.googleapis.com: temporary dns failure"]
     assert "scheduler.py --startup-preflight" in payload["health_evidence"]["command"]
@@ -1684,7 +1691,7 @@ def test_temporary_topology_integration_simulation(tmp_path: Path) -> None:
     assert (release / "output").resolve() == (layout["shared"] / "runtime" / "output").resolve()
     assert (release / "logs").resolve() == (layout["shared"] / "logs").resolve()
 
-    payload = json.loads((release / "deployment_preflight.json").read_text(encoding="utf-8"))
+    payload = json.loads(_preflight_report_path(layout, sha).read_text(encoding="utf-8"))
     evidence = {item["relative_path"]: item for item in payload.get("path_evidence", [])}
     assert evidence["output"]["status"] == "pass"
     assert evidence["logs"]["status"] == "pass"
@@ -2810,10 +2817,11 @@ def test_prepare_writes_preflight_json(tmp_path: Path) -> None:
     res = _invoke(repo, sha, "prepare", env)
 
     assert res.returncode == 0
-    report = layout["releases"] / sha / "deployment_preflight.json"
+    report = _preflight_report_path(layout, sha)
     assert report.exists()
     payload = json.loads(report.read_text(encoding="utf-8"))
     assert payload["release_sha"] == sha
+    assert not (layout["releases"] / sha / "deployment_preflight.json").exists()
 
 
 def test_plan_mode_rejects_unapproved_ref(tmp_path: Path) -> None:
